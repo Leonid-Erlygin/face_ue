@@ -7,6 +7,10 @@ from abc import ABC
 class AbstractConfidence(ABC):
     def __call__(self, similarity_matrix) -> Any:
         raise NotImplementedError
+    
+    @property
+    def name(self):
+        return self.__class__.__name__
 
 class NAC_confidence(AbstractConfidence):
     def __init__(self, k: int, s: float, shift: float, normalize: bool) -> None:

@@ -1,7 +1,7 @@
-from .abc import Abstract1NEval
+from .base import BaseSimilarity
+from ..dataloader.data1N import Query1N
 
-
-class EVM(Abstract1NEval):
+class EVM(BaseSimilarity):
     def __init__(self, confidence_function_name: str) -> None:
         """
         Implemetns Extreme Value Machine (EVM) and uses it for open set recognition
@@ -12,14 +12,8 @@ class EVM(Abstract1NEval):
         """
         self.confidence_function_name = confidence_function_name
 
-    def __call__(
+    def compute(
         self,
-        probe_feats,
-        probe_unc,
-        gallery_feats,
-        gallery_unc,
-        probe_ids,
-        gallery_ids,
-        fars,
+        query: Query1N
     ):
         pass

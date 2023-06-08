@@ -17,7 +17,11 @@ class AbstractTemplatePooling(ABC):
         choose_ids: np.ndarray,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         raise NotImplementedError
-
+    
+    @property
+    def name(self):
+        return self.__class__.__name__
+    
 class PoolingDefault(AbstractTemplatePooling):
     def __call__(
         self,

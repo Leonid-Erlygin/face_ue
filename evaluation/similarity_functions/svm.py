@@ -10,12 +10,12 @@ from sklearn.svm import LinearSVC
 from sklearn.multiclass import OneVsRestClassifier
 import warnings
 
-from ..metrics import EvalMetricsT, compute_detection_and_identification_rate
-from .abc import Abstract1NEval
+from ..dataloader.data1N import Query1N
+from .base import BaseSimilarity
 from .scf import compute_scf_sim
 
 
-class SVM(Abstract1NEval):
+class SVM(BaseSimilarity):
     def __init__(
         self,
         use_unc: bool,
@@ -31,9 +31,10 @@ class SVM(Abstract1NEval):
         self.scale = scale
         self.loss: Literal['squared_hinge', 'hinge'] = loss
         self.frac_pca_components = frac_pca_components
+        self.similarity_sorted = True
     
     @property
-    def __name__(self):
+    def name(self):
         attrs = [
             "SVM",
             "unc" if self.use_unc else "basic",
@@ -48,16 +49,16 @@ class SVM(Abstract1NEval):
             
         return "_".join(attrs)
 
-    def __call__(
+    def compute(
         self,
-        probe_feats: np.ndarray,
-        probe_unc: np.ndarray,
-        gallery_feats: np.ndarray,
-        gallery_unc: np.ndarray,
-        probe_ids: np.ndarray,
-        gallery_ids: np.ndarray,
-        fars: np.ndarray,
-    ) -> EvalMetricsT:
+        query: Query1N,
+    ):
+        probe_feats = query.probe_feats
+        gallery_feats = query.gallery_feats
+        gallery_unc = query.gallery_unc
+        probe_unc = query.probe_unc
+        gallery_ids = query.gallery_ids
+
         if self.use_unc:
             d = probe_feats.shape[1]
             XX = compute_scf_sim(
@@ -97,18 +98,11 @@ class SVM(Abstract1NEval):
                     ))) # type: ignore
             except ConvergenceWarning:
                 print("SVM didn't converge with given parameters, returning nans")
-                return 0, 0, 0, [np.nan] * len(fars), [np.nan] * len(fars), [(np.nan, np.nan)] * len(fars)
+                return np.full((probe_feats.shape[0], probe_feats.shape[0]), np.nan)
             finally:
                 warnings.resetwarnings()
         else:
             model = LinearSVC(C=self.C).fit(gallery_feats, gallery_ids)
             decision_scores = model.decision_function(probe_feats)
 
-        return compute_detection_and_identification_rate(
-            fars,
-            probe_ids,
-            gallery_ids,
-            decision_scores,
-            decision_scores.max(1),
-            labels_sorted=True,
-        )
+        return decision_scores

@@ -24,7 +24,11 @@ def face_align_landmark(img, landmark, image_size=(112, 112), method="similar"):
     tform.estimate(landmark, src)
     # ndimage = transform.warp(img, tform.inverse, output_shape=image_size)
     # ndimage = (ndimage * 255).astype(np.uint8)
-    M = tform.params[0:2, :]
+    if tform.params is not None:
+        M = tform.params[0:2, :]
+    else:
+        raise ValueError
+    
     ndimage = cv2.warpAffine(img, M, image_size, borderValue=0.0)
     if len(ndimage.shape) == 2:
         ndimage = np.stack([ndimage, ndimage, ndimage], -1)
