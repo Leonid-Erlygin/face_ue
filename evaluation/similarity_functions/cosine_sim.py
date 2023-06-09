@@ -1,6 +1,6 @@
 import numpy as np
 from .base import BaseSimilarity
-from ..dataloader.data1N import Query1N
+from ..dataloaders import Query1N
 
 
 class CosineSim(BaseSimilarity):

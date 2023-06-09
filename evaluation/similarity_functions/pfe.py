@@ -5,7 +5,7 @@ import numpy as np
 from tqdm import tqdm
 from joblib import Memory
 from .base import BaseSimilarity
-from ..dataloader.data1N import Query1N
+from ..dataloaders import Query1N
 
 
 @Memory("/app/cache/pfe_cache").cache

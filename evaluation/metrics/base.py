@@ -7,7 +7,7 @@ from matplotlib.figure import Figure
 import numpy as np
 from matplotlib import pyplot as plt
 
-from ..dataloader.data1N import Query1N
+from ..dataloaders import Query1N
 
 
 @dataclass
@@ -38,6 +38,20 @@ class BaseMetric:
         similarity_matrix: np.ndarray,
         confidence: np.ndarray,
     ) -> Plot:
+        """Evaluate results using your custom metric.
+
+        Args:
+            probe_ids (np.ndarray): Ids of probe samples
+            gallery_ids (np.ndarray): Ids of gallery samples
+            similarity_matrix (np.ndarray): resulting similarity matrix
+            confidence (np.ndarray): resulting confidence
+
+        Raises:
+            NotImplementedError: please implement this method
+
+        Returns:
+            Plot: xs, ys and score to display in label
+        """
         raise NotImplementedError
 
     def __call__(
@@ -47,6 +61,14 @@ class BaseMetric:
         confidence: np.ndarray,
         name: str,
     ):
+        """Calls evaluate, adds a value to the corresponding list of plots. Most cases, you wouldn't need to override this method
+
+        Args:
+            query (Query1N): Incoming query
+            similarity_matrix (np.ndarray): result of similarity_function
+            confidence (np.ndarray): result of confidence_function
+            name (str): name to display on plot
+        """
         new_plot = self.evaluate(
             query.probe_ids, query.gallery_ids, similarity_matrix, confidence
         )
@@ -56,8 +78,7 @@ class BaseMetric:
         pass
 
     def plot(self):
-        fig = plt.figure()
-        ax = fig.axes[0]
+        fig, ax = plt.subplots()
         for name, plot_list in self.plots.items():
             xs_list = [p.xs for p in plot_list]
             assert reduce(np.equal, xs_list).all()

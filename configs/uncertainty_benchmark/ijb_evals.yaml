@@ -4,27 +4,24 @@ hydra:
 exp_dir: outputs/ijb_evals/ijb_evals_${now:%Y-%m-%d_%H-%M-%S}
 
 
-data_path: datasets/arcface_ijb/ # Dataset path containing IJBB and IJBC sub folder
-subset: IJBC # Subset test target, could be IJBB / IJBC
-use_two_galleries: True
-recompute_template_pooling: False
-batch_size: 16
-is_one_2_N: False  # Run 1:N test instead of 1
-is_bunch: False
-far_range: [-4, 0, 100]
+metrics:
+  - _target_: evaluation.metrics.DIRFAR
+    far_range: [-4, 0, 100]
+
 open_set_recognition_methods:
-  - evaluation_1N_function: 
-      _target_: evaluation.eval_functions.SVM
-      use_unc: True
-      shift: 150
-      C: .1
-      frac_pca_components: 1.
-    restore_embs: /app/cache/features/scf_ijb_embs_${subset}.npz
-    template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingSCF
-    features: scf
-    use_detector_score: True
-    save_result: "${exp_dir}/${subset}_unc_SVM_det_and_scf_score.npz"  
+  - similarity_function: 
+      _target_: evaluation.similarity_functions.CosineSim
+    confidence_function:
+      _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+    dataloader:
+      _target_: evaluation.dataloaders.DataLoader1N
+      use_two_galleries: True
+      subset: IJBC
+      data_path: datasets/arcface_ijb/ # Dataset path containing IJBB and IJBC sub folder
+      features: scf
+      use_detector_score: True
+      template_pooling:
+        _target_: evaluation.template_pooling_strategies.PoolingSCF
   # - evaluation_1N_function: 
   #     _target_: evaluation.eval_functions.scf.SCF
   #     confidence_function: 
@@ -51,14 +48,14 @@ open_set_recognition_methods:
   #   use_detector_score: True
   #   save_result: "${exp_dir}/${subset}_CosineSim_det_and_scf_score_.npz"
 
-  - evaluation_1N_function: 
-      _target_: evaluation.eval_functions.SVM
-      use_unc: False
-      C: 1
-      loss: squared_hinge
-    restore_embs: /app/cache/features/scf_ijb_embs_${subset}.npz
-    template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingSCF
-    features: scf
-    use_detector_score: True
-    save_result: "${exp_dir}/${subset}_basic_SVM_det_and_scf_score.npz"
+  # - evaluation_1N_function: 
+  #     _target_: evaluation.eval_functions.SVM
+  #     use_unc: False
+  #     C: 1
+  #     loss: squared_hinge
+  #   restore_embs: /app/cache/features/scf_ijb_embs_${subset}.npz
+  #   template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingSCF
+  #   features: scf
+  #   use_detector_score: True
+  #   save_result: "${exp_dir}/${subset}_basic_SVM_det_and_scf_score.npz"

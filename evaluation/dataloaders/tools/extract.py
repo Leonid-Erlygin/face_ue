@@ -1,6 +1,9 @@
 import os
 import numpy as np
 import pandas as pd
+from joblib import Memory
+
+from ...template_pooling_strategies import AbstractTemplatePooling
 
 
 def read_IJB_meta_columns_to_int(file_path, columns, sep=" ", skiprows=0, header=None):
@@ -9,23 +12,8 @@ def read_IJB_meta_columns_to_int(file_path, columns, sep=" ", skiprows=0, header
     return (meta[:, ii].astype("int") for ii in columns)
 
 
-def extract_IJB_data_11(data_path, subset, save_path=None, force_reload=False):
-    if save_path == None:
-        save_path = os.path.join(data_path, subset + "_backup.npz")
-    if not force_reload and os.path.exists(save_path):
-        print(">>>> Reload from backup: %s ..." % save_path)
-        aa = np.load(save_path)
-        return (
-            aa["templates"],
-            aa["medias"],
-            aa["p1"],
-            aa["p2"],
-            aa["label"],
-            aa["img_names"],
-            aa["landmarks"],
-            aa["face_scores"],
-        )
-
+@Memory("/app/cache/ijb_data/").cache
+def extract_IJB_data_11(data_path, subset):
     if subset == "IJBB":
         media_list_path = os.path.join(data_path, "IJBB/meta/ijbb_face_tid_mid.txt")
         pair_list_path = os.path.join(
@@ -83,37 +71,11 @@ def extract_IJB_data_11(data_path, subset, save_path=None, force_reload=False):
     )
     # {0.1: 2515, 0.2: 0, 0.3: 62, 0.4: 94, 0.5: 136, 0.6: 197, 0.7: 291, 0.8: 538, 0.9: 223797}
 
-    print(">>>> Saving backup to: %s ..." % save_path)
-    np.savez(
-        save_path,
-        templates=templates,
-        medias=medias,
-        p1=p1,
-        p2=p2,
-        label=label,
-        img_names=img_names,
-        landmarks=landmarks,
-        face_scores=face_scores,
-    )
-    print()
     return templates, medias, p1, p2, label, img_names, landmarks, face_scores
 
 
-def extract_gallery_prob_data(data_path, subset, save_path=None, force_reload=False):
-    if save_path == None:
-        save_path = os.path.join(data_path, subset + "_gallery_prob_backup.npz")
-    if not force_reload and os.path.exists(save_path):
-        print(">>>> Reload from backup: %s ..." % save_path)
-        aa = np.load(save_path)
-        return (
-            aa["s1_templates"],
-            aa["s1_subject_ids"],
-            aa["s2_templates"],
-            aa["s2_subject_ids"],
-            aa["probe_mixed_templates"],
-            aa["probe_mixed_subject_ids"],
-        )
-
+@Memory("/app/cache/prob_data/").cache
+def extract_gallery_prob_data(data_path, subset):
     if subset == "IJBC":
         meta_dir = os.path.join(data_path, "IJBC/meta")
         gallery_s1_record = os.path.join(meta_dir, "ijbc_1N_gallery_G1.csv")
@@ -154,17 +116,6 @@ def extract_gallery_prob_data(data_path, subset, save_path=None, force_reload=Fa
         % (probe_mixed_subject_ids.shape, np.unique(probe_mixed_subject_ids).shape)
     )
 
-    print(">>>> Saving backup to: %s ..." % save_path)
-    np.savez(
-        save_path,
-        s1_templates=s1_templates,
-        s1_subject_ids=s1_subject_ids,
-        s2_templates=s2_templates,
-        s2_subject_ids=s2_subject_ids,
-        probe_mixed_templates=probe_mixed_templates,
-        probe_mixed_subject_ids=probe_mixed_subject_ids,
-    )
-    print()
     return (
         s1_templates,
         s1_subject_ids,
@@ -173,3 +124,4 @@ def extract_gallery_prob_data(data_path, subset, save_path=None, force_reload=Fa
         probe_mixed_templates,
         probe_mixed_subject_ids,
     )
+    

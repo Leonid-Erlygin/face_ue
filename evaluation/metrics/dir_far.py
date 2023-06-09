@@ -2,7 +2,7 @@ from typing import Tuple
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 import numpy as np
-from sklearn.metrics import auc
+from sklearn.metrics import auc, roc_curve
 from .base import BaseMetric, Plot
 
 
@@ -22,7 +22,7 @@ class DIRFAR(BaseMetric):
         ax.legend(fontsize="x-small")
         fig.tight_layout()
 
-    def __call__(
+    def evaluate(
         self,
         probe_ids,
         gallery_ids,
@@ -53,9 +53,7 @@ class DIRFAR(BaseMetric):
         threshes, recalls = [], []
         for far in self.fars:
             # compute operating threshold τ, which gives neaded far
-            thresh = neg_score_sorted[
-                max(int((neg_score_sorted.shape[0]) * far) - 1, 0)
-            ]
+            thresh = neg_score_sorted[max(int((neg_score_sorted.shape[0]) * far) - 1, 0)]
 
             # compute DI rate at given operating threshold τ
             recall = (
@@ -64,6 +62,11 @@ class DIRFAR(BaseMetric):
             )
             threshes.append(thresh)
             recalls.append(recall)
+
+        cmc_scores = list(zip(neg_sims, pos_sims.reshape(-1, 1))) + list(
+            zip(non_gallery_sims, [None] * non_gallery_sims.shape[0])
+        )
+
 
         xs = self.fars
         ys = np.array(recalls)

@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 from tqdm import tqdm
 from .base import BaseSimilarity
-from ..dataloader.data1N import Query1N
+from ..dataloaders import Query1N
 
 
 class TcmNN(BaseSimilarity):

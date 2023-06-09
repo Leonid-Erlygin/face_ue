@@ -1,7 +1,7 @@
 from typing import Any, List, Sequence, Tuple
 import numpy as np
 
-from ..dataloader.data1N import Query1N
+from ..dataloaders import Query1N
 
 class BaseSimilarity:
     similarity_sorted: bool = False 
@@ -30,7 +30,7 @@ class BaseSimilarity:
         raise NotImplementedError
 
     def __call__(self, query: Query1N) -> np.ndarray:
-        """Calls compute, and sorts similarity matrix if neccessary
+        """Calls compute, and sorts similarity matrix if neccessary. Most cases, you don't need to override this.
 
         :param query: query from the dataset
         :type query: Query1N

@@ -10,7 +10,7 @@ from sklearn.svm import LinearSVC
 from sklearn.multiclass import OneVsRestClassifier
 import warnings
 
-from ..dataloader.data1N import Query1N
+from ..dataloaders import Query1N
 from .base import BaseSimilarity
 from .scf import compute_scf_sim
 

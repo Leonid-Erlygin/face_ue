@@ -1,5 +1,5 @@
 import numpy as np
-from ..dataloader.data1N import Query1N
+from ..dataloaders import Query1N
 from .base import BaseSimilarity
 
 
