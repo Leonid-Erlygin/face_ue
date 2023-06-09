@@ -59,43 +59,22 @@ def dataloader_1N_function(
 ):
     restore_embs = f"/app/cache/features/{features}_ijb_embs_{subset}.npz"
 
-    (
-        templates,
-        medias,
-        p1,
-        p2,
-        label,
-        img_names,
-        landmarks,
-        face_scores,
-    ) = extract_IJB_data_11(data_path, subset)
 
     print(">>>> Reload embeddings from:", restore_embs)
-    aa = np.load(restore_embs)
+    embs_file = np.load(restore_embs)
 
-    if "embs" in aa and "unc" in aa:
-        embs = aa["embs"]
-        embs_f = []
-        unc = aa["unc"]
-    else:
-        print("ERROR: %s NOT containing embs / unc" % restore_embs)
-        exit(1)
+    embs = embs_file["embs"]
+    unc = embs_file["unc"]
+    
     print(">>>> Done.")
-    data_path, subset = data_path, subset
-    face_scores = face_scores.astype(embs.dtype)
 
-    use_detector_score = use_detector_score
+    data_path, subset = data_path, subset
     (
         templates,
         medias,
-        p1,
-        p2,
-        label,
-        img_names,
-        landmarks,
         face_scores,
     ) = extract_IJB_data_11(data_path, subset)
-
+    
     (
         g1_templates,
         g1_ids,
@@ -107,8 +86,6 @@ def dataloader_1N_function(
 
     img_input_feats = process_embeddings(
         embs,
-        embs_f,
-        use_flip_test=False,
         use_norm_score=False,
         use_detector_score=use_detector_score,
         face_scores=face_scores,
@@ -129,7 +106,7 @@ def dataloader_1N_function(
         probe_mixed_ids,
     )
 
-    templates, ids = [[g1_templates, g1_ids], [g2_templates, g2_ids]][gallery_idx]
+    gallery_templates, gallery_ids = [[g1_templates, g1_ids], [g2_templates, g2_ids]][gallery_idx]
 
     (
         templates_feature,
@@ -141,17 +118,17 @@ def dataloader_1N_function(
         unc,
         templates,
         medias,
-        templates,
-        ids,
+        gallery_templates,
+        gallery_ids,
     )
 
     return Query1N(
-        probe_mixed_templates_feature,
-        probe_template_unc,
-        templates_feature,
-        template_unc,
-        probe_mixed_unique_subject_ids,
-        unique_ids,
+        probe_feats=probe_mixed_templates_feature,
+        probe_unc=probe_template_unc,
+        gallery_feats=templates_feature,
+        gallery_unc=template_unc,
+        probe_ids=probe_mixed_unique_subject_ids,
+        gallery_ids=unique_ids,
     )
 
 

@@ -2,7 +2,8 @@ from typing import Tuple
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 import numpy as np
-from sklearn.metrics import auc, roc_curve
+from sklearn.metrics import auc, roc_curve, roc_auc_score
+from scipy.special import softmax
 from .base import BaseMetric, Plot
 
 
@@ -31,7 +32,6 @@ class DIRFAR(BaseMetric):
     ) -> Plot:
         gallery_ids_argsort = np.argsort(gallery_ids)
         is_seen = np.isin(probe_ids, gallery_ids)
-
         seen_sim: np.ndarray = similarity_matrix[is_seen]
 
         # Boolean mask (seen_probes, gallery_ids), 1 where the probe matches gallery sample

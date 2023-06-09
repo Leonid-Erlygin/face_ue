@@ -38,6 +38,7 @@ class BaseSimilarity:
         :rtype: np.ndarray
         """
         similarity_matrix = self.compute(query)
+        assert similarity_matrix.shape[0] == query.p and similarity_matrix.shape[1] == query.g
         if not self.similarity_sorted:
             similarity_matrix = similarity_matrix[:, np.argsort(query.gallery_ids)]
 

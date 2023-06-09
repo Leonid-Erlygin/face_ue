@@ -71,7 +71,7 @@ def extract_IJB_data_11(data_path, subset):
     )
     # {0.1: 2515, 0.2: 0, 0.3: 62, 0.4: 94, 0.5: 136, 0.6: 197, 0.7: 291, 0.8: 538, 0.9: 223797}
 
-    return templates, medias, p1, p2, label, img_names, landmarks, face_scores
+    return templates, medias, face_scores
 
 
 @Memory("/app/cache/prob_data/").cache
