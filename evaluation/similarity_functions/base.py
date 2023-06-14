@@ -4,7 +4,6 @@ import numpy as np
 from ..dataloaders import Query1N
 
 class BaseSimilarity:
-    similarity_sorted: bool = False 
     """Whether the method sorts similarity matrix columns in respect to gallery ids. Defaults to False"""
 
     @property
@@ -16,7 +15,7 @@ class BaseSimilarity:
         """
         return self.__class__.__name__
 
-    def compute(
+    def __call__(
         self,
         query: Query1N
     ) -> np.ndarray:
@@ -28,18 +27,3 @@ class BaseSimilarity:
         :rtype: np.ndarray
         """
         raise NotImplementedError
-
-    def __call__(self, query: Query1N) -> np.ndarray:
-        """Calls compute, and sorts similarity matrix if neccessary. Most cases, you don't need to override this.
-
-        :param query: query from the dataset
-        :type query: Query1N
-        :return: similarity_matrix
-        :rtype: np.ndarray
-        """
-        similarity_matrix = self.compute(query)
-        assert similarity_matrix.shape[0] == query.p and similarity_matrix.shape[1] == query.g
-        if not self.similarity_sorted:
-            similarity_matrix = similarity_matrix[:, np.argsort(query.gallery_ids)]
-
-        return similarity_matrix

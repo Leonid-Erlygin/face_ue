@@ -35,7 +35,7 @@ class SCF(BaseSimilarity):
         self.k_shift = k_shift
         self.use_cosine_sim_match = use_cosine_sim_match
 
-    def compute(
+    def __call__(
         self,
         query: Query1N,
     ):

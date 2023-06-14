@@ -12,7 +12,7 @@ class EVM(BaseSimilarity):
         """
         self.confidence_function_name = confidence_function_name
 
-    def compute(
+    def __call__(
         self,
         query: Query1N
     ):

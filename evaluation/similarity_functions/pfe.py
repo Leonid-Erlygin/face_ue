@@ -34,7 +34,7 @@ class PFE(BaseSimilarity):
         """
         self.variance_scale = variance_scale
 
-    def compute(
+    def __call__(
         self,
         query: Query1N,
     ):

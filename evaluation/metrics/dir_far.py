@@ -10,7 +10,7 @@ from .base import BaseMetric, Plot
 class DIRFAR(BaseMetric):
     def __init__(self, far_range: Tuple[int, int, int]) -> None:
         self.fars = 10 ** np.arange(far_range[0], far_range[1], 4.0 / far_range[2])
-        self.fars = np.append(self.fars, 1)
+        super().__init__()
 
     def setup_plt(self, fig: Figure, ax: Axes):
         ax.set_xlabel("False Alarm Rate")
@@ -20,7 +20,6 @@ class DIRFAR(BaseMetric):
         ax.set_ylim(0, 1)
 
         ax.grid(linestyle="--", linewidth=1)
-        ax.legend(fontsize="x-small")
         fig.tight_layout()
 
     def evaluate(
@@ -30,13 +29,12 @@ class DIRFAR(BaseMetric):
         similarity_matrix: np.ndarray,
         confidence: np.ndarray,
     ) -> Plot:
-        gallery_ids_argsort = np.argsort(gallery_ids)
         is_seen = np.isin(probe_ids, gallery_ids)
         seen_sim: np.ndarray = similarity_matrix[is_seen]
 
         # Boolean mask (seen_probes, gallery_ids), 1 where the probe matches gallery sample
         pos_mask: np.ndarray = (
-            probe_ids[is_seen, None] == gallery_ids[None, gallery_ids_argsort]
+            probe_ids[is_seen, None] == gallery_ids[None, :]
         )
 
         pos_sims = seen_sim[pos_mask]

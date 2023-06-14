@@ -20,7 +20,7 @@ class TcmNN(BaseSimilarity):
         self.scale = scale  # needed because we have |D_i^y| = 1 and |D_i^{-y}|!=1
         self.p_value_cache_path = Path(p_value_cache_path)
 
-    def compute(self, query: Query1N):
+    def __call__(self, query: Query1N):
         # 1. compute distances from each gallery class to other gallery classes
         # here each class has exact one feature vector
 

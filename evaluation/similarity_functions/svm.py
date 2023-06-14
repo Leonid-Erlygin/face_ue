@@ -49,7 +49,7 @@ class SVM(BaseSimilarity):
             
         return "_".join(attrs)
 
-    def compute(
+    def __call__(
         self,
         query: Query1N,
     ):
@@ -105,4 +105,5 @@ class SVM(BaseSimilarity):
             model = LinearSVC(C=self.C).fit(gallery_feats, gallery_ids)
             decision_scores = model.decision_function(probe_feats)
 
-        return decision_scores
+        unsort_idxs = np.argsort(np.argsort(gallery_ids))
+        return decision_scores[:, unsort_idxs]

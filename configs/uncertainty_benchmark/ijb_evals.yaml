@@ -7,6 +7,8 @@ exp_dir: outputs/ijb_evals/ijb_evals_${now:%Y-%m-%d_%H-%M-%S}
 metrics:
   - _target_: evaluation.metrics.DIRFAR
     far_range: [-4, 0, 100]
+  - _target_: evaluation.metrics.RejectAUROC
+    xs_range: [0, 1, 100]
 
 open_set_recognition_methods:
   - similarity_function: 

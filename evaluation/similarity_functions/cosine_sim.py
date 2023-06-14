@@ -4,7 +4,7 @@ from ..dataloaders import Query1N
 
 
 class CosineSim(BaseSimilarity):
-    def compute(
+    def __call__(
         self,
         query: Query1N,
     ):

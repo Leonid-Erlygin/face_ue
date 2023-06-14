@@ -1,10 +1,12 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from functools import reduce
+from operator import attrgetter
 from typing import Any, Dict, List
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 import numpy as np
+from scipy.interpolate import interp1d
 from matplotlib import pyplot as plt
 
 from ..dataloaders import Query1N
@@ -16,10 +18,10 @@ class Plot:
     ys: np.ndarray
     score: float = float("nan")
 
-
 class BaseMetric:
-    plots: Dict[str, List[Plot]] = defaultdict(list)
-    call_plt_with_args: Dict[str, Any] = {}
+    def __init__(self) -> None:
+        self.plots: Dict[str, List[Plot]] = defaultdict(list)
+        self.call_plt_with_args: Dict[str, Any] = {}        
 
     @property
     def name(self):
@@ -80,13 +82,11 @@ class BaseMetric:
     def plot(self):
         fig, ax = plt.subplots()
         for name, plot_list in self.plots.items():
-            xs_list = [p.xs for p in plot_list]
-            assert reduce(np.equal, xs_list).all()
-            xs = xs_list[0]
-            ys = self.reduce_ys([p.ys for p in plot_list])
+            assert reduce(np.equal, map(attrgetter("xs"), plot_list)).all()
+            ys = self.reduce_ys(np.stack([p.ys for p in plot_list]))
             score = self.reduce_scores([p.score for p in plot_list])
-            ax.plot(xs, ys, label=f"[{name}: {score}]")
+            ax.plot(plot_list[0].xs, ys, label=f"[{name}: {score}]")
 
+        ax.legend(fontsize="x-small")
         self.setup_plt(fig, ax)
-
         return fig
