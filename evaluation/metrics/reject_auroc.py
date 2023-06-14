@@ -4,6 +4,7 @@ from matplotlib.figure import Figure
 import numpy as np
 from sklearn.metrics import roc_auc_score, auc
 from evaluation.metrics.base import Plot
+from scipy.stats import rankdata
 from .base import BaseMetric
 
 
@@ -21,13 +22,13 @@ class RejectAUROC(BaseMetric):
     ) -> Plot:
         pred_indexes = np.argmax(similarity_matrix, axis=1)
         correct_prediction_mask = gallery_ids[pred_indexes] == probe_ids
-
+        certainty = np.abs(confidence.mean() - confidence)
         ys = []
         for x in self.xs:
-            thr = np.quantile(confidence, x)
-            keep_mask = confidence > thr
+            thr = np.quantile(certainty, x)
+            keep_mask = certainty > thr
             labels = correct_prediction_mask[keep_mask]
-            scores = confidence[keep_mask]
+            scores = certainty[keep_mask]
 
             if np.any(labels) and np.any(~labels):
                 score = roc_auc_score(labels, scores)
