@@ -2,8 +2,6 @@ from typing import List, Sequence, Tuple
 from abc import ABC
 import numpy as np
 
-from evaluation.metrics import EvalMetricsT
-
 
 class Abstract1NEval(ABC):
     def __call__(
@@ -15,5 +13,5 @@ class Abstract1NEval(ABC):
         probe_ids: np.ndarray,
         gallery_ids: np.ndarray,
         fars: np.ndarray,
-    ) -> EvalMetricsT:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         raise NotImplementedError

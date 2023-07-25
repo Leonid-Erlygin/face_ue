@@ -1,16 +1,25 @@
-from typing import Any, List, Tuple
+from collections import defaultdict
+from typing import Any, Dict, List, Tuple
+
 import numpy as np
-from sklearn.metrics import top_k_accuracy_score
-from tqdm import tqdm
-from sklearn.metrics import roc_curve, auc
 from scipy import interpolate
+from sklearn.metrics import auc, roc_curve, top_k_accuracy_score
+from math import floor
+from tqdm import tqdm
 
-EvalMetricsT = Tuple[int, int, int, List[float], List[float], List[Tuple[float, float]]]
 
+class AbstractMetric:
+    def __call__(self,
+        probe_ids: np.ndarray,
+        gallery_ids: np.ndarray,
+        similarity: np.ndarray,
+        probe_score: np.ndarray,
+    ) -> Dict:
+        raise NotImplementedError
 
-class MeanDistanceReject:
+class MeanDistanceReject(AbstractMetric):
     def __init__(
-        self, metric_to_monitor: any, fractions: List[int], with_unc: bool
+        self, metric_to_monitor: Any, fractions: List[int], with_unc: bool
     ) -> None:
         self.fractions = np.arange(fractions[0], fractions[1], step=fractions[2])
         self.metric_to_monitor = metric_to_monitor
@@ -19,7 +28,6 @@ class MeanDistanceReject:
     def __call__(
         self,
         probe_ids: np.ndarray,
-        probe_template_unc: np.ndarray,
         gallery_ids: np.ndarray,
         similarity: np.ndarray,
         probe_score: np.ndarray,
@@ -56,7 +64,7 @@ class MeanDistanceReject:
         return unc_metric
 
 
-class CMC:
+class CMC(AbstractMetric):
     def __init__(self, top_n_ranks: List[int], display_ranks: List[int]) -> None:
         self.top_n_ranks = top_n_ranks
         self.display_ranks = display_ranks
@@ -97,7 +105,7 @@ class CMC:
         return metrics
 
 
-class TarFar:
+class TarFar(AbstractMetric):
     def __init__(self, far_range: List[int], display_fars: List[float]) -> None:
         self.fars = [
             10**ii for ii in np.arange(far_range[0], far_range[1], 4.0 / far_range[2])
@@ -130,7 +138,7 @@ class TarFar:
         return metrics
 
 
-class DetectionAndIdentificationRate:
+class DetectionAndIdentificationRate(AbstractMetric):
     def __init__(
         self, top_n_ranks: List[int], far_range: List[int], display_fars: List[float]
     ) -> None:
@@ -146,7 +154,7 @@ class DetectionAndIdentificationRate:
         gallery_ids: np.ndarray,
         similarity: np.ndarray,
         probe_score: np.ndarray,
-    ) -> EvalMetricsT:
+    ) -> Dict:
         """
         Computes Detection & identification rate for open set recognition
         Operating thresholds τ for rejecting imposter images are computed to match particular far in fars list
@@ -194,7 +202,7 @@ class DetectionAndIdentificationRate:
 
             recall_values = []
             for far in self.fars:
-                # compute operating threshold τ, which gives neaded far
+                # compute operating threshold τ, which gives needed far
                 if len(neg_score_sorted) == 0:
                     thresh = -np.inf
                 else:
@@ -233,4 +241,43 @@ class DetectionAndIdentificationRate:
                 for far in self.display_fars:
                     new_metrics[f"final_top_{rank}_recall_at_far_{far}"] = f([far])[0]
         metrics.update(new_metrics)
+        return metrics
+
+
+class BernoulliVarianceReject(AbstractMetric):
+    def __init__(self, metric_to_monitor: AbstractMetric, fractions: Tuple[float, float, float]) -> None:
+        self.metric_to_monitor = metric_to_monitor
+        self.fractions = np.arange(*fractions)
+
+    def __call__(
+        self,
+        probe_ids: np.ndarray,
+        gallery_ids: np.ndarray,
+        similarity: np.ndarray,
+        probe_score: np.ndarray,
+    ) -> Dict:
+        unc_score = probe_score * (1 - probe_score)
+        n_probes = probe_ids.shape[0]
+        sorted_unc_indices = np.flip(np.argsort(unc_score))
+        probe_ids_sorted = probe_ids[sorted_unc_indices]
+        similarity_sorted = similarity[sorted_unc_indices]
+        probe_score_sorted = probe_score[sorted_unc_indices]
+        
+        metrics = defaultdict(list)
+        for frac in self.fractions:
+            num_to_skip = floor(n_probes * frac)
+            dir_metric = self.metric_to_monitor(
+                probe_ids_sorted[num_to_skip:],
+                gallery_ids,
+                similarity_sorted[num_to_skip:],
+                probe_score_sorted[num_to_skip:]
+            )
+
+            fars = dir_metric["fars"]
+            recall_items = filter(lambda i: "recalls" in i[0], dir_metric.items())
+            for k, v in recall_items:
+                rank = k.split("_")[1]
+                metrics[f"plot_auc_{rank}_bernvar"].append(auc(fars, v))
+            metrics["fractions"].append(frac)
+        
         return metrics

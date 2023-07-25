@@ -1,16 +1,11 @@
 hydra:
   run:
     dir: ${exp_dir}
+#exp_dir: outputs/ijb_evals/ijb_evals_${now:%Y-%m-%d_%H-%M-%S}
+exp_dir: experiments/unc_metrics
 
-exp_dir: experiments/unified_osr
-
-use_two_galleries: False
+use_two_galleries: True
 recompute_template_pooling: False
-
-# test_dataset:
-#   _target_: evaluation.test_datasets.FaceRecogntioniDataset
-#   dataset_name: survFace
-#   dataset_path: /app/datasets/QMUL-SurvFace/Face_Identification_Test_Set
 
 test_dataset:
   _target_: evaluation.test_datasets.FaceRecogntioniDataset
@@ -33,14 +28,14 @@ verification_metrics:
     far_range: [-6, 0, 100]
     display_fars: [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1]
 
+
 open_set_uncertainty_metrics:
-  - _target_: evaluation.metrics.MeanDistanceReject
-    fractions: [0, 0.55, 0.01]
-    with_unc: False
+  - _target_: evaluation.metrics.BernoulliVarianceReject
+    fractions: [0, 0.4, 0.01]
     metric_to_monitor:
       _target_: evaluation.metrics.DetectionAndIdentificationRate
       top_n_ranks: [1, 10, 20]
-      far_range: [-4, 0, 100] 
+      far_range: [-4, 0, 100]
       display_fars: [0.0001, 0.001, 0.01, 0.1, 1]
 
 
@@ -54,15 +49,3 @@ open_set_identification_methods:
       _target_: evaluation.template_pooling_strategies.PoolingSCF
     use_detector_score: True
     pretty_name: "Косинусный MaxProb"
-  
-  - evaluation_function: 
-      _target_: evaluation.eval_functions.open_set_identification.CosineSim
-      confidence_function: 
-        _target_: evaluation.confidence_functions.MisesProb
-        k: 150
-        reject_prior: 0.5
-    embeddings_path: ${test_dataset.dataset_path}/embeddings/scf_embs_${test_dataset.dataset_name}.npz
-    template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingSCF
-    use_detector_score: True
-    pretty_name: "Reject option as class"

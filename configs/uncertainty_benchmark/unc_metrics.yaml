@@ -42,18 +42,25 @@ open_set_uncertainty_metrics:
       top_n_ranks: [1, 10, 20]
       far_range: [-4, 0, 100] 
       display_fars: [0.0001, 0.001, 0.01, 0.1, 1]
+  - _target_: evaluation.metrics.BernoulliVarianceReject
+    fractions: [0, 0.55, 0.01]
+    metric_to_monitor:
+      _target_: evaluation.metrics.DetectionAndIdentificationRate
+      top_n_ranks: [1, 10, 20]
+      far_range: [-4, 0, 100]
+      display_fars: [0.0001, 0.001, 0.01, 0.1, 1]
 
 
 open_set_identification_methods:
-  - evaluation_function: 
-      _target_: evaluation.eval_functions.open_set_identification.CosineSim
-      confidence_function: 
-        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
-    embeddings_path: ${test_dataset.dataset_path}/embeddings/scf_embs_${test_dataset.dataset_name}.npz
-    template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingSCF
-    use_detector_score: True
-    pretty_name: "Косинусный MaxProb"
+  # - evaluation_function: 
+  #     _target_: evaluation.eval_functions.open_set_identification.CosineSim
+  #     confidence_function: 
+  #       _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+  #   embeddings_path: ${test_dataset.dataset_path}/embeddings/scf_embs_${test_dataset.dataset_name}.npz
+  #   template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingSCF
+  #   use_detector_score: True
+  #   pretty_name: "Косинусный MaxProb"
   
   - evaluation_function: 
       _target_: evaluation.eval_functions.open_set_identification.SCF
@@ -67,20 +74,20 @@ open_set_identification_methods:
     use_detector_score: True
     pretty_name: "SCF MaxProb"
   
-  - evaluation_function: 
-      _target_: evaluation.eval_functions.open_set_identification.SCF
-      confidence_function: 
-        _target_: evaluation.confidence_functions.NAC_confidence
-        k: 120
-        s: 1
-        normalize: True
-      k_shift: 0
-      cosine_pred: False
-    embeddings_path: ${test_dataset.dataset_path}/embeddings/scf_embs_${test_dataset.dataset_name}.npz
-    template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingSCF
-    use_detector_score: True
-    pretty_name: "SCF NAC"
+  # - evaluation_function: 
+  #     _target_: evaluation.eval_functions.open_set_identification.SCF
+  #     confidence_function: 
+  #       _target_: evaluation.confidence_functions.NAC_confidence
+  #       k: 120
+  #       s: 1
+  #       normalize: True
+  #     k_shift: 0
+  #     cosine_pred: False
+  #   embeddings_path: ${test_dataset.dataset_path}/embeddings/scf_embs_${test_dataset.dataset_name}.npz
+  #   template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingSCF
+  #   use_detector_score: True
+  #   pretty_name: "SCF NAC"
 
 
 

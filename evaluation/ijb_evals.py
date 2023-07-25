@@ -162,12 +162,6 @@ def main(cfg):
 
     test_dataset = instantiate(cfg.test_dataset)
 
-    verif_scores, verif_names = [], []
-    open_set_ident_scores, open_set_ident_names = [], []
-    closed_set_ident_scores, closed_set_ident_names = [], []
-
-    open_set_ident_rejection_scores, open_set_ident_rejection_names = [], []
-
     # create result dirs:
     dataset_name = cfg.test_dataset.dataset_name
     open_set_identification_result_dir = (
@@ -214,6 +208,8 @@ def main(cfg):
         methods += cfg.verification_methods
         method_types += ["verification"] * len(cfg.verification_methods)
 
+    print("Initialization finished, starting calculation", flush=True)
+
     for method, method_type in zip(methods, method_types):
         evaluation_function = instantiate(method.evaluation_function)
         assert evaluation_function is not None
@@ -238,7 +234,7 @@ def main(cfg):
             # introduce method name that fully defines method features
 
             method_name = get_method_name(method, template_pooling, evaluation_function)
-            print(method_name)
+            print(method_name, flush=True)
             # run recognition and uncertainty metric computation
             (
                 open_set_identification_metric_values,
@@ -296,7 +292,6 @@ def main(cfg):
 
         elif method_type == "closed_set_identification":
             method_name = get_method_name(method, template_pooling, evaluation_function)
-            print(method_name)
 
             closed_set_identification_metric_values = (
                 tt.run_model_test_closedset_identification()
