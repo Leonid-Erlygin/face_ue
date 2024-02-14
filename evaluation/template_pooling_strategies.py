@@ -5,6 +5,10 @@ import numpy as np
 from tqdm import tqdm
 from sklearn.preprocessing import normalize
 import scipy
+import geotorch
+from scipy.special import ive, hyp0f1, loggamma
+from evaluation.open_set_methods.class_prob_models import GalleryParams
+import torch
 
 
 class AbstractTemplatePooling(ABC):
@@ -28,6 +32,7 @@ class PoolingDefault(AbstractTemplatePooling):
         templates: np.ndarray,
         medias: np.ndarray,
     ):
+        # templates = np.sort(templates) # WAS THIS A PROBLEM?
         ## here we assume that after default pooling uncertainty are not used
         unique_templates, indices = np.unique(templates, return_index=True)
         # unique_templates, indices = np.unique(choose_templates, return_index=True)
@@ -61,8 +66,71 @@ class PoolingDefault(AbstractTemplatePooling):
         return (
             template_norm_feats,
             np.zeros((len(unique_templates), 1)),
-            unique_templates,
-        )  # unique_subjectids
+        )
+
+
+class PoolingMonteCarlo(AbstractTemplatePooling):
+    def __init__(self, probability_model: Any, train_T: bool) -> None:
+        super().__init__()
+        self.probability_model = probability_model
+        self.train_T = train_T
+
+    def __call__(
+        self,
+        img_featues: np.ndarray,
+        kappa: np.ndarray,
+        template_ids: np.ndarray,
+        medias: np.ndarray,
+    ):
+        unique_templates, indices = np.unique(template_ids, return_index=True)
+        # initialize class mean
+        init_means = np.array(
+            [
+                np.mean(img_featues[np.where(template_ids == uqt)], axis=0)
+                for uqt in unique_templates
+            ]
+        )
+        init_kappa = [200]
+        init_kappas = [init_kappa] * len(unique_templates)
+        init_T = 1.0
+
+        # train mean and concentration
+        gallery_params = GalleryParams(
+            init_means, init_kappas, init_T, train_T=self.train_T
+        )
+
+        geotorch.sphere(gallery_params, "gallery_means")
+
+        target_classes = torch.tensor(template_ids)
+
+        optimizer = torch.optim.Adam(gallery_params.parameters(), lr=0.1)
+
+        num_steps = 450
+
+        nll_loss = torch.nn.NLLLoss()
+
+        for iter in range(num_steps):
+            optimizer.zero_grad()
+            # compute nll loss
+            log_probs = self.probability_model(
+                img_featues,
+                kappa,
+                gallery_params.gallery_means,
+                gallery_params.gallery_kappas,
+                gallery_params.T,
+            )[:, :, :-1]
+            probs = torch.exp(log_probs)
+            mean_probs = torch.mean(probs, axis=1)
+            log_probs_new = torch.log(mean_probs)
+            loss = nll_loss(log_probs_new, target_classes)
+            loss.backward()
+            optimizer.step()
+            print(gallery_params.gallery_means)
+            print(torch.norm(gallery_params.gallery_means, dim=-1))
+            print(gallery_params.gallery_kappas)
+            print(f"Iteration {iter}, Loss: {loss.item()}")
+
+        # return template_norm_feats, templates_kappa
 
 
 class PoolingSCF(AbstractTemplatePooling):
@@ -73,7 +141,7 @@ class PoolingSCF(AbstractTemplatePooling):
         templates: np.ndarray,
         medias: np.ndarray,
     ):
-        templates = np.sort(templates)
+        # templates = np.sort(templates)
         unique_templates, indices = np.unique(
             templates, return_index=True
         )  # unique_templates, indices = np.unique(choose_templates, return_index=True)
@@ -124,7 +192,7 @@ class PoolingSCF(AbstractTemplatePooling):
             templates_kappa[count_template] = final_kappa_in_template
 
         template_norm_feats = normalize(template_feats)
-        return template_norm_feats, templates_kappa, unique_templates
+        return template_norm_feats, templates_kappa
 
 
 class PoolingProb(AbstractTemplatePooling):
@@ -219,7 +287,7 @@ class PoolingProb(AbstractTemplatePooling):
             templates_data_conf[count_template] = final_data_conf_in_template
 
         template_norm_feats = normalize(template_feats)
-        return template_norm_feats, templates_data_conf, unique_templates
+        return template_norm_feats, templates_data_conf
 
 
 class PoolingPFEHarmonicMean(AbstractTemplatePooling):

@@ -2,7 +2,7 @@ hydra:
   run:
     dir: ${exp_dir}
 
-exp_dir: outputs/experiments/test #/${tau_list}
+exp_dir: outputs/experiments/mc_prob #/${tau_list}
 use_two_galleries: False
 recompute_template_pooling: True
 metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
@@ -129,30 +129,37 @@ open_set_identification_methods:
   #     kappa_is_tau: True
   #   pretty_name: "$u_{SCF}$"
 
+  - embeddings: scf
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingMonteCarlo
+      train_T: False
+      probability_model:
+        _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
+        M: 10
+        gallery_prior: "power"
+        emb_unc_model: "vMF"
+        beta: 0.5
 
-  # - embeddings: scf
-  #   gallery_template_pooling_strategy:
-  #     _target_: evaluation.template_pooling_strategies.PoolingSCF
-  #   probe_template_pooling_strategy:
-  #     _target_: evaluation.template_pooling_strategies.PoolingSCF #PoolingProb
-  #   use_detector_score: True
-  #   sampler:
-  #     _target_: evaluation.samplers.VonMisesFisher
-  #     num_samples: 0 # set 0 to use mean of distr as one sample
-  #   distance_function: 
-  #     _target_: evaluation.distance_functions.open_set_identification.CosineSim
-  #   recognition_method:
-  #     _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
-  #     class_model: power
-  #     kappa: ${tau_list}
-  #     beta: ${default_beta}
-  #     uncertainty_type: maxprob
-  #     alpha: 0
-  #     aggregation: sum
-  #     T: 0.28836
-  #     T_data_unc: 1
-  #     kappa_is_tau: True
-  #   pretty_name: "$u_{power}$"
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingSCF #PoolingProb
+    use_detector_score: True
+    sampler:
+      _target_: evaluation.samplers.VonMisesFisher
+      num_samples: 0 # set 0 to use mean of distr as one sample
+    distance_function: 
+      _target_: evaluation.distance_functions.open_set_identification.CosineSim
+    recognition_method:
+      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
+      class_model: power
+      kappa: ${tau_list}
+      beta: ${default_beta}
+      uncertainty_type: maxprob
+      alpha: 0.5
+      aggregation: sum
+      T: 0.28836
+      T_data_unc: 30
+      kappa_is_tau: True
+    pretty_name: "$u_{MC}$"
 
 
   - embeddings: scf
@@ -177,30 +184,5 @@ open_set_identification_methods:
       T: 0.28836
       T_data_unc: 30
       kappa_is_tau: True
-    pretty_name: "$u_{power} + u_{SCF}$"
-
-  # - embeddings: scf
-  #   gallery_template_pooling_strategy:
-  #     _target_: evaluation.template_pooling_strategies.PoolingSCF
-  #   probe_template_pooling_strategy:
-  #     _target_: evaluation.template_pooling_strategies.PoolingSCF
-  #   use_detector_score: True
-  #   sampler:
-  #     _target_: evaluation.samplers.VonMisesFisher
-  #     num_samples: 0 # set 0 to use mean of distr as one sample
-  #   distance_function: 
-  #     _target_: evaluation.distance_functions.open_set_identification.CosineSim
-  #   recognition_method:
-  #     _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
-  #     kappa: ${tau_list}
-  #     beta: ${default_beta}
-  #     acceptance_score: 
-  #       _target_: evaluation.confidence_functions.MaxSimilarity_confidence
-  #     uncertainty_function:
-  #       _target_: evaluation.open_set_methods.uncertainty_functions.BernoulliVariance
-  #     alpha: 0.5
-  #     T: 22.79
-  #     T_data_unc: 30
-  #     kappa_is_tau: True
-  #   pretty_name: "$u_{baseline} + u_{SCF}$"
+    pretty_name: "$u_{MC}$"
 

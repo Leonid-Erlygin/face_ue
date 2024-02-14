@@ -123,6 +123,7 @@ class Face_Fecognition_test:
                 data = np.load(template_subsets_path / "probe.npz")
                 probe_features = data["probe_features"]
                 probe_unc = data["probe_unc"]
+                probe_templates_sorted = data["probe_templates_sorted"]
                 probe_medias = data["probe_medias"]
                 probe_subject_ids_sorted = data["probe_subject_ids_sorted"]
             else:
@@ -130,6 +131,7 @@ class Face_Fecognition_test:
                     probe_features,
                     probe_unc,
                     probe_medias,
+                    probe_templates_sorted,
                     probe_subject_ids_sorted,
                 ) = self.get_template_subsets(
                     self.test_dataset.probe_ids,
@@ -140,6 +142,7 @@ class Face_Fecognition_test:
                     probe_features=probe_features,
                     probe_unc=probe_unc,
                     probe_medias=probe_medias,
+                    probe_templates_sorted=probe_templates_sorted,
                     probe_subject_ids_sorted=probe_subject_ids_sorted,
                 )
             assert probe_unc.shape[1] == 1  # working with scf unc
@@ -157,12 +160,14 @@ class Face_Fecognition_test:
                     gallery_features = data["gallery_features"]
                     gallery_unc = data["gallery_unc"]
                     gallery_medias = data["gallery_medias"]
+                    gallery_templates_sorted = data["gallery_templates_sorted"]
                     gallery_subject_ids_sorted = data["gallery_subject_ids_sorted"]
                 else:
                     (
                         gallery_features,
                         gallery_unc,
                         gallery_medias,
+                        gallery_templates_sorted,
                         gallery_subject_ids_sorted,
                     ) = self.get_template_subsets(
                         gallery_subject_ids, gallery_templates
@@ -172,6 +177,7 @@ class Face_Fecognition_test:
                         gallery_features=gallery_features,
                         gallery_unc=gallery_unc,
                         gallery_medias=gallery_medias,
+                        gallery_templates_sorted=gallery_templates_sorted,
                         gallery_subject_ids_sorted=gallery_subject_ids_sorted,
                     )
                 # 1. pool selected gallery templates
@@ -183,22 +189,22 @@ class Face_Fecognition_test:
                     pooled_data = (
                         data["template_pooled_features"],
                         data["template_pooled_data_unc"],
-                        data["template_unique_ids"],
                     )
                 else:
                     pooled_data = self.gallery_template_pooling_strategy(
-                        gallery_features, kappa, gallery_templates, gallery_medias
+                        gallery_features,
+                        kappa,
+                        gallery_templates_sorted,
+                        gallery_medias,
                     )
                     np.savez(
                         template_pool_path / f"gallery_{gallery_name}.npz",
                         template_pooled_features=pooled_data[0],
                         template_pooled_data_unc=pooled_data[1],
-                        template_unique_ids=pooled_data[2],
                     )
                 self.gallery_pooled_templates[gallery_name] = {
                     "template_pooled_features": pooled_data[0],
                     "template_pooled_data_unc": pooled_data[1],
-                    "template_unique_ids": pooled_data[2],
                     "template_subject_ids_sorted": gallery_subject_ids_sorted,
                 }
 
@@ -239,7 +245,7 @@ class Face_Fecognition_test:
                         probe_features,
                         -predicted_unc,
                         probe_kappa,
-                        self.test_dataset.probe_templates,
+                        probe_templates_sorted,
                         probe_medias,
                     )
 
@@ -251,35 +257,25 @@ class Face_Fecognition_test:
                         probe_pooled_data = (
                             data["template_pooled_features"],
                             data["template_pooled_data_unc"],
-                            data["template_unique_ids"],
                         )
                     else:
                         probe_pooled_data = self.probe_template_pooling_strategy(
                             probe_features,
                             probe_kappa,
-                            self.test_dataset.probe_templates,
+                            probe_templates_sorted,
                             probe_medias,
                         )
                         np.savez(
                             template_pool_path / f"probe_{gallery_name}.npz",
                             template_pooled_features=probe_pooled_data[0],
                             template_pooled_data_unc=probe_pooled_data[1],
-                            template_unique_ids=probe_pooled_data[2],
                         )
 
                 self.probe_pooled_templates[gallery_name] = {
                     "template_pooled_features": probe_pooled_data[0],
                     "template_pooled_data_unc": probe_pooled_data[1],
-                    "template_unique_ids": probe_pooled_data[2],
                     "template_subject_ids_sorted": probe_subject_ids_sorted,
                 }
-
-            # np.savez(
-            #     pooled_templates_path,
-            #     template_pooled_emb=self.template_pooled_emb,
-            #     template_pooled_unc=self.template_pooled_unc,
-            #     template_ids=self.template_ids,
-            # )
 
     def get_template_subsets(
         self,
@@ -287,11 +283,13 @@ class Face_Fecognition_test:
         choose_templates: np.ndarray,
     ):
         assert subject_ids.shape[0] == choose_templates.shape[0]
-        choose_templates_sort_id = np.argsort(choose_templates)
+        choose_templates_sort_id = np.argsort(
+            choose_templates
+        )  # is not stable sorting algorithm
         choose_templates = choose_templates[choose_templates_sort_id]
         subject_ids_sorted = subject_ids[choose_templates_sort_id]
         unique_templates, indices = np.unique(choose_templates, return_index=True)
-        unique_subject_ids = subject_ids_sorted[indices]
+        unique_subject_ids = subject_ids_sorted[indices]  # sorted by template id
         templates_emb_subset = []
         template_uncertainty_subset = []
         medias_subset = []
@@ -310,6 +308,7 @@ class Face_Fecognition_test:
             templates_emb_subset,
             template_uncertainty_subset,
             medias_subset,
+            choose_templates,
             unique_subject_ids,
         )
 
