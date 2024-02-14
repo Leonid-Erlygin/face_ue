@@ -9,10 +9,14 @@ from evaluation.samplers import VonMisesFisher
 class GalleryParams(torch.nn.Module):
     def __init__(self, init_mean, init_kappa, init_T, train_T):
         super(GalleryParams, self).__init__()
-        self.gallery_means = torch.nn.Parameter(torch.tensor(init_mean))
-        self.gallery_kappas = torch.nn.Parameter(torch.tensor(init_kappa))
+        self.gallery_means = torch.nn.Parameter(
+            torch.tensor(init_mean, dtype=torch.float64)
+        )
+        self.gallery_kappas = torch.nn.Parameter(
+            torch.tensor(init_kappa, dtype=torch.float64)
+        )
         if train_T:
-            self.T = torch.nn.Parameter(torch.tensor(init_T))
+            self.T = torch.nn.Parameter(torch.tensor(init_T, dtype=torch.float64))
         else:
             self.T = torch.tensor(init_T)
         # self.gallery_means = torch.nn.Parameter(torch.rand(3, 2, dtype=torch.float64))

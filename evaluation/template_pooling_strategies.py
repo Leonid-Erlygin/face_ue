@@ -82,7 +82,9 @@ class PoolingMonteCarlo(AbstractTemplatePooling):
         template_ids: np.ndarray,
         medias: np.ndarray,
     ):
-        unique_templates, indices = np.unique(template_ids, return_index=True)
+        unique_templates, indices, counts = np.unique(
+            template_ids, return_index=True, return_counts=True
+        )
         # initialize class mean
         init_means = np.array(
             [
@@ -90,7 +92,7 @@ class PoolingMonteCarlo(AbstractTemplatePooling):
                 for uqt in unique_templates
             ]
         )
-        init_kappa = [200]
+        init_kappa = [400.0]
         init_kappas = [init_kappa] * len(unique_templates)
         init_T = 1.0
 
@@ -98,12 +100,13 @@ class PoolingMonteCarlo(AbstractTemplatePooling):
         gallery_params = GalleryParams(
             init_means, init_kappas, init_T, train_T=self.train_T
         )
+        target_classes = []
+        for c, count in enumerate(counts):
+            target_classes.extend([c] * count)
 
+        target_classes = torch.tensor(target_classes)
         geotorch.sphere(gallery_params, "gallery_means")
-
-        target_classes = torch.tensor(template_ids)
-
-        optimizer = torch.optim.Adam(gallery_params.parameters(), lr=0.1)
+        optimizer = torch.optim.Adam(gallery_params.parameters(), lr=0.001)
 
         num_steps = 450
 
@@ -123,12 +126,14 @@ class PoolingMonteCarlo(AbstractTemplatePooling):
             mean_probs = torch.mean(probs, axis=1)
             log_probs_new = torch.log(mean_probs)
             loss = nll_loss(log_probs_new, target_classes)
-            loss.backward()
-            optimizer.step()
             print(gallery_params.gallery_means)
             print(torch.norm(gallery_params.gallery_means, dim=-1))
             print(gallery_params.gallery_kappas)
+            print(torch.max(mean_probs))
+            print(log_probs_new)
             print(f"Iteration {iter}, Loss: {loss.item()}")
+            loss.backward()
+            optimizer.step()
 
         # return template_norm_feats, templates_kappa
 
