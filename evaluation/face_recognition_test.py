@@ -1,6 +1,7 @@
 import numpy as np
 from pathlib import Path
 import warnings
+from tqdm import tqdm
 
 from .embeddings import process_embeddings
 from .image2template import image2template_feature
@@ -71,10 +72,6 @@ class Face_Fecognition_test:
     def pool_templates(self, cache_dir: str):
         cache_dir = Path(cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)
-        # pooled_templates_path = (
-        #     cache_dir
-        #     / f"template_pool_{class_name}_det_score_{str(self.use_detector_score)}_{self.test_dataset.dataset_name}.npz"
-        # )
         template_subsets_path = (
             cache_dir
             / f"template_subsets_{self.probe_template_pooling_strategy.__class__.__name__}_{self.test_dataset.dataset_name}"
@@ -83,7 +80,7 @@ class Face_Fecognition_test:
             cache_dir
             / f"template_pool_{self.probe_template_pooling_strategy.__class__.__name__}_{self.test_dataset.dataset_name}"
         )
-        force_recompute = True
+
         similarity_matrix_path = template_subsets_path / "sim_matrix"
         similarity_matrix_path.mkdir(parents=True, exist_ok=True)
         template_subsets_path.mkdir(parents=True, exist_ok=True)
@@ -134,6 +131,10 @@ class Face_Fecognition_test:
                     probe_templates_sorted,
                     probe_subject_ids_sorted,
                 ) = self.get_template_subsets(
+                    self.image_input_feats,
+                    self.unc,
+                    self.test_dataset.templates,
+                    self.test_dataset.medias,
                     self.test_dataset.probe_ids,
                     self.test_dataset.probe_templates,
                 )
@@ -170,7 +171,12 @@ class Face_Fecognition_test:
                         gallery_templates_sorted,
                         gallery_subject_ids_sorted,
                     ) = self.get_template_subsets(
-                        gallery_subject_ids, gallery_templates
+                        self.image_input_feats,
+                        self.unc,
+                        self.test_dataset.templates,
+                        self.test_dataset.medias,
+                        gallery_subject_ids,
+                        gallery_templates,
                     )
                     np.savez(
                         template_subsets_path / f"gallery_{gallery_name}.npz",
@@ -277,27 +283,37 @@ class Face_Fecognition_test:
                     "template_subject_ids_sorted": probe_subject_ids_sorted,
                 }
 
+    @staticmethod
     def get_template_subsets(
-        self,
+        all_image_emb: np.ndarray,
+        all_image_unc: np.ndarray,
+        all_templates: np.ndarray,
+        all_medias: np.ndarray,
         subject_ids: np.ndarray,
         choose_templates: np.ndarray,
     ):
+        """
+        selects features, uncertainty and medias of templates specified in choose_templates
+        """
         assert subject_ids.shape[0] == choose_templates.shape[0]
         choose_templates_sort_id = np.argsort(
             choose_templates
         )  # is not stable sorting algorithm
-        choose_templates = choose_templates[choose_templates_sort_id]
+        choose_templates_sorted = choose_templates[choose_templates_sort_id]
         subject_ids_sorted = subject_ids[choose_templates_sort_id]
-        unique_templates, indices = np.unique(choose_templates, return_index=True)
-        unique_subject_ids = subject_ids_sorted[indices]  # sorted by template id
+        unique_templates, indices = np.unique(
+            choose_templates_sorted, return_index=True
+        )
+        unique_subject_ids = subject_ids_sorted[indices]
+
         templates_emb_subset = []
         template_uncertainty_subset = []
         medias_subset = []
-        for uqt in unique_templates:
-            ind_t = self.test_dataset.templates == uqt
-            templates_emb_subset.append(self.image_input_feats[ind_t])
-            template_uncertainty_subset.append(self.unc[ind_t])
-            medias_subset.append(self.test_dataset.medias[ind_t])
+        for uqt in tqdm(unique_templates):
+            ind_t = all_templates == uqt
+            templates_emb_subset.append(all_image_emb[ind_t])
+            template_uncertainty_subset.append(all_image_unc[ind_t])
+            medias_subset.append(all_medias[ind_t])
         templates_emb_subset = np.concatenate(templates_emb_subset, axis=0)
         template_uncertainty_subset = np.concatenate(
             template_uncertainty_subset, axis=0
@@ -308,7 +324,7 @@ class Face_Fecognition_test:
             templates_emb_subset,
             template_uncertainty_subset,
             medias_subset,
-            choose_templates,
+            choose_templates_sorted,
             unique_subject_ids,
         )
 
