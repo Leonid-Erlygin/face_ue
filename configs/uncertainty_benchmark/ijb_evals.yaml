@@ -135,14 +135,14 @@ open_set_identification_methods:
       train_T: False
       probability_model:
         _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
-        M: 10
+        M: 2
         gallery_prior: "power"
         emb_unc_model: "vMF"
         beta: 0.5
 
     probe_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingSCF #PoolingProb
-    use_detector_score: True
+    use_detector_score: False # True gives unnormalized embeddings
     sampler:
       _target_: evaluation.samplers.VonMisesFisher
       num_samples: 0 # set 0 to use mean of distr as one sample
