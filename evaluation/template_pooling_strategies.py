@@ -70,10 +70,14 @@ class PoolingDefault(AbstractTemplatePooling):
 
 
 class PoolingMonteCarlo(AbstractTemplatePooling):
-    def __init__(self, probability_model: Any, train_T: bool) -> None:
+    def __init__(
+        self, probability_model: Any, train_T: bool, lr: float, epoch_num: int
+    ) -> None:
         super().__init__()
         self.probability_model = probability_model
         self.train_T = train_T
+        self.lr = lr
+        self.epoch_num = epoch_num
 
     def __call__(
         self,
@@ -95,24 +99,24 @@ class PoolingMonteCarlo(AbstractTemplatePooling):
         init_kappa = [400.0]
         init_kappas = [init_kappa] * len(unique_templates)
         init_T = 1.0
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # train mean and concentration
         gallery_params = GalleryParams(
-            init_means, init_kappas, init_T, train_T=self.train_T
+            init_means, init_kappas, init_T, train_T=self.train_T, device=device
         )
+        # gallery_params.to(device)
         target_classes = []
         for c, count in enumerate(counts):
             target_classes.extend([c] * count)
 
-        target_classes = torch.tensor(target_classes)
+        target_classes = torch.tensor(target_classes, device=device)
         geotorch.sphere(gallery_params, "gallery_means")
-        optimizer = torch.optim.Adam(gallery_params.parameters(), lr=0.001)
-
-        num_steps = 450
+        optimizer = torch.optim.Adam(gallery_params.parameters(), lr=self.lr)
 
         nll_loss = torch.nn.NLLLoss()
 
-        for iter in range(num_steps):
+        for iter in range(self.epoch_num):
             optimizer.zero_grad()
             # compute nll loss
             log_probs = self.probability_model(

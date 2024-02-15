@@ -7,18 +7,20 @@ from evaluation.samplers import VonMisesFisher
 
 
 class GalleryParams(torch.nn.Module):
-    def __init__(self, init_mean, init_kappa, init_T, train_T):
+    def __init__(self, init_mean, init_kappa, init_T, train_T, device):
         super(GalleryParams, self).__init__()
         self.gallery_means = torch.nn.Parameter(
-            torch.tensor(init_mean, dtype=torch.float64)
+            torch.tensor(init_mean, dtype=torch.float64, device=device)
         )
         self.gallery_kappas = torch.nn.Parameter(
-            torch.tensor(init_kappa, dtype=torch.float64)
+            torch.tensor(init_kappa, dtype=torch.float64, device=device)
         )
         if train_T:
-            self.T = torch.nn.Parameter(torch.tensor(init_T, dtype=torch.float64))
+            self.T = torch.nn.Parameter(
+                torch.tensor(init_T, dtype=torch.float64, device=device)
+            )
         else:
-            self.T = torch.tensor(init_T)
+            self.T = torch.tensor(init_T, device=device)
         # self.gallery_means = torch.nn.Parameter(torch.rand(3, 2, dtype=torch.float64))
         # self.gallery_kappas = torch.nn.Parameter(
         #     torch.rand(3, 1, dtype=torch.float64) * 10
@@ -57,8 +59,8 @@ class MonteCarloPredictiveProb:
     ) -> Any:
         self.K = gallery_means.shape[0]
         # print(self.K)
-        zs = torch.tensor(self.sampler(mean, kappa))
-        d = torch.tensor([mean.shape[-1]])
+        zs = torch.tensor(self.sampler(mean, kappa), device=gallery_means.device)
+        d = torch.tensor([mean.shape[-1]], device=gallery_means.device)
         # print(zs.shape, gallery_means.shape)
         # print(zs, gallery_means)
         similarities = zs @ gallery_means.T

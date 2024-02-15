@@ -133,9 +133,11 @@ open_set_identification_methods:
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingMonteCarlo
       train_T: False
+      lr: 0.01
+      epoch_num: 400
       probability_model:
         _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
-        M: 2
+        M: 5
         gallery_prior: "power"
         emb_unc_model: "vMF"
         beta: 0.5
