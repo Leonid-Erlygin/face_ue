@@ -134,14 +134,13 @@ open_set_identification_methods:
       _target_: evaluation.template_pooling_strategies.PoolingMonteCarlo
       train_T: False
       lr: 0.01
-      epoch_num: 400
+      epoch_num: 40
       probability_model:
         _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
-        M: 5
+        M: 10
         gallery_prior: "power"
         emb_unc_model: "vMF"
         beta: 0.5
-
     probe_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingSCF #PoolingProb
     use_detector_score: False # True gives unnormalized embeddings
@@ -156,7 +155,7 @@ open_set_identification_methods:
       kappa: ${tau_list}
       beta: ${default_beta}
       uncertainty_type: maxprob
-      alpha: 0.5
+      alpha: 1
       aggregation: sum
       T: 0.28836
       T_data_unc: 30
@@ -169,7 +168,7 @@ open_set_identification_methods:
       _target_: evaluation.template_pooling_strategies.PoolingSCF
     probe_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingSCF #PoolingProb
-    use_detector_score: True
+    use_detector_score: False
     sampler:
       _target_: evaluation.samplers.VonMisesFisher
       num_samples: 0 # set 0 to use mean of distr as one sample
@@ -181,10 +180,10 @@ open_set_identification_methods:
       kappa: ${tau_list}
       beta: ${default_beta}
       uncertainty_type: maxprob
-      alpha: 0.5
+      alpha: 1
       aggregation: sum
       T: 0.28836
       T_data_unc: 30
       kappa_is_tau: True
-    pretty_name: "$u_{MC}$"
+    pretty_name: "$u_{SCF}$"
 

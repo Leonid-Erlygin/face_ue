@@ -78,7 +78,7 @@ class Face_Fecognition_test:
         )
         template_pool_path = (
             cache_dir
-            / f"template_pool_{self.probe_template_pooling_strategy.__class__.__name__}_{self.test_dataset.dataset_name}"
+            / f"template_pool_gallery-{self.gallery_template_pooling_strategy.__class__.__name__}_probe-{self.probe_template_pooling_strategy.__class__.__name__}_{self.test_dataset.dataset_name}"
         )
 
         similarity_matrix_path = template_subsets_path / "sim_matrix"

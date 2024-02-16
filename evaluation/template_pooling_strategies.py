@@ -139,7 +139,10 @@ class PoolingMonteCarlo(AbstractTemplatePooling):
             loss.backward()
             optimizer.step()
 
-        # return template_norm_feats, templates_kappa
+        return (
+            gallery_params.gallery_means.cpu().detach().numpy(),
+            gallery_params.gallery_kappas.cpu().detach().numpy(),
+        )
 
 
 class PoolingSCF(AbstractTemplatePooling):
