@@ -84,7 +84,7 @@ tau_to_far:
 # IJBC
 
 tau_list: 
-# - 0.3316050800917002 # far 0.1
+#  - 0.3316050800917002 # far 0.1
  - 0.3544668614198186 # far 0.05
 #  - 0.41305037376834797 # far 0.01
 #  - 0.4344078641808415 # far 0.005
@@ -132,12 +132,12 @@ open_set_identification_methods:
   - embeddings: scf
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingMonteCarlo
-      train_T: False
+      train_T: True
       lr: 0.01
-      epoch_num: 30
+      epoch_num: 100
       probability_model:
         _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
-        M: 30
+        M: 40
         gallery_prior: "power"
         emb_unc_model: "vMF"
         beta: 0.5

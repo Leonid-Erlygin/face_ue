@@ -99,7 +99,7 @@ class PoolingMonteCarlo(AbstractTemplatePooling):
         )
         init_means = init_means / np.linalg.norm(init_means, axis=1)[:, np.newaxis]
         kappa_norm = 1000
-        init_kappa = [430.0 / kappa_norm]
+        init_kappa = [300.0 / kappa_norm]
         init_kappas = [init_kappa] * len(unique_templates)
         init_T = 1.0
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -126,8 +126,9 @@ class PoolingMonteCarlo(AbstractTemplatePooling):
 
         target_classes = torch.tensor(target_classes, device=device)
 
-        optimizer_kappa = torch.optim.Adam([gallery_kappas], lr=self.lr * 1)
-        optimizer_means = torch.optim.Adam(gallery_means.parameters(), lr=self.lr)
+        optimizer_kappa = torch.optim.Adam([gallery_kappas], lr=self.lr * 2)
+        optimizer_means = torch.optim.Adam(gallery_means.parameters(), lr=self.lr / 10)
+        optimizer_T = torch.optim.Adam([T], lr=self.lr)
         nll_loss = torch.nn.NLLLoss()
 
         for iter in range(self.epoch_num):
@@ -144,6 +145,8 @@ class PoolingMonteCarlo(AbstractTemplatePooling):
 
             optimizer_kappa.zero_grad()
             optimizer_means.zero_grad()
+            if self.train_T:
+                optimizer_T.zero_grad()
             # compute nll loss
             log_probs = self.probability_model(
                 img_featues,
@@ -157,15 +160,20 @@ class PoolingMonteCarlo(AbstractTemplatePooling):
             log_probs_new = torch.log(mean_probs)
             loss = nll_loss(log_probs_new, target_classes)
 
-            # print(gallery_params.gallery_means)
-            # print(torch.norm(gallery_means.gallery_means, dim=-1))
-            print(torch.mean(gallery_kappas * kappa_norm))
+            print(
+                f"kappa mean {torch.mean(gallery_kappas * kappa_norm)}, kappa std {torch.std(gallery_kappas * kappa_norm)}"
+            )
+            print(f"First kappa {gallery_kappas[0] * kappa_norm}")
+            print(T)
+
             # print(torch.max(mean_probs))
             # print(log_probs_new)
             print(f"Iteration {iter}, Loss: {loss.item()}")
             loss.backward()
             optimizer_kappa.step()
             optimizer_means.step()
+            if self.train_T:
+                optimizer_T.step()
 
         return (
             torch.nn.functional.normalize(gallery_means.gallery_means)
