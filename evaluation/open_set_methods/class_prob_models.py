@@ -6,21 +6,21 @@ import numpy as np
 from evaluation.samplers import VonMisesFisher
 
 
+class GalleryMeans(torch.nn.Module):
+    def __init__(self, init_means, device):
+        super(GalleryMeans, self).__init__()
+        self.gallery_means = torch.nn.Parameter(
+            torch.tensor(init_means, dtype=torch.float64, device=device)
+        )
+
+
 class GalleryParams(torch.nn.Module):
     def __init__(self, init_mean, init_kappa, init_T, train_T, device):
         super(GalleryParams, self).__init__()
         self.gallery_means = torch.nn.Parameter(
             torch.tensor(init_mean, dtype=torch.float64, device=device)
         )
-        self.gallery_kappas = torch.nn.Parameter(
-            torch.tensor(init_kappa, dtype=torch.float64, device=device)
-        )
-        if train_T:
-            self.T = torch.nn.Parameter(
-                torch.tensor(init_T, dtype=torch.float64, device=device)
-            )
-        else:
-            self.T = torch.tensor(init_T, device=device)
+
         # self.gallery_means = torch.nn.Parameter(torch.rand(3, 2, dtype=torch.float64))
         # self.gallery_kappas = torch.nn.Parameter(
         #     torch.rand(3, 1, dtype=torch.float64) * 10

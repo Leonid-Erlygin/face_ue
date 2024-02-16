@@ -86,7 +86,7 @@ class Face_Fecognition_test:
         template_subsets_path.mkdir(parents=True, exist_ok=True)
         template_pool_path.mkdir(parents=True, exist_ok=True)
         pooled_templates_path = 1
-        if self.recompute_template_pooling is False and pooled_templates_path.is_file():
+        if self.recompute_template_pooling is False and False:
             pooled_data = np.load(pooled_templates_path)
             self.template_pooled_emb = pooled_data["template_pooled_emb"]
             self.template_pooled_unc = pooled_data["template_pooled_unc"]
@@ -189,7 +189,9 @@ class Face_Fecognition_test:
                 # 1. pool selected gallery templates
                 assert gallery_unc.shape[1] == 1  # working with scf unc
                 kappa = np.exp(gallery_unc)
-                if (template_pool_path / f"gallery_{gallery_name}.npz").is_file():
+                if (
+                    template_pool_path / f"gallery_{gallery_name}.npz"
+                ).is_file() and self.recompute_template_pooling is False:
                     print("Loading pool")
                     data = np.load(template_pool_path / f"gallery_{gallery_name}.npz")
                     pooled_data = (

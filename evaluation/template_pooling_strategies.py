@@ -7,7 +7,7 @@ from sklearn.preprocessing import normalize
 import scipy
 import geotorch
 from scipy.special import ive, hyp0f1, loggamma
-from evaluation.open_set_methods.class_prob_models import GalleryParams
+from evaluation.open_set_methods.class_prob_models import GalleryParams, GalleryMeans
 import torch
 
 
@@ -94,54 +94,85 @@ class PoolingMonteCarlo(AbstractTemplatePooling):
             [
                 np.mean(img_featues[np.where(template_ids == uqt)], axis=0)
                 for uqt in unique_templates
-            ]
+            ],
+            dtype=np.float64,
         )
-        init_kappa = [400.0]
+        init_means = init_means / np.linalg.norm(init_means, axis=1)[:, np.newaxis]
+        kappa_norm = 1000
+        init_kappa = [430.0 / kappa_norm]
         init_kappas = [init_kappa] * len(unique_templates)
         init_T = 1.0
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # train mean and concentration
-        gallery_params = GalleryParams(
-            init_means, init_kappas, init_T, train_T=self.train_T, device=device
+        gallery_means = GalleryMeans(init_means, device=device)
+        geotorch.sphere(gallery_means, "gallery_means")
+        gallery_means.gallery_means = torch.tensor(
+            init_means, dtype=torch.float64, device=device
         )
-        # gallery_params.to(device)
+
+        gallery_kappas = torch.nn.Parameter(
+            torch.tensor(init_kappas, dtype=torch.float64, device=device)
+        )
+        if self.train_T:
+            T = torch.nn.Parameter(
+                torch.tensor(init_T, dtype=torch.float64, device=device)
+            )
+        else:
+            T = torch.tensor(init_T, device=device, dtype=torch.float64)
         target_classes = []
         for c, count in enumerate(counts):
             target_classes.extend([c] * count)
 
         target_classes = torch.tensor(target_classes, device=device)
-        geotorch.sphere(gallery_params, "gallery_means")
-        optimizer = torch.optim.Adam(gallery_params.parameters(), lr=self.lr)
 
+        optimizer_kappa = torch.optim.Adam([gallery_kappas], lr=self.lr * 1)
+        optimizer_means = torch.optim.Adam(gallery_means.parameters(), lr=self.lr)
         nll_loss = torch.nn.NLLLoss()
 
         for iter in range(self.epoch_num):
-            optimizer.zero_grad()
+            # gallery_means_np = torch.nn.functional.normalize(gallery_params.gallery_means).cpu().detach().numpy()
+            gallery_means_np = gallery_means.gallery_means.cpu().detach().numpy()
+            similarity_to_init_mean = np.sum((init_means * gallery_means_np), axis=1)
+            print(
+                f"Mean sim {np.mean(similarity_to_init_mean)}, std sim {np.std(similarity_to_init_mean)}"
+            )
+
+            # normalize means
+
+            # = gallery_params.gallery_means / torch.norm(gallery_params.gallery_means, dim=-1, keepdim=True)
+
+            optimizer_kappa.zero_grad()
+            optimizer_means.zero_grad()
             # compute nll loss
             log_probs = self.probability_model(
                 img_featues,
                 kappa,
-                gallery_params.gallery_means,
-                gallery_params.gallery_kappas,
-                gallery_params.T,
+                gallery_means.gallery_means,  # torch.nn.functional.normalize(gallery_params.gallery_means),
+                gallery_kappas * kappa_norm,
+                T,
             )[:, :, :-1]
             probs = torch.exp(log_probs)
             mean_probs = torch.mean(probs, axis=1)
             log_probs_new = torch.log(mean_probs)
             loss = nll_loss(log_probs_new, target_classes)
+
             # print(gallery_params.gallery_means)
-            # print(torch.norm(gallery_params.gallery_means, dim=-1))
-            # print(gallery_params.gallery_kappas)
+            # print(torch.norm(gallery_means.gallery_means, dim=-1))
+            print(torch.mean(gallery_kappas * kappa_norm))
             # print(torch.max(mean_probs))
             # print(log_probs_new)
             print(f"Iteration {iter}, Loss: {loss.item()}")
             loss.backward()
-            optimizer.step()
+            optimizer_kappa.step()
+            optimizer_means.step()
 
         return (
-            gallery_params.gallery_means.cpu().detach().numpy(),
-            gallery_params.gallery_kappas.cpu().detach().numpy(),
+            torch.nn.functional.normalize(gallery_means.gallery_means)
+            .cpu()
+            .detach()
+            .numpy(),
+            gallery_kappas.cpu().detach().numpy() * kappa_norm,
         )
 
 
