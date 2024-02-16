@@ -1,1 +1,1 @@
-docker build -t face-eval $HOME/face_ue/docker_scripts
+docker build -t kolesnikov-face $HOME/face_ue/docker_scripts

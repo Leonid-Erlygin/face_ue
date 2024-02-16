@@ -29,14 +29,14 @@ WORKDIR /app
 
 
 USER root
-RUN groupadd -g 1005 erlygin
+RUN groupadd -g 1012 kolesnikov
 
-RUN adduser --disabled-password --uid 1005 --gid 1005 --gecos '' --shell /bin/bash erlygin \
- && chown -R erlygin:erlygin /app
-RUN echo "erlygin ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-erlygin
-USER erlygin
+RUN adduser --disabled-password --uid 1012 --gid 1012 --gecos '' --shell /bin/bash kolesnikov \
+ && chown -R kolesnikov /app
+RUN echo  "kolesnikov ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-kolesnikov
+USER kolesnikov
 
-ENV HOME=/home/erlygin
+ENV HOME=/home/kolesnikov
 
 
 
