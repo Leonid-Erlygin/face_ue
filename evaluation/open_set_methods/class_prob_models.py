@@ -43,6 +43,7 @@ class MonteCarloPredictiveProb:
         assert emb_unc_model in ["vMF", "PFE"]
         if emb_unc_model == "vMF":
             self.sampler = VonMisesFisher(self.M)
+
         self.gallery_prior = gallery_prior
         self.beta = beta
         self.predict_T = predict_T
@@ -77,7 +78,7 @@ class MonteCarloPredictiveProb:
         if self.pred_uncertainty_type == "entropy":
             unc = -np.sum(self.mean_probs * np.log(self.mean_probs), axis=-1)
         elif self.pred_uncertainty_type == "max_prob":
-            pass
+            unc = -np.max(self.mean_probs, axis=-1)
         return unc
 
     def compute_log_prob(

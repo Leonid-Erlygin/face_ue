@@ -149,12 +149,12 @@ open_set_identification_methods:
       num_samples: 0 # set 0 to use mean of distr as one sample
     recognition_method:
       _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
-      M: 40
+      M: 0
       gallery_prior: "power"
       emb_unc_model: "vMF"
       beta: 0.5
-      predict_T: 1.12
-      pred_uncertainty_type: entropy
+      predict_T: 0.5
+      pred_uncertainty_type: max_prob #entropy
       
     pretty_name: "$u_{MC} + MC pred$"
 
