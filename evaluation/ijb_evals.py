@@ -28,16 +28,13 @@ def get_args_string(d):
     return "-".join(args)
 
 
-def create_method_name(
-    method, sampler, template_pooling, distance_function, recognition_method
-):
+def create_method_name(method, sampler, template_pooling, recognition_method):
     method_name_parts = []
     method_name_parts.append(
         f"sampler-{sampler.__class__.__name__}-num-samples-{sampler.num_samples}"
     )
     method_name_parts.append(f"pooling-with-{template_pooling.__class__.__name__}")
     method_name_parts.append(f"use-det-score-{method.use_detector_score}")
-    method_name_parts.append(f"distance-{distance_function.__class__.__name__}")
     method_name_parts.append(f"osr-method-{recognition_method.__class__.__name__}")
     method_name = "_".join(method_name_parts)
     return method_name
@@ -68,33 +65,36 @@ def multiply_methods(cfg, methods, method_task_type):
         return methods, method_task_type
     new_methods = []
     for method in methods:
-        assert method.recognition_method.kappa_is_tau
+        if "kappa_is_tau" in method.recognition_method:
+            assert method.recognition_method.kappa_is_tau
 
-        if type(method.recognition_method.T) != omegaconf.listconfig.ListConfig:
-            method.recognition_method.T = [method.recognition_method.T] * len(
-                method.recognition_method.kappa
-            )
-        if (
-            type(method.recognition_method.T_data_unc)
-            != omegaconf.listconfig.ListConfig
-        ):
-            method.recognition_method.T_data_unc = [
-                method.recognition_method.T_data_unc
-            ] * len(method.recognition_method.kappa)
-        for tau, T, T_data_unc in zip(
-            method.recognition_method.kappa,
-            method.recognition_method.T,
-            method.recognition_method.T_data_unc,
-        ):
-            new_method = method.copy()
-            new_method.recognition_method.kappa = tau
-            new_method.recognition_method.T = T
-            new_method.recognition_method.T_data_unc = T_data_unc
-            new_method.pretty_name = (
-                method.pretty_name
-                # + f"_tau-{np.round(tau, 2)}_T-{np.round(T, 2)}_T_data-{np.round(T_data_unc, 2)}"
-            )
-            new_methods.append(new_method)
+            if type(method.recognition_method.T) != omegaconf.listconfig.ListConfig:
+                method.recognition_method.T = [method.recognition_method.T] * len(
+                    method.recognition_method.kappa
+                )
+            if (
+                type(method.recognition_method.T_data_unc)
+                != omegaconf.listconfig.ListConfig
+            ):
+                method.recognition_method.T_data_unc = [
+                    method.recognition_method.T_data_unc
+                ] * len(method.recognition_method.kappa)
+            for tau, T, T_data_unc in zip(
+                method.recognition_method.kappa,
+                method.recognition_method.T,
+                method.recognition_method.T_data_unc,
+            ):
+                new_method = method.copy()
+                new_method.recognition_method.kappa = tau
+                new_method.recognition_method.T = T
+                new_method.recognition_method.T_data_unc = T_data_unc
+                new_method.pretty_name = (
+                    method.pretty_name
+                    # + f"_tau-{np.round(tau, 2)}_T-{np.round(T, 2)}_T_data-{np.round(T_data_unc, 2)}"
+                )
+                new_methods.append(new_method)
+        else:
+            new_methods.append(method)
     return new_methods, [method_task_type[0]] * len(new_methods)
 
 
@@ -147,7 +147,6 @@ def main(cfg):
             method.probe_template_pooling_strategy
         )
         sampler = instantiate(method.sampler)
-        distance_function = instantiate(method.distance_function)
         recognition_method = instantiate(method.recognition_method)
 
         # create unique method name
@@ -157,11 +156,10 @@ def main(cfg):
                     method,
                     sampler,
                     gallery_template_pooling_strategy,
-                    distance_function,
                     recognition_method,
                 )
                 + f"_{method.pretty_name}"
-                + f"far:{cfg.tau_to_far[dataset_name][method.recognition_method.kappa]}"
+                # + f"far:{cfg.tau_to_far[dataset_name][method.recognition_method.kappa]}"
             )
         else:
             method_name = (
@@ -169,11 +167,10 @@ def main(cfg):
                     method,
                     sampler,
                     gallery_template_pooling_strategy,
-                    distance_function,
                     recognition_method,
                 )
                 + f"_{method.pretty_name}"
-                + f"tau-{method.recognition_method.kappa}"
+                # + f"tau-{method.recognition_method.kappa}"
             )
         print(method_name)
         pretty_names[task_type][method_name] = method.pretty_name
@@ -187,7 +184,6 @@ def main(cfg):
             method_name=method_name,
             recognition_method=recognition_method,
             sampler=sampler,
-            distance_function=distance_function,
             test_dataset=test_dataset,
             embeddings_path=embeddings_path,
             gallery_template_pooling_strategy=gallery_template_pooling_strategy,

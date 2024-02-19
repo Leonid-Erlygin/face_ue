@@ -148,7 +148,8 @@ class PoolingMonteCarlo(AbstractTemplatePooling):
             if self.train_T:
                 optimizer_T.zero_grad()
             # compute nll loss
-            log_probs = self.probability_model(
+
+            log_probs = self.compute_log_prob(
                 img_featues,
                 kappa,
                 gallery_means.gallery_means,  # torch.nn.functional.normalize(gallery_params.gallery_means),

@@ -21,11 +21,6 @@ class GalleryParams(torch.nn.Module):
             torch.tensor(init_mean, dtype=torch.float64, device=device)
         )
 
-        # self.gallery_means = torch.nn.Parameter(torch.rand(3, 2, dtype=torch.float64))
-        # self.gallery_kappas = torch.nn.Parameter(
-        #     torch.rand(3, 1, dtype=torch.float64) * 10
-        # )
-
 
 class MonteCarloPredictiveProb:
     def __init__(
@@ -34,6 +29,8 @@ class MonteCarloPredictiveProb:
         gallery_prior: str,
         emb_unc_model: str,
         beta: float,
+        predict_T: float = 1.0,
+        pred_uncertainty_type: str = "entropy",
     ) -> None:
         """
         params:
@@ -48,8 +45,42 @@ class MonteCarloPredictiveProb:
             self.sampler = VonMisesFisher(self.M)
         self.gallery_prior = gallery_prior
         self.beta = beta
+        self.predict_T = predict_T
+        self.pred_uncertainty_type = pred_uncertainty_type
+        assert self.pred_uncertainty_type in ["entropy", "max_prob"]
 
-    def __call__(
+    def setup(
+        self,
+        probe_feats: np.ndarray,
+        probe_unc: np.ndarray,
+        gallery_feats: np.ndarray,
+        gallery_unc: np.ndarray,
+    ):
+        self.all_classes_log_prob = (
+            self.compute_log_prob(
+                probe_feats, probe_unc, gallery_feats, gallery_unc, self.predict_T
+            )
+            .cpu()
+            .detach()
+            .numpy()
+        )
+
+    def predict(self):
+        probs = torch.exp(self.all_classes_log_prob)
+        self.mean_probs = torch.mean(probs, axis=1)
+        predict_id = np.argmax(self.mean_probs[:, :-1], axis=-1)
+        return predict_id, np.argmax(self.mean_probs, axis=-1) == (
+            self.mean_probs.shape[-1] - 1
+        )
+
+    def predict_uncertainty(self):
+        if self.pred_uncertainty_type == "enpropy":
+            unc = -np.sum(self.mean_probs * np.log(self.mean_probs), axis=-1)
+        elif self.pred_uncertainty_type == "max_prob":
+            pass
+        return unc
+
+    def compute_log_prob(
         self,
         mean: np.array,
         kappa: np.array,
@@ -58,14 +89,13 @@ class MonteCarloPredictiveProb:
         T: torch.nn.Parameter,
     ) -> Any:
         self.K = gallery_means.shape[0]
-        # print(self.K)
         zs = torch.tensor(self.sampler(mean, kappa), device=gallery_means.device)
         d = torch.tensor([mean.shape[-1]], device=gallery_means.device)
-        # print(zs.shape, gallery_means.shape)
-        # print(zs, gallery_means)
+        if type(gallery_means) == np.ndarray:
+            # inference
+            gallery_means = torch.tensor(gallery_means)
+            gallery_kappas = torch.tensor(gallery_kappas)
         similarities = zs @ gallery_means.T
-        # print(similarities.shape)
-        # print(similarities)
         if self.gallery_prior == "power":
             log_m_c_power = (
                 torch.special.gammaln(d - 1 + gallery_kappas)
@@ -81,7 +111,6 @@ class MonteCarloPredictiveProb:
             log_normalizer = log_m_c_power + log_uniform_dencity
         # compute log z prob
         p_c = ((1 - self.beta) / self.K) ** (1 / T)
-        # print(similarities.shape, gallery_kappas.shape, log_uniform.shape, m_c_power.shape)
         logit_sum = (
             torch.sum(
                 (m_c_power[..., :, 0] ** (1 / T))
@@ -95,7 +124,6 @@ class MonteCarloPredictiveProb:
         )
 
         log_beta = np.log(self.beta)
-        # print(similarities.shape, gallery_kappas.shape)
         uniform_log_prob = (1 / T) * (log_uniform_dencity + log_beta) - log_z_prob
 
         # compute gallery classes log prob
@@ -103,14 +131,10 @@ class MonteCarloPredictiveProb:
             torch.log((1 + similarities)) * gallery_kappas[..., :, 0]
             + log_normalizer[..., :, 0]
         )
-        # print(pz_c.shape, log_z_prob.shape)
         gallery_log_probs = (1 / T) * (
             pz_c + np.log((1 - self.beta) / self.K)
         ) - log_z_prob[..., np.newaxis]
-        # print(uniform_log_prob.shape)
         log_probs = torch.cat(
             [gallery_log_probs, uniform_log_prob[..., np.newaxis]], dim=-1
         )
-        # print(log_probs.shape)
-        # print(torch.sum(log_probs, dim=-1))
         return log_probs
