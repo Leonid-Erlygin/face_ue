@@ -42,6 +42,7 @@ class PosteriorProbability(OpenSetMethod):
         gallery_feats: np.ndarray,
         gallery_unc: np.ndarray,
     ):
+        probe_feats = probe_feats[:, np.newaxis, :]
         self.data_uncertainty = probe_unc
 
         similarity_matrix = self.distance_function(

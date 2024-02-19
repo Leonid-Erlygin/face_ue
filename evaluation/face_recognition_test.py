@@ -344,15 +344,17 @@ class Face_Fecognition_test:
         unc_metrics = {gallery: {} for gallery in used_galleries}
 
         for gallery_name in used_galleries:
-            # sample probe feature vectors
-            probe_templates_feature = self.sampler(
-                self.probe_pooled_templates[gallery_name]["template_pooled_features"],
-                self.probe_pooled_templates[gallery_name]["template_pooled_data_unc"],
-            )
+            # # sample probe feature vectors
+            # probe_templates_feature = self.sampler(
+            #     self.probe_pooled_templates[gallery_name]["template_pooled_features"],
+            #     self.probe_pooled_templates[gallery_name]["template_pooled_data_unc"],
+            # )
 
             # setup osr method and predict
             self.recognition_method.setup(
-                probe_templates_feature,
+                self.probe_pooled_templates[gallery_name][
+                    "template_pooled_features"
+                ],  # probe_templates_feature,
                 self.probe_pooled_templates[gallery_name]["template_pooled_data_unc"],
                 self.gallery_pooled_templates[gallery_name]["template_pooled_features"],
                 self.gallery_pooled_templates[gallery_name]["template_pooled_data_unc"],

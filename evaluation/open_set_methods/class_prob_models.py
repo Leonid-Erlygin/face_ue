@@ -66,15 +66,15 @@ class MonteCarloPredictiveProb:
         )
 
     def predict(self):
-        probs = torch.exp(self.all_classes_log_prob)
-        self.mean_probs = torch.mean(probs, axis=1)
+        probs = np.exp(self.all_classes_log_prob)
+        self.mean_probs = np.mean(probs, axis=1)
         predict_id = np.argmax(self.mean_probs[:, :-1], axis=-1)
         return predict_id, np.argmax(self.mean_probs, axis=-1) == (
             self.mean_probs.shape[-1] - 1
         )
 
     def predict_uncertainty(self):
-        if self.pred_uncertainty_type == "enpropy":
+        if self.pred_uncertainty_type == "entropy":
             unc = -np.sum(self.mean_probs * np.log(self.mean_probs), axis=-1)
         elif self.pred_uncertainty_type == "max_prob":
             pass
@@ -88,13 +88,13 @@ class MonteCarloPredictiveProb:
         gallery_kappas: torch.nn.Parameter,
         T: torch.nn.Parameter,
     ) -> Any:
-        self.K = gallery_means.shape[0]
-        zs = torch.tensor(self.sampler(mean, kappa), device=gallery_means.device)
-        d = torch.tensor([mean.shape[-1]], device=gallery_means.device)
         if type(gallery_means) == np.ndarray:
             # inference
             gallery_means = torch.tensor(gallery_means)
             gallery_kappas = torch.tensor(gallery_kappas)
+        self.K = gallery_means.shape[0]
+        zs = torch.tensor(self.sampler(mean, kappa), device=gallery_means.device)
+        d = torch.tensor([mean.shape[-1]], device=gallery_means.device)
         similarities = zs @ gallery_means.T
         if self.gallery_prior == "power":
             log_m_c_power = (
