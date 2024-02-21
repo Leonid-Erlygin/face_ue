@@ -2,10 +2,10 @@
 
 seed_everything: 7
 trainer:
-#   logger:
-#     class_path: pytorch_lightning.loggers.WandbLogger
-#     init_args:
-#       project: "face_incertainty_train"
+  logger:
+    class_path: pytorch_lightning.loggers.WandbLogger
+    init_args:
+      project: "face_incertainty_train"
   log_every_n_steps: 3
   default_root_dir: outputs/scf_train
   enable_checkpointing: true

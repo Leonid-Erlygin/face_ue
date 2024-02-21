@@ -197,9 +197,7 @@ class PosteriorProb:
                 - self.log_iv
             )
         elif self.class_model == "power":
-            log_alpha_vmF = np.log(
-                hyp0f1(self.n, self.kappa**2 / 4, dtype=np.float64)
-            )
+            log_alpha_vmF = np.log(hyp0f1(self.n, self.kappa**2 / 4, dtype=np.float64))
 
             shift = np.log(1 + (self.log_prior + log_alpha_vmF) / self.kappa)
             self.kappa_zero = fsolve(
