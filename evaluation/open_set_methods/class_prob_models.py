@@ -29,16 +29,21 @@ class MonteCarloPredictiveProb:
         gallery_prior: str,
         emb_unc_model: str,
         beta: float,
+        kappa_scale: float = 1.0,
+        kappa_input_scale: float = 1.0,
         predict_T: float = 1.0,
         pred_uncertainty_type: str = "entropy",
     ) -> None:
         """
         params:
         M -- number of MC samples
+        kappa_scale -- gallery unc multiplier
         gallery_prior -- model for p(z|c)
         emb_unc_model -- form of p(z|x)
         """
         self.M = M
+        self.kappa_scale = kappa_scale
+        self.kappa_input_scale = kappa_input_scale
         assert gallery_prior in ["power", "vMF"]
         assert emb_unc_model in ["vMF", "PFE"]
         if emb_unc_model == "vMF":
@@ -57,9 +62,15 @@ class MonteCarloPredictiveProb:
         gallery_feats: np.ndarray,
         gallery_unc: np.ndarray,
     ):
+        gallery_unc_scaled = gallery_unc * self.kappa_scale
+        probe_unc_scaled = probe_unc * self.kappa_input_scale
         self.all_classes_log_prob = (
             self.compute_log_prob(
-                probe_feats, probe_unc, gallery_feats, gallery_unc, self.predict_T
+                probe_feats,
+                probe_unc_scaled,
+                gallery_feats,
+                gallery_unc_scaled,
+                self.predict_T,
             )
             .cpu()
             .detach()
@@ -68,6 +79,7 @@ class MonteCarloPredictiveProb:
 
     def predict(self):
         probs = np.exp(self.all_classes_log_prob)
+        # probs = self.all_classes_log_prob
         self.mean_probs = np.mean(probs, axis=1)
         predict_id = np.argmax(self.mean_probs[:, :-1], axis=-1)
         return predict_id, np.argmax(self.mean_probs, axis=-1) == (
