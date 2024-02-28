@@ -2,7 +2,7 @@ hydra:
   run:
     dir: ${exp_dir}
 
-exp_dir: outputs/experiments/mc_prob_M10_input1.5
+exp_dir: outputs/experiments/mc_prob_M10
 use_two_galleries: False
 recompute_template_pooling: False
 metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
@@ -180,7 +180,7 @@ open_set_identification_methods:
     recognition_method:
       _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
       M: 10
-      kappa_scale: 1.5
+      kappa_scale: 1.0
       kappa_input_scale: 1.0
       gallery_prior: "power"
       emb_unc_model: "vMF"
@@ -188,7 +188,7 @@ open_set_identification_methods:
       predict_T: 1
       pred_uncertainty_type: entropy # max_prob
       
-    pretty_name: "$u_{MC} + MC pred$ scale 1.5"
+    pretty_name: "$u_{MC} + MC pred$"
 
   # - embeddings: scf
   #   gallery_template_pooling_strategy:
