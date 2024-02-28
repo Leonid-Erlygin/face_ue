@@ -16,7 +16,7 @@ trainer:
       dir: null
       id: null
       anonymous: null
-      project: face_incertainty_train
+      project: face-ue
       log_model: false
       experiment: null
       prefix: ''
@@ -43,7 +43,7 @@ trainer:
   callbacks:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args:
-      dirpath: outputs/pfe_train/weights
+      dirpath: outputs/scf_train/weights
       filename: null
       monitor: null
       verbose: false
@@ -52,7 +52,7 @@ trainer:
       save_weights_only: false
       mode: min
       auto_insert_metric_name: true
-      every_n_train_steps: 5000
+      every_n_train_steps: 1000
       train_time_interval: null
       every_n_epochs: null
       save_on_train_epoch_end: null
@@ -60,13 +60,13 @@ trainer:
     init_args:
       logging_interval: step
       log_momentum: false
-  - class_path: face_lib.models.pfe.IJB_writer
+  - class_path: face_lib.models.scf.Prediction_writer
     init_args:
       output_dir: /app/cache/features
+      file_name: scf_embs_nose
       write_interval: epoch
-      subset: IJBC
   fast_dev_run: false
-  max_epochs: 4
+  max_epochs: 5
   min_epochs: null
   max_steps: -1
   min_steps: null
@@ -96,10 +96,10 @@ trainer:
   plugins: null
   sync_batchnorm: false
   reload_dataloaders_every_n_epochs: 0
-  default_root_dir: outputs/pfe_train
+  default_root_dir: outputs/scf_train
 ckpt_path: null
 model:
-  class_path: face_lib.models.pfe.ProbabilisticFaceEmbedding
+  class_path: face_lib.models.scf.SphereConfidenceFace
   init_args:
     backbone:
       class_path: face_lib.models.lightning_wrappers.ResNet
@@ -108,34 +108,42 @@ model:
         weights: /app/model_weights/backbone/ms1mv3_arcface_r50/backbone.pth
         learnable: false
     head:
-      class_path: face_lib.models.heads.PFEHeadAdjustableLightning
+      class_path: face_lib.models.heads.SCFHead
       init_args:
-        in_feat: 25088
-        out_feat: 512
-        learnable: true
-    pfe_loss:
-      class_path: face_lib.models.losses.PFELoss
+        convf_dim: 25088
+        latent_vector_size: 2048
+    scf_loss:
+      class_path: face_lib.models.losses.KLDiracPS
       init_args:
-        mean: true
+        z_dim: 512
+    softmax_weights:
+      class_path: face_lib.models.scf.SoftmaxWeights
+      init_args:
+        softmax_weights_path: /app/model_weights/backbone/ms1mv3_arcface_r50/softmax_weight.pt
+        radius: 64
     optimizer_params:
-      optimizer_path: face_lib.optimizers.lars
-      optimizer_name: LARS
+      optimizer_path: torch.optim
+      optimizer_name: AdamW
       params:
-        lr: 1.0e-08
-        weight_decay: 1.0e-05
+        lr: 1.0e-06
+        weight_decay: 0.005
     scheduler_params:
       scheduler: StepLR
       params:
-        step_size: 10000
+        step_size: 5000
         gamma: 0.5
       interval: step
       frequency: 1
+    permute_batch: false
 data:
-  class_path: face_lib.datasets.lightning_datasets.UncertaintyDataModule
+  class_path: face_lib.dataset_classes.lightning_datasets.UncertaintyDataModule
   init_args:
     data_train_dir: /app/datasets/ms1m/
-    add_nose: false
-    data_predict_dir: /app/datasets/arcface_ijb
-    data_predict_subset: IJBC
-    batch_size: 180
+    predict_dataset:
+      class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+      init_args:
+        dataset_path: /app/datasets/gaussian_nose
+        dataset_name: nose
+        norm_image: true
+    batch_size: 9
     num_workers: 20

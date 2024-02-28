@@ -66,16 +66,20 @@ class SphereConfidenceFace(LightningModule):
         feature, log_kappa = self(images)
         kappa = torch.exp(log_kappa)
         wc = self.softmax_weights[labels, :]
-        losses, l1, l2, l3 = self.scf_loss(feature, kappa, wc)
+        losses, l1, l2, l3, cos = self.scf_loss(feature, kappa, wc)
 
         kappa_mean = kappa.mean()
         total_loss = losses.mean()
-        neg_kappa_times_cos_theta = l1.mean()
-        neg_dim_scalar_times_log_kappa = l2.mean()
-        log_iv_kappa = l3.mean()
+        #neg_kappa_times_cos_theta = l1.mean()
+        #neg_dim_scalar_times_log_kappa = l2.mean()
+        #log_iv_kappa = l3.mean()
 
         self.log("train_loss", total_loss.item(), prog_bar=True)
         self.log("kappa", kappa_mean.item())
+        self.log("l1", l1.mean().item())
+        self.log("l2", l2.mean().item())
+        self.log("l3", l3.mean().item())
+        self.log("cos", cos.mean().item())
 
         return total_loss
 

@@ -4,6 +4,8 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 import math
 
+from scipy.special import loggamma
+
 from face_lib.models import FaceModule
 from face_lib.models.scf_ive import ive
 
@@ -52,7 +54,7 @@ class KLDiracPS(nn.Module):
         # mu and wc: (B, dim)
         # kappa: (B, 1)
 
-        B = mu.size(0)
+        #B = mu.size(0)
         d = self.z_dim
 
         alpha = (d - 1)/2 + kappa
@@ -60,17 +62,20 @@ class KLDiracPS(nn.Module):
 
         cos_theta = torch.sum(mu * wc, dim=1, keepdim=True)  # slow?
 
-        l1 = (alpha + beta)*torch.log(2) + beta*torch.log(torch.pi)
-        l2 = torch.log(scipy.special.gamma(alpha)) - torch.log(scipy.special.gamma(alpha + beta))
-        l3 = -kappa*(torch.log(1 + cos_theta))
+        l1 = (alpha)*torch.log(torch.tensor(2)) - kappa*(torch.log(1 + cos_theta))
+        #l2 = loggamma(beta + kappa.data.cpu().numpy()) - loggamma(kappa.data.cpu().numpy() + 2*beta)
+        #l2 = torch.Tensor(l2).to(l1.device)
+        l2 = torch.lgamma(alpha) - torch.lgamma(alpha + beta)
+        l3 = beta*torch.log(torch.tensor(torch.pi))
 
-        losses = l1 + l2 + l3 + (d / 2) * math.log(2 * math.pi) + d * math.log(r)
+        losses = l1 + l2 + l3
 
         return (
             losses,
             l1,
             l2,
             l3,
+            cos_theta,
         )
 
 class CosFace(nn.Module):

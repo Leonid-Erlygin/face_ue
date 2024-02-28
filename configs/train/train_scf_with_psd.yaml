@@ -1,9 +1,9 @@
 seed_everything: 7
 trainer:
-#   logger:
-#     class_path: pytorch_lightning.loggers.WandbLogger
-#     init_args:
-#       project: "face_incertainty_train"
+  logger:
+    class_path: pytorch_lightning.loggers.WandbLogger
+    init_args:
+      project: "face-ue"
   log_every_n_steps: 3
   default_root_dir: outputs/scf_train
   enable_checkpointing: true
@@ -47,9 +47,10 @@ model:
                 softmax_weights_path: /app/model_weights/backbone/ms1mv3_arcface_r50/softmax_weight.pt
                 radius: 64 #${model.scf_loss.init_args.radius}
         optimizer_params:
-            optimizer: AdamW # Adam
+            optimizer_path: torch.optim
+            optimizer_name: AdamW # Adam
             params:
-                lr: 1e-3
+                lr: 1e-6
                 weight_decay: 5e-3
         # scheduler_params:
         #     scheduler: CyclicLR
@@ -61,6 +62,7 @@ model:
         #         mode: "triangular2"
         #     interval: "step"
         #     frequency: 1
+        # permute_batch: False
         scheduler_params:
             scheduler: StepLR
             params:

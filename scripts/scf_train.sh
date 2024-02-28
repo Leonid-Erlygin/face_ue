@@ -1,16 +1,16 @@
-docker run -d \
+docker run \
  --shm-size=8g \
  --memory=80g \
  --cpus=40 \
- --user 1133:1134 \
+ --user 1012:1012 \
  --name scf_train \
- --env WANDB_API_KEY=b2c5aadfb0bf526689d07a4bb4aae1eb58faf5b9 \
+ --env WANDB_API_KEY=fc366b0c6dc3150de383b028451e1cfa35009932 \
  --rm \
  --init \
- -v /home/l.erlygin/face-evaluation:/app \
+ -v /home/i.kolesnikov/face_ue:/app \
  --gpus all \
  -w="/app" \
- face-eval \
+ kolesnikov-face \
  python trainers/train.py fit \
  --config configs/train/train_sphere_face.yaml
 # --ckpt_path=/app/models/scf/epoch=3-step=90000.ckpt
