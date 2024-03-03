@@ -18,7 +18,7 @@ trainer:
   - class_path: face_lib.models.scf.Prediction_writer
     init_args: 
       output_dir: /app/cache/features
-      file_name: scf_embs_nose # scf_embs_inter  #scf_embs_lfw #scf_embs_ms1m_3531-classes_0-seed_30-min-class-size
+      file_name: scf_embs_psd # scf_embs_inter  #scf_embs_lfw #scf_embs_ms1m_3531-classes_0-seed_30-min-class-size
       write_interval: epoch
   max_epochs: 5
   accelerator: gpu
@@ -41,6 +41,7 @@ model:
             class_path: face_lib.models.losses.KLDiracPS
             init_args:
                 z_dim: 512
+                radius: 64
         softmax_weights:
             class_path: face_lib.models.scf.SoftmaxWeights
             init_args:
@@ -50,8 +51,8 @@ model:
             optimizer_path: torch.optim
             optimizer_name: AdamW # Adam
             params:
-                lr: 1e-6
-                weight_decay: 5e-3
+                lr: 3e-5
+                weight_decay: 5e-4
         # scheduler_params:
         #     scheduler: CyclicLR
         #     params:
@@ -66,8 +67,8 @@ model:
         scheduler_params:
             scheduler: StepLR
             params:
-                step_size: 5000
-                gamma: 0.5
+                step_size: 10000
+                gamma: 0.7
             interval: "step"
             frequency: 1
         permute_batch: False
@@ -118,5 +119,5 @@ data:
         #     init_args:
         #         data_dir: /app/datasets/QMUL-SurvFace/Face_Identification_Test_Set
 
-        batch_size: 9
+        batch_size: 16
         num_workers: 20

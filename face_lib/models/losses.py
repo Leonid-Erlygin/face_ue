@@ -45,10 +45,10 @@ class KLDiracVMF(nn.Module):
 
 
 class KLDiracPS(nn.Module):
-    def __init__(self, z_dim: int):
+    def __init__(self, z_dim: int, radius: int):
         super().__init__()
         self.z_dim = z_dim
-        #self.radius = radius
+        self.radius = radius
 
     def forward(self, mu, kappa, wc):
         # mu and wc: (B, dim)
@@ -56,11 +56,12 @@ class KLDiracPS(nn.Module):
 
         #B = mu.size(0)
         d = self.z_dim
+        r = self.radius
 
         alpha = (d - 1)/2 + kappa
         beta = (d - 1)/2
 
-        cos_theta = torch.sum(mu * wc, dim=1, keepdim=True)  # slow?
+        cos_theta = torch.sum(mu * wc, dim=1, keepdim=True) / r  # slow?
 
         l1 = (alpha)*torch.log(torch.tensor(2)) - kappa*(torch.log(1 + cos_theta))
         #l2 = loggamma(beta + kappa.data.cpu().numpy()) - loggamma(kappa.data.cpu().numpy() + 2*beta)
@@ -68,7 +69,7 @@ class KLDiracPS(nn.Module):
         l2 = torch.lgamma(alpha) - torch.lgamma(alpha + beta)
         l3 = beta*torch.log(torch.tensor(torch.pi))
 
-        losses = l1 + l2 + l3
+        losses = l1 + l2 + l3 + d * math.log(r)
 
         return (
             losses,
