@@ -16,8 +16,8 @@ class Face_Fecognition_test:
         task_type: str,
         method_name: str,
         recognition_method,
-        sampler,
         test_dataset: FaceRecogntioniDataset,
+        embedding_type: str,
         embeddings_path: str,
         gallery_template_pooling_strategy: AbstractTemplatePooling,
         probe_template_pooling_strategy: AbstractTemplatePooling,
@@ -32,10 +32,10 @@ class Face_Fecognition_test:
         self.recognition_method = recognition_method
         self.use_two_galleries = use_two_galleries
         self.test_dataset = test_dataset
+        self.embedding_type = embedding_type
         self.recompute_template_pooling = recompute_template_pooling
         self.recognition_metrics = recognition_metrics
         self.uncertainty_metrics = uncertainty_metrics
-        self.sampler = sampler
         self.gallery_template_pooling_strategy = gallery_template_pooling_strategy
         self.probe_template_pooling_strategy = probe_template_pooling_strategy
         self.use_detector_score = use_detector_score
@@ -44,7 +44,6 @@ class Face_Fecognition_test:
         aa = np.load(embeddings_path)
         self.embeddings_path = embeddings_path
         self.embs = aa["embs"]
-        self.embs_f = []
         self.unc = aa["unc"]
         if self.test_dataset.face_scores is not None:
             self.test_dataset.face_scores = self.test_dataset.face_scores.astype(
@@ -54,14 +53,13 @@ class Face_Fecognition_test:
         # process embeddings
         self.image_input_feats = process_embeddings(
             self.embs,
-            self.embs_f,
+            [],
             use_flip_test=False,
             use_norm_score=False,
             use_detector_score=self.use_detector_score,
             face_scores=self.test_dataset.face_scores,
         )
         # pool templates
-
         self.pool_templates(cache_dir="/app/cache/template_cache_new")
 
         assert self.image_input_feats.shape[0] == self.unc.shape[0]
@@ -76,6 +74,7 @@ class Face_Fecognition_test:
         )
         template_pool_path = (
             cache_dir
+            / Path(self.embedding_type)
             / f"template_pool_gallery-{self.gallery_template_pooling_strategy.__class__.__name__}_probe-{self.probe_template_pooling_strategy.__class__.__name__}_{self.test_dataset.dataset_name}"
         )
 
@@ -344,11 +343,6 @@ class Face_Fecognition_test:
         unc_metrics = {gallery: {} for gallery in used_galleries}
 
         for gallery_name in used_galleries:
-            # # sample probe feature vectors
-            # probe_templates_feature = self.sampler(
-            #     self.probe_pooled_templates[gallery_name]["template_pooled_features"],
-            #     self.probe_pooled_templates[gallery_name]["template_pooled_data_unc"],
-            # )
 
             # setup osr method and predict
             self.recognition_method.setup(

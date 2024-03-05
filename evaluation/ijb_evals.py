@@ -28,11 +28,8 @@ def get_args_string(d):
     return "-".join(args)
 
 
-def create_method_name(method, sampler, template_pooling, recognition_method):
+def create_method_name(method, template_pooling, recognition_method):
     method_name_parts = []
-    method_name_parts.append(
-        f"sampler-{sampler.__class__.__name__}-num-samples-{sampler.num_samples}"
-    )
     method_name_parts.append(f"pooling-with-{template_pooling.__class__.__name__}")
     method_name_parts.append(f"use-det-score-{method.use_detector_score}")
     method_name_parts.append(f"osr-method-{recognition_method.__class__.__name__}")
@@ -146,7 +143,6 @@ def main(cfg):
         probe_template_pooling_strategy = instantiate(
             method.probe_template_pooling_strategy
         )
-        sampler = instantiate(method.sampler)
         recognition_method = instantiate(method.recognition_method)
 
         # create unique method name
@@ -154,7 +150,6 @@ def main(cfg):
             method_name = (
                 create_method_name(
                     method,
-                    sampler,
                     gallery_template_pooling_strategy,
                     recognition_method,
                 )
@@ -165,7 +160,6 @@ def main(cfg):
             method_name = (
                 create_method_name(
                     method,
-                    sampler,
                     gallery_template_pooling_strategy,
                     recognition_method,
                 )
@@ -183,8 +177,8 @@ def main(cfg):
             task_type=task_type,
             method_name=method_name,
             recognition_method=recognition_method,
-            sampler=sampler,
             test_dataset=test_dataset,
+            embedding_type=method.embeddings,
             embeddings_path=embeddings_path,
             gallery_template_pooling_strategy=gallery_template_pooling_strategy,
             probe_template_pooling_strategy=probe_template_pooling_strategy,

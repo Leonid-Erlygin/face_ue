@@ -54,20 +54,20 @@ class KLDiracPS(nn.Module):
         # mu and wc: (B, dim)
         # kappa: (B, 1)
 
-        #B = mu.size(0)
+        # B = mu.size(0)
         d = self.z_dim
         r = self.radius
 
-        alpha = (d - 1)/2 + kappa
-        beta = (d - 1)/2
+        alpha = (d - 1) / 2 + kappa
+        beta = (d - 1) / 2
 
         cos_theta = torch.sum(mu * wc, dim=1, keepdim=True) / r  # slow?
 
-        l1 = (alpha)*torch.log(torch.tensor(2)) - kappa*(torch.log(1 + cos_theta))
-        #l2 = loggamma(beta + kappa.data.cpu().numpy()) - loggamma(kappa.data.cpu().numpy() + 2*beta)
-        #l2 = torch.Tensor(l2).to(l1.device)
+        l1 = (alpha) * torch.log(torch.tensor(2)) - kappa * (torch.log(1 + cos_theta))
+        # l2 = loggamma(beta + kappa.data.cpu().numpy()) - loggamma(kappa.data.cpu().numpy() + 2*beta)
+        # l2 = torch.Tensor(l2).to(l1.device)
         l2 = torch.lgamma(alpha) - torch.lgamma(alpha + beta)
-        l3 = beta*torch.log(torch.tensor(torch.pi))
+        l3 = beta * torch.log(torch.tensor(torch.pi))
 
         losses = l1 + l2 + l3 + d * math.log(r)
 
@@ -78,6 +78,7 @@ class KLDiracPS(nn.Module):
             l3,
             cos_theta,
         )
+
 
 class CosFace(nn.Module):
     def __init__(self, s=64.0, m=0.40):

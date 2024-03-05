@@ -177,7 +177,7 @@ class PosteriorProb:
             self.kappa = fsolve(
                 self.compute_f_kappa, 200, (tau, self.log_prior, self.n)
             )[0]
-            print(f"Tau {np.round(tau, 2)}, kappa {np.round(self.kappa, 2)}")
+            # print(f"Tau {np.round(tau, 2)}, kappa {np.round(self.kappa, 2)}")
             # print(f'Error {self.compute_f_kappa(self.kappa, tau, self.log_prior, self.n)}')
         else:
             self.kappa = kappa

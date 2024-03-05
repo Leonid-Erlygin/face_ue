@@ -185,7 +185,7 @@ class PoolingMonteCarlo(AbstractTemplatePooling):
         )
 
 
-class PoolingSCF(AbstractTemplatePooling):
+class PoolingConcentration(AbstractTemplatePooling):
     def __call__(
         self,
         img_feats: np.ndarray,

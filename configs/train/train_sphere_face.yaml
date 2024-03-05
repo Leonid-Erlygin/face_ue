@@ -18,7 +18,7 @@ trainer:
   - class_path: face_lib.models.scf.Prediction_writer
     init_args: 
       output_dir: /app/cache/features
-      file_name: scf_embs_nose # scf_embs_inter  #scf_embs_lfw #scf_embs_ms1m_3531-classes_0-seed_30-min-class-size
+      file_name: power_embs_IJBC # scf_embs_inter  #scf_embs_lfw #scf_embs_ms1m_3531-classes_0-seed_30-min-class-size
       write_interval: epoch
   max_epochs: 5
   accelerator: gpu
@@ -77,18 +77,26 @@ data:
     class_path: face_lib.dataset_classes.lightning_datasets.UncertaintyDataModule
     init_args:
         data_train_dir: /app/datasets/ms1m/
+        predict_dataset:
+            class_path: face_lib.datasets.arcface_ijb.IJB_aligned_images
+            init_args:
+                dataset_path: /app/datasets/arcface_ijb/IJBC
+                dataset_name: IJBC
+                norm_image: True
+
+
         # predict_dataset:
         #     class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
         #     init_args: 
         #         root_dir: /app/datasets/ms1m/
         #         test: True
         #         num_classes: 3531
-        predict_dataset:
-            class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
-            init_args:
-                dataset_path: /app/datasets/gaussian_nose
-                dataset_name: nose
-                norm_image: True
+        # predict_dataset:
+        #     class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+        #     init_args:
+        #         dataset_path: /app/datasets/gaussian_nose
+        #         dataset_name: nose
+        #         norm_image: True
         # predict_dataset:
         #     class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
         #     init_args:
@@ -107,12 +115,7 @@ data:
         #         dataset_name: IJBC
         #         norm_image: True
 
-        # predict_dataset:
-        #     class_path: face_lib.datasets.arcface_ijb.IJB_aligned_images
-        #     init_args:
-        #         dataset_path: /app/datasets/arcface_ijb/IJBC
-        #         dataset_name: IJBC
-        #         norm_image: True
+
         # predict_dataset:
         #     class_path: face_lib.datasets.qmul.SurvFace
         #     init_args:
