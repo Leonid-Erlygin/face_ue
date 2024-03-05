@@ -270,12 +270,12 @@ class DetectionAndIdentificationRate:
                 recall_values.append(recall)
             recall_values = np.array(recall_values)
             false_rejection_values = np.array(false_rejection_values)
-            false_rejection_count[
-                f"error_count:false-rejection-count_{rank}_rank"
-            ] = false_rejection_values
-            false_identification_count[
-                f"error_count:false-ident-count_{rank}_rank"
-            ] = seen_probe_ids.shape[0] - np.sum(correct_pos)
+            false_rejection_count[f"error_count:false-rejection-count_{rank}_rank"] = (
+                false_rejection_values
+            )
+            false_identification_count[f"error_count:false-ident-count_{rank}_rank"] = (
+                seen_probe_ids.shape[0] - np.sum(correct_pos)
+            )
             recall_name = f"metric:recalls_{rank}_rank"
             recalls[recall_name] = recall_values
         metrics = {}

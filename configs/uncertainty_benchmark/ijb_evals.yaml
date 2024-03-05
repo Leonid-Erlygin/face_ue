@@ -2,9 +2,9 @@ hydra:
   run:
     dir: ${exp_dir}
 
-exp_dir: outputs/experiments/mc_prob #/${tau_list}
+exp_dir: outputs/experiments/mc_prob_M10
 use_two_galleries: False
-recompute_template_pooling: True
+recompute_template_pooling: False
 metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
 create_pool_plot: False
 
@@ -84,18 +84,18 @@ tau_to_far:
 # IJBC
 
 tau_list: 
- - 0.3316050800917002 # far 0.1
-#  - 0.3544668614198186 # far 0.05
+#  - 0.3316050800917002 # far 0.1
+ - 0.3544668614198186 # far 0.05
 #  - 0.41305037376834797 # far 0.01
 #  - 0.4344078641808415 # far 0.005
 
 # IJB-B
 
 # tau_list: 
-#   - 0.3122234142166135 # far 0.1
-#   - 0.3433289481793866 # far 0.05
+#   # - 0.3122234142166135 # far 0.1
+#   # - 0.3433289481793866 # far 0.05
 #   - 0.4491698259631683 # far 0.01
-#   - 0.7189225782977178 # far 0.005
+#   # - 0.7189225782977178 # far 0.005
 
 # LFW
 # tau_list: 
@@ -129,37 +129,129 @@ open_set_identification_methods:
   #     kappa_is_tau: True
   #   pretty_name: "$u_{SCF}$"
 
+  # - embeddings: scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingMonteCarlo
+  #     train_T: True
+  #     lr: 0.01
+  #     epoch_num: 100
+  #     probability_model:
+  #       _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
+  #       M: 40
+  #       gallery_prior: "power"
+  #       emb_unc_model: "vMF"
+  #       beta: 0.5
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingSCF #PoolingProb
+  #   use_detector_score: False # True gives unnormalized embeddings
+  #   sampler:
+  #     _target_: evaluation.samplers.VonMisesFisher
+  #     num_samples: 0 # set 0 to use mean of distr as one sample
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
+  #     M: 0
+  #     kappa_scale: 1.5
+  #     gallery_prior: "power"
+  #     emb_unc_model: "vMF"
+  #     beta: 0.5
+  #     predict_T: 1
+  #     pred_uncertainty_type: max_prob
+      
+  #   pretty_name: "$u_{MC} + MC pred$ scale 1.5"
+
   - embeddings: scf
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingMonteCarlo
-      train_T: False
+      train_T: True
+      lr: 0.01
+      epoch_num: 100
       probability_model:
         _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
-        M: 10
+        M: 40
         gallery_prior: "power"
         emb_unc_model: "vMF"
         beta: 0.5
-
     probe_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingSCF #PoolingProb
-    use_detector_score: True
+    use_detector_score: False # True gives unnormalized embeddings
     sampler:
       _target_: evaluation.samplers.VonMisesFisher
       num_samples: 0 # set 0 to use mean of distr as one sample
-    distance_function: 
-      _target_: evaluation.distance_functions.open_set_identification.CosineSim
     recognition_method:
-      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
-      class_model: power
-      kappa: ${tau_list}
-      beta: ${default_beta}
-      uncertainty_type: maxprob
-      alpha: 0.5
-      aggregation: sum
-      T: 0.28836
-      T_data_unc: 30
-      kappa_is_tau: True
-    pretty_name: "$u_{MC}$"
+      _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
+      M: 10
+      kappa_scale: 1.0
+      kappa_input_scale: 1.0
+      gallery_prior: "power"
+      emb_unc_model: "vMF"
+      beta: 0.5
+      predict_T: 1
+      pred_uncertainty_type: entropy # max_prob
+      
+    pretty_name: "$u_{MC} + MC pred$"
+
+  # - embeddings: scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingMonteCarlo
+  #     train_T: True
+  #     lr: 0.01
+  #     epoch_num: 100
+  #     probability_model:
+  #       _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
+  #       M: 40
+  #       gallery_prior: "power"
+  #       emb_unc_model: "vMF"
+  #       beta: 0.5
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingSCF #PoolingProb
+  #   use_detector_score: False # True gives unnormalized embeddings
+  #   sampler:
+  #     _target_: evaluation.samplers.VonMisesFisher
+  #     num_samples: 0 # set 0 to use mean of distr as one sample
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
+  #     M: 30
+  #     kappa_scale: 2
+  #     gallery_prior: "power"
+  #     emb_unc_model: "vMF"
+  #     beta: 0.5
+  #     predict_T: 1
+  #     pred_uncertainty_type: max_prob #entropy
+      
+  #   pretty_name: "$u_{MC} + MC pred$ scale 1"
+
+  # - embeddings: scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingMonteCarlo
+  #     train_T: True
+  #     lr: 0.01
+  #     epoch_num: 100
+  #     probability_model:
+  #       _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
+  #       M: 40
+  #       gallery_prior: "power"
+  #       emb_unc_model: "vMF"
+  #       beta: 0.5
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingSCF #PoolingProb
+  #   use_detector_score: False # True gives unnormalized embeddings
+  #   sampler:
+  #     _target_: evaluation.samplers.VonMisesFisher
+  #     num_samples: 0 # set 0 to use mean of distr as one sample
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
+  #     distance_function: 
+  #       _target_: evaluation.distance_functions.open_set_identification.CosineSim
+  #     class_model: power
+  #     kappa: ${tau_list}
+  #     beta: ${default_beta}
+  #     uncertainty_type: maxprob
+  #     alpha: 1
+  #     aggregation: sum
+  #     T: 0.28836
+  #     T_data_unc: 30
+  #     kappa_is_tau: True
+  #   pretty_name: "$u_{MC}$"
 
 
   - embeddings: scf
@@ -167,22 +259,22 @@ open_set_identification_methods:
       _target_: evaluation.template_pooling_strategies.PoolingSCF
     probe_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingSCF #PoolingProb
-    use_detector_score: True
+    use_detector_score: False
     sampler:
       _target_: evaluation.samplers.VonMisesFisher
       num_samples: 0 # set 0 to use mean of distr as one sample
-    distance_function: 
-      _target_: evaluation.distance_functions.open_set_identification.CosineSim
     recognition_method:
       _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
+      distance_function: 
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
       class_model: power
       kappa: ${tau_list}
       beta: ${default_beta}
       uncertainty_type: maxprob
-      alpha: 0.5
+      alpha: 1
       aggregation: sum
       T: 0.28836
       T_data_unc: 30
       kappa_is_tau: True
-    pretty_name: "$u_{MC}$"
+    pretty_name: "$u_{SCF}$"
 

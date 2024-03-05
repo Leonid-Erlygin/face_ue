@@ -1,5 +1,6 @@
 """Test protocol for IJB-A.
 """
+
 # MIT License
 #
 # Copyright (c) 2019 Yichun Shi

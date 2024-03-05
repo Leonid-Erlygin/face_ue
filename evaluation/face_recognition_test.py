@@ -17,7 +17,6 @@ class Face_Fecognition_test:
         method_name: str,
         recognition_method,
         sampler,
-        distance_function: Abstract1NEval,
         test_dataset: FaceRecogntioniDataset,
         embeddings_path: str,
         gallery_template_pooling_strategy: AbstractTemplatePooling,
@@ -37,7 +36,6 @@ class Face_Fecognition_test:
         self.recognition_metrics = recognition_metrics
         self.uncertainty_metrics = uncertainty_metrics
         self.sampler = sampler
-        self.distance_function = distance_function
         self.gallery_template_pooling_strategy = gallery_template_pooling_strategy
         self.probe_template_pooling_strategy = probe_template_pooling_strategy
         self.use_detector_score = use_detector_score
@@ -74,11 +72,11 @@ class Face_Fecognition_test:
         cache_dir.mkdir(parents=True, exist_ok=True)
         template_subsets_path = (
             cache_dir
-            / f"template_subsets_{self.probe_template_pooling_strategy.__class__.__name__}_{self.test_dataset.dataset_name}"
+            / f"template_subsets_{self.probe_template_pooling_strategy.__class__.__name__}_{self.test_dataset.dataset_name}_score-norm_{self.use_detector_score}"
         )
         template_pool_path = (
             cache_dir
-            / f"template_pool_{self.probe_template_pooling_strategy.__class__.__name__}_{self.test_dataset.dataset_name}"
+            / f"template_pool_gallery-{self.gallery_template_pooling_strategy.__class__.__name__}_probe-{self.probe_template_pooling_strategy.__class__.__name__}_{self.test_dataset.dataset_name}"
         )
 
         similarity_matrix_path = template_subsets_path / "sim_matrix"
@@ -86,7 +84,7 @@ class Face_Fecognition_test:
         template_subsets_path.mkdir(parents=True, exist_ok=True)
         template_pool_path.mkdir(parents=True, exist_ok=True)
         pooled_templates_path = 1
-        if self.recompute_template_pooling is False and pooled_templates_path.is_file():
+        if self.recompute_template_pooling is False and False:
             pooled_data = np.load(pooled_templates_path)
             self.template_pooled_emb = pooled_data["template_pooled_emb"]
             self.template_pooled_unc = pooled_data["template_pooled_unc"]
@@ -189,7 +187,9 @@ class Face_Fecognition_test:
                 # 1. pool selected gallery templates
                 assert gallery_unc.shape[1] == 1  # working with scf unc
                 kappa = np.exp(gallery_unc)
-                if (template_pool_path / f"gallery_{gallery_name}.npz").is_file():
+                if (
+                    template_pool_path / f"gallery_{gallery_name}.npz"
+                ).is_file() and self.recompute_template_pooling is False:
                     print("Loading pool")
                     data = np.load(template_pool_path / f"gallery_{gallery_name}.npz")
                     pooled_data = (
@@ -344,27 +344,23 @@ class Face_Fecognition_test:
         unc_metrics = {gallery: {} for gallery in used_galleries}
 
         for gallery_name in used_galleries:
-            # sample probe feature vectors
-            probe_templates_feature = self.sampler(
-                self.probe_pooled_templates[gallery_name]["template_pooled_features"],
-                self.probe_pooled_templates[gallery_name]["template_pooled_data_unc"],
-            )
+            # # sample probe feature vectors
+            # probe_templates_feature = self.sampler(
+            #     self.probe_pooled_templates[gallery_name]["template_pooled_features"],
+            #     self.probe_pooled_templates[gallery_name]["template_pooled_data_unc"],
+            # )
 
-            similarity = self.distance_function(
-                probe_templates_feature,
+            # setup osr method and predict
+            self.recognition_method.setup(
+                self.probe_pooled_templates[gallery_name][
+                    "template_pooled_features"
+                ],  # probe_templates_feature,
                 self.probe_pooled_templates[gallery_name]["template_pooled_data_unc"],
                 self.gallery_pooled_templates[gallery_name]["template_pooled_features"],
                 self.gallery_pooled_templates[gallery_name]["template_pooled_data_unc"],
             )
-
-            # setup osr method and predict
-            self.recognition_method.setup(similarity)
             predicted_id, was_rejected = self.recognition_method.predict()
-            predicted_unc = self.recognition_method.predict_uncertainty(
-                self.probe_pooled_templates[gallery_name][
-                    "template_pooled_data_unc"
-                ]  # need to use data uncertainty only
-            )
+            predicted_unc = self.recognition_method.predict_uncertainty()
 
             for metric in self.recognition_metrics[self.task_type]:
                 metrics[gallery_name].update(
@@ -379,23 +375,6 @@ class Face_Fecognition_test:
                         ],
                     )
                 )
-
-            # compute thresh by fars
-            # probe_unique_ids = self.probe_pooled_templates[gallery_name][
-            #                 "template_subject_ids_sorted"
-            #             ]
-            # g_unique_ids = self.gallery_pooled_templates[gallery_name][
-            #                 "template_subject_ids_sorted"
-            #             ]
-            # is_seen = np.isin(probe_unique_ids, g_unique_ids)
-            # probe_score = np.max(similarity[:,0,:], axis=1)
-            # neg_score = probe_score[~is_seen]
-            # neg_score_sorted = np.sort(neg_score)[::-1]
-            # for far in [0.005, 0.01, 0.05, 0.1]:
-            #     thresh = neg_score_sorted[
-            #             max(int((neg_score_sorted.shape[0]) * far) - 1, 0)
-            #         ]
-            #     print(f'FAR-{far}_thresh:{thresh}')
 
             # compute uncertainty metrics
             for unc_metric in self.uncertainty_metrics[self.task_type]:

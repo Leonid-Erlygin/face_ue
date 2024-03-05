@@ -2,7 +2,7 @@ import numpy as np
 from .base_method import OpenSetMethod
 from scipy.special import ive, hyp0f1, loggamma
 from scipy.optimize import fsolve, minimize
-from typing import List, Union
+from typing import List, Union, Any
 from torch import nn
 import torch
 
@@ -10,6 +10,7 @@ import torch
 class PosteriorProbability(OpenSetMethod):
     def __init__(
         self,
+        distance_function: Any,
         kappa: float,
         beta: float,
         uncertainty_type: str,
@@ -21,6 +22,7 @@ class PosteriorProbability(OpenSetMethod):
         kappa_is_tau: bool,
     ) -> None:
         super().__init__()
+        self.distance_function = distance_function
         self.kappa = kappa
         self.beta = beta
         self.uncertainty_type = uncertainty_type
@@ -33,7 +35,23 @@ class PosteriorProbability(OpenSetMethod):
         self.T_data_unc = T_data_unc
         self.kappa_is_tau = kappa_is_tau
 
-    def setup(self, similarity_matrix: np.ndarray):
+    def setup(
+        self,
+        probe_feats: np.ndarray,
+        probe_unc: np.ndarray,
+        gallery_feats: np.ndarray,
+        gallery_unc: np.ndarray,
+    ):
+        probe_feats = probe_feats[:, np.newaxis, :]
+        self.data_uncertainty = probe_unc
+
+        similarity_matrix = self.distance_function(
+            probe_feats,
+            probe_unc,
+            gallery_feats,
+            gallery_unc,
+        )
+
         self.similarity_matrix = similarity_matrix
         if self.class_model == "vMF_Power":
             raise ValueError
@@ -79,7 +97,7 @@ class PosteriorProbability(OpenSetMethod):
         self.all_classes_log_prob = torch.mean(self.all_classes_log_prob, dim=1).numpy()
         # assert np.all(self.all_classes_log_prob < 1e-10)
 
-    def get_class_log_probs(self, similarity_matrix):
+    def get_class_log_probs(self, similarity_matrix: np.ndarray):
         self.setup(similarity_matrix)
         return self.all_classes_log_prob
 
@@ -89,7 +107,7 @@ class PosteriorProbability(OpenSetMethod):
             self.all_classes_log_prob.shape[-1] - 1
         )
 
-    def predict_uncertainty(self, data_uncertainty: np.ndarray):
+    def predict_uncertainty(self):
         if self.uncertainty_type == "maxprob":
             unc = -np.exp(np.max(self.all_classes_log_prob, axis=-1))
         elif self.uncertainty_type == "entr":
@@ -98,29 +116,19 @@ class PosteriorProbability(OpenSetMethod):
             )
         else:
             raise ValueError
-        # if self.process_unc == "prob":
-        #     unc = -np.exp(-unc)
-        #     conf_norm = -unc
-        # elif self.process_unc == "log_prob":
-        #     unc = (unc - np.min(unc)) / (np.max(unc) - np.min(unc))
-        #     conf_norm = -unc + 1
-        # elif self.process_unc == "loglog_prob":
-        #     unc = np.log(unc - np.min(unc) + 1e-16)
-        #     unc = (unc - np.min(unc)) / (np.max(unc) - np.min(unc))
-        #     conf_norm = -unc + 1
-        # else:
-        #     raise ValueError
-        if data_uncertainty.shape[1] == 1:
-            # here data_uncertainty is scf concetration
-            data_uncertainty = data_uncertainty[:, 0]
+        if self.data_uncertainty.shape[1] == 1:
+            # here self.data_uncertainty is scf concetration
+            self.data_uncertainty = self.data_uncertainty[:, 0]
         else:
             raise NotImplemented
-        if data_uncertainty[0] == 0:
+        if self.data_uncertainty[0] == 0:
             # default pool
             return unc
         min_kappa = 150
         max_kappa = 2700
-        data_uncertainty_norm = (data_uncertainty - min_kappa) / (max_kappa - min_kappa)
+        data_uncertainty_norm = (self.data_uncertainty - min_kappa) / (
+            max_kappa - min_kappa
+        )
         assert np.sum(data_uncertainty_norm < 0) == 0
         # data_uncertainty_norm = data_uncertainty
         data_conf_norm = (data_uncertainty_norm) ** (1 / self.T_data_unc)
@@ -189,9 +197,7 @@ class PosteriorProb:
                 - self.log_iv
             )
         elif self.class_model == "power":
-            log_alpha_vmF = np.log(
-                hyp0f1(self.n, self.kappa**2 / 4, dtype=np.float64)
-            )
+            log_alpha_vmF = np.log(hyp0f1(self.n, self.kappa**2 / 4, dtype=np.float64))
 
             shift = np.log(1 + (self.log_prior + log_alpha_vmF) / self.kappa)
             self.kappa_zero = fsolve(

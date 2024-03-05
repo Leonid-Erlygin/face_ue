@@ -1,5 +1,8 @@
 from typing import Any
 import numpy as np
+import warnings
+
+np.seterr(all="warn")
 
 
 def random_VMF(mu, kappa, size=None):
@@ -12,18 +15,27 @@ def random_VMF(mu, kappa, size=None):
     n = 1 if size is None else np.product(size)
     shape = () if size is None else tuple(np.ravel(size))
     mu = np.asarray(mu)
-    mu = mu / np.linalg.norm(mu)
-    (d,) = mu.shape
+    with np.errstate(divide="raise"):
+        try:
+            mu_norm = mu / np.linalg.norm(mu)
+        except Exception as e:
+            test_0 = 1
+            test = 1
+            print("Caught it!")
+    if np.any(np.isnan(mu_norm)):
+        test_0 = 1
+        print("Caught it!")
+    (d,) = mu_norm.shape
     # z component:radial samples perpendicular to mu
     z = np.random.normal(0, 1, (n, d))
     z /= np.linalg.norm(z, axis=1, keepdims=True)
-    z = z - (z @ mu[:, None]) * mu[None, :]
+    z = z - (z @ mu_norm[:, None]) * mu_norm[None, :]
     z /= np.linalg.norm(z, axis=1, keepdims=True)
     # sample angles ( in cos and sin form )
     cos = _random_VMF_cos(d, kappa, n)
     sin = np.sqrt(1 - cos**2)
     # combine angles with the z component
-    x = z * sin[:, None] + cos[:, None] * mu[None, :]
+    x = z * sin[:, None] + cos[:, None] * mu_norm[None, :]
     return x.reshape((*shape, d))
 
 
@@ -57,7 +69,7 @@ class VonMisesFisher:
         if self.num_samples > 0:
             sample_list = []
             for mu, kappa in zip(feature_mean, kappas):
-                samples = random_VMF(mu, kappa=kappa, size=self.num_samples)[
+                samples = random_VMF(mu, kappa=kappa[0], size=self.num_samples)[
                     np.newaxis, :, :
                 ]
                 sample_list.append(samples)

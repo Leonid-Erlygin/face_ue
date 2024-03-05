@@ -106,9 +106,9 @@ def image2template_feature(
             else:
                 raise ValueError
 
-            templates_conf[
-                count_template
-            ] = final_template_conf  # np.mean(template_conf, axis=0)
+            templates_conf[count_template] = (
+                final_template_conf  # np.mean(template_conf, axis=0)
+            )
         else:
             template_feats[count_template] = np.sum(media_norm_feats, axis=0)
 
