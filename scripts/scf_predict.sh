@@ -2,15 +2,15 @@ docker run \
  --shm-size=8g \
  --memory=80g \
  --cpus=40 \
- --user 1133:1134 \
+ --user 1012:1012 \
  --name scf_predict \
  --rm \
  --init \
- -v /home/l.erlygin/face_ue:/app \
+ -v /home/i.kolesnikov/face_ue:/app \
  --gpus all \
  -w="/app" \
- face-eval \
+ kolesnikov-face \
  python trainers/train.py predict \
- --config configs/train/train_sphere_face.yaml \
- --ckpt_path=/app/model_weights/scf/epoch=3-step=90000.ckpt \
+ --config configs/train/train_scf_with_psd.yaml \
+ --ckpt_path=/app/outputs/scf_train/weights_scf_psd/epoch=4-step=113000.ckpt \
  --trainer.devices=1

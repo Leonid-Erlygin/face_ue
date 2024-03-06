@@ -43,7 +43,7 @@ trainer:
   callbacks:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args:
-      dirpath: outputs/scf_train/weights
+      dirpath: outputs/scf_train/weights_scf_psd
       filename: null
       monitor: null
       verbose: false
@@ -126,13 +126,13 @@ model:
       optimizer_path: torch.optim
       optimizer_name: AdamW
       params:
-        lr: 1.0e-05
-        weight_decay: 0.005
+        lr: 3.0e-05
+        weight_decay: 0.0005
     scheduler_params:
       scheduler: StepLR
       params:
-        step_size: 10000
-        gamma: 0.7
+        step_size: 2000
+        gamma: 0.5
       interval: step
       frequency: 1
     permute_batch: false
@@ -146,5 +146,5 @@ data:
         dataset_path: /app/datasets/gaussian_nose
         dataset_name: nose
         norm_image: true
-    batch_size: 16
-    num_workers: 20
+    batch_size: 128
+    num_workers: 35

@@ -5,7 +5,7 @@ import numpy as np
 from tqdm import tqdm
 from sklearn.preprocessing import normalize
 import scipy
-import geotorch
+# import geotorch
 from scipy.special import ive, hyp0f1, loggamma
 from evaluation.open_set_methods.class_prob_models import GalleryParams, GalleryMeans
 import torch

@@ -4,7 +4,7 @@ hydra:
 
 exp_dir: outputs/experiments/scf_vs_power
 use_two_galleries: False
-recompute_template_pooling: False
+recompute_template_pooling: True
 metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
 create_pool_plot: False
 
