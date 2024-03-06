@@ -4,7 +4,7 @@ hydra:
 
 exp_dir: outputs/experiments/scf_vs_power
 use_two_galleries: False
-recompute_template_pooling: True
+recompute_template_pooling: False
 metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
 create_pool_plot: False
 
@@ -105,27 +105,6 @@ tau_list:
 #   - 0.3759362888911925 # far 0.005
 
 open_set_identification_methods:
-  - embeddings: scf
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingConcentration
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingConcentration #PoolingProb
-    use_detector_score: False
-    recognition_method:
-      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
-      distance_function: 
-        _target_: evaluation.distance_functions.open_set_identification.CosineSim
-      class_model: power
-      kappa: ${tau_list}
-      beta: ${default_beta}
-      uncertainty_type: maxprob
-      alpha: 1 # when 1, only scf unc is used
-      aggregation: sum
-      T: 0.28836
-      T_data_unc: 30
-      kappa_is_tau: True
-    pretty_name: "$u_{SCF}$"
-
   - embeddings: power
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingConcentration
@@ -146,4 +125,26 @@ open_set_identification_methods:
       T_data_unc: 30
       kappa_is_tau: True
     pretty_name: "$u_{Power}$"
+
+
+  - embeddings: scf
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingConcentration
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingConcentration #PoolingProb
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
+      distance_function: 
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
+      class_model: power
+      kappa: ${tau_list}
+      beta: ${default_beta}
+      uncertainty_type: maxprob
+      alpha: 1 # when 1, only scf unc is used
+      aggregation: sum
+      T: 0.28836
+      T_data_unc: 30
+      kappa_is_tau: True
+    pretty_name: "$u_{SCF}$"
 
