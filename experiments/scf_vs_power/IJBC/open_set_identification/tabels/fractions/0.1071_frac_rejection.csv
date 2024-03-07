@@ -1,0 +1,3 @@
+,models,false_accept_num,false_reject_num,false_ident_num,false_ident-reject_num,error_sum,dir,far,f1_class
+0,$u_{Power}$,426,64,7,113,610,0.9792278166629036,0.0493341053850608,0.9660318520993428
+1,$u_{SCF}$,431,63,9,112,615,0.9792278166629036,0.049913144180660104,0.965762957189779
