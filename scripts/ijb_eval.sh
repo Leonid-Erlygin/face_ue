@@ -7,7 +7,7 @@ docker run \
  --rm \
  --init \
  -v /home/i.kolesnikov/face_ue:/app \
- --gpus all \
+ --gpus '"device=2"' \
  -w="/app" \
  kolesnikov-face \
  python evaluation/ijb_evals.py

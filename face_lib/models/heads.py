@@ -13,6 +13,7 @@ class SCFHead(nn.Module):
 
         self.convf_dim = convf_dim
         self.latent_vector_size = latent_vector_size
+
         self._log_kappa = nn.Sequential(
             nn.Linear(self.convf_dim, self.latent_vector_size),
             nn.BatchNorm1d(self.latent_vector_size, affine=True),
@@ -22,6 +23,17 @@ class SCFHead(nn.Module):
             nn.ReLU(inplace=True),
             nn.Linear(self.latent_vector_size, 1),
         )
+        
+        # Trying to increase number of parameters
+        # self._log_kappa = nn.Sequential(
+        #     nn.Linear(self.convf_dim, self.convf_dim // 2),
+        #     nn.BatchNorm1d(self.convf_dim // 2, affine=True),
+        #     nn.ReLU(inplace=True),
+        #     nn.Linear(self.convf_dim // 2, self.convf_dim // 4),
+        #     nn.BatchNorm1d(self.convf_dim // 4, affine=False),
+        #     nn.ReLU(inplace=True),
+        #     nn.Linear(self.convf_dim // 4, 1),
+        # )
 
     def forward(self, convf):
         log_kappa = self._log_kappa(convf)

@@ -1,8 +1,9 @@
 import torch
 
+#import albumentations as A
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader, Dataset
-from torchvision import transforms
+from torchvision.transforms import v2
 import mxnet as mx
 import numbers
 from pathlib import Path
@@ -22,20 +23,29 @@ class MXFaceDataset(Dataset):
         self.num_classes = num_classes
         self.test = test
         if self.test:
-            self.transform = transforms.Compose(
+            self.transform = v2.Compose(
                 [
-                    transforms.ToPILImage(),
-                    transforms.ToTensor(),
-                    transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+                    v2.ToPILImage(),
+                    v2.ToTensor(),
+                    v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
                 ]
             )
         else:
-            self.transform = transforms.Compose(
+            self.transform = v2.Compose(
                 [
-                    transforms.ToPILImage(),
-                    transforms.RandomHorizontalFlip(),
-                    transforms.ToTensor(),
-                    transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+                    v2.ToPILImage(),
+                    #v2.RandomHorizontalFlip(),
+                    v2.ToTensor(),
+                    v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+                    v2.RandomApply(torch.nn.ModuleList([
+                        v2.GaussianBlur(kernel_size=(29, 29), sigma=(10., 10.))
+                        ]), p = 0.05),
+                    v2.RandomApply(torch.nn.ModuleList([
+                        v2.ElasticTransform(alpha=250.0)
+                    ]), p = 0.05),
+                    v2.RandomApply(torch.nn.ModuleList([
+                        v2.AugMix()
+                    ]), p = 0.05)
                 ]
             )
 

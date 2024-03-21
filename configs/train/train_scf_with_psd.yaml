@@ -4,25 +4,25 @@ trainer:
 #     class_path: pytorch_lightning.loggers.WandbLogger
 #     init_args:
 #       project: "face-ue"
-  log_every_n_steps: 3
+#   log_every_n_steps: 3
   default_root_dir: outputs/scf_train
   enable_checkpointing: true
   callbacks:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args: 
       every_n_train_steps: 1000
-      dirpath: outputs/scf_train/weights_scf_psd
+      dirpath: outputs/scf_train/weights_scf_with_noise_v3
   - class_path: pytorch_lightning.callbacks.LearningRateMonitor
     init_args: 
       logging_interval: "step"
   - class_path: face_lib.models.scf.Prediction_writer
     init_args: 
       output_dir: /app/cache/features
-      file_name: power_embs_IJBC # scf_embs_inter  #scf_embs_lfw #scf_embs_ms1m_3531-classes_0-seed_30-min-class-size
+      file_name: power_noise_v3_embs_IJBC # scf_embs_inter  #scf_embs_lfw #scf_embs_ms1m_3531-classes_0-seed_30-min-class-size
       write_interval: epoch
-  max_epochs: 5
+  max_epochs: 6
   accelerator: gpu
-  devices: 2
+  devices: 1
 model:
     class_path: face_lib.models.scf.SphereConfidenceFace
     init_args:
@@ -67,7 +67,7 @@ model:
         scheduler_params:
             scheduler: StepLR
             params:
-                step_size: 2000
+                step_size: 15000
                 gamma: 0.5
             interval: "step"
             frequency: 1
@@ -119,5 +119,5 @@ data:
         #     init_args:
         #         data_dir: /app/datasets/QMUL-SurvFace/Face_Identification_Test_Set
 
-        batch_size: 128
-        num_workers: 35
+        batch_size: 256
+        num_workers: 36

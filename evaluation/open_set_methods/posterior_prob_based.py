@@ -124,7 +124,8 @@ class PosteriorProbability(OpenSetMethod):
         if self.data_uncertainty[0] == 0:
             # default pool
             return unc
-        min_kappa = 150
+        #min_kappa = 150
+        min_kappa = 20
         max_kappa = 2700
         data_uncertainty_norm = (self.data_uncertainty - min_kappa) / (
             max_kappa - min_kappa

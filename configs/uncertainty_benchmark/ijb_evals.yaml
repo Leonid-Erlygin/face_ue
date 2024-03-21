@@ -2,7 +2,7 @@ hydra:
   run:
     dir: ${exp_dir}
 
-exp_dir: experiments/scf_vs_power_default_pooling
+exp_dir: experiments/power_vs_power_noise_v3_default_pooling
 use_two_galleries: False
 recompute_template_pooling: True
 metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
@@ -107,7 +107,7 @@ tau_list:
 open_set_identification_methods:
   - embeddings: power
     gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
+      _target_: evaluation.template_pooling_strategies.PoolingDefault  #PoolingConcentration, PoolingDefault
     probe_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
     use_detector_score: False
@@ -124,12 +124,12 @@ open_set_identification_methods:
       T: 0.28836
       T_data_unc: 30
       kappa_is_tau: True
-    pretty_name: "$u_{Power}$"
+    pretty_name: "$u_{power}$"
 
 
-  - embeddings: scf
+  - embeddings: power_noise_v3
     gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
+      _target_: evaluation.template_pooling_strategies.PoolingDefault      #PoolingConcentration
     probe_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
     use_detector_score: False
@@ -146,5 +146,5 @@ open_set_identification_methods:
       T: 0.28836
       T_data_unc: 30
       kappa_is_tau: True
-    pretty_name: "$u_{SCF}$"
+    pretty_name: "$u_{noise}$"
 

@@ -7,10 +7,10 @@ docker run \
  --rm \
  --init \
  -v /home/i.kolesnikov/face_ue:/app \
- --gpus all \
+ --gpus '"device=0"' \
  -w="/app" \
  kolesnikov-face \
  python trainers/train.py predict \
  --config configs/train/train_scf_with_psd.yaml \
- --ckpt_path=/app/outputs/scf_train/weights_scf_psd/epoch=4-step=113000.ckpt \
- --trainer.devices=1
+ --ckpt_path=/app/outputs/scf_train/weights_scf_with_noise_v3/epoch=5-step=68000.ckpt
+#  --trainer.devices=1

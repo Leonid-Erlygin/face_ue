@@ -41,6 +41,7 @@ class KLDiracVMF(nn.Module):
             l1,
             l2,
             l3,
+            cos_theta,
         )
 
 
