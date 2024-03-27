@@ -73,27 +73,32 @@ class MonteCarloPredictiveProb:
 
         # find kappa
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
-        # found_kappa = (
-        #     minimize(
-        #         self.find_kappa_by_far,
-        #         343.0 / 100,
-        #         (
-        #             self,
-        #             probe_feats,
-        #             probe_unc_scaled,
-        #             gallery_feats,
-        #             gallery_unc,
-        #             self.predict_T,
-        #             self.far,
-        #             is_seen,
-        #         ),
-        #         # xtol=0.001,
-        #         # maxfev=5,
-        #         method="Nelder-Mead",
-        #     )[0]
-        #     * 100
-        # )
-        found_kappa = 343.0
+
+        if self.kappa_input_scale == 1.0:
+            found_kappa = 345.0
+        elif self.kappa_input_scale == 1.5:
+            found_kappa = 402
+        else:
+            found_kappa = (
+                minimize(
+                    self.find_kappa_by_far,
+                    400.0 / 100,
+                    (
+                        self,
+                        probe_feats,
+                        probe_unc_scaled,
+                        gallery_feats,
+                        gallery_unc,
+                        self.predict_T,
+                        self.far,
+                        is_seen,
+                    ),
+                    # xtol=0.001,
+                    # maxfev=5,
+                    method="Nelder-Mead",
+                )[0]
+                * 100
+            )
         # gallery_unc_scaled = gallery_unc * self.kappa_scale
 
         gallery_unc_scaled = np.ones_like(gallery_unc) * found_kappa
