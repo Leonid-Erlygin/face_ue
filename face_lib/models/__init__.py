@@ -11,6 +11,7 @@ from .iresnet import (
     iresnet50_normalized,
     iresnet50_spectral_normalized,
 )
+from .scf import SphereConfidenceFace
 from .partial_fc import PartialFC
 from .style_gan import StyleGanDiscriminator
 from .scale_predictors import MLPHead
