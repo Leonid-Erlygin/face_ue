@@ -23,7 +23,7 @@ class SCFHead(nn.Module):
             nn.ReLU(inplace=True),
             nn.Linear(self.latent_vector_size, 1),
         )
-        
+
         # Trying to increase number of parameters
         # self._log_kappa = nn.Sequential(
         #     nn.Linear(self.convf_dim, self.convf_dim // 2),

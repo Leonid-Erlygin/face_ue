@@ -1,6 +1,6 @@
 import torch
 
-#import albumentations as A
+# import albumentations as A
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import v2
@@ -34,18 +34,19 @@ class MXFaceDataset(Dataset):
             self.transform = v2.Compose(
                 [
                     v2.ToPILImage(),
-                    #v2.RandomHorizontalFlip(),
+                    # v2.RandomHorizontalFlip(),
                     v2.ToTensor(),
                     v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-                    v2.RandomApply(torch.nn.ModuleList([
-                        v2.GaussianBlur(kernel_size=(29, 29), sigma=(10., 10.))
-                        ]), p = 0.05),
-                    v2.RandomApply(torch.nn.ModuleList([
-                        v2.ElasticTransform(alpha=250.0)
-                    ]), p = 0.05),
-                    v2.RandomApply(torch.nn.ModuleList([
-                        v2.AugMix()
-                    ]), p = 0.05)
+                    v2.RandomApply(
+                        torch.nn.ModuleList(
+                            [v2.GaussianBlur(kernel_size=(29, 29), sigma=(10.0, 10.0))]
+                        ),
+                        p=0.05,
+                    ),
+                    v2.RandomApply(
+                        torch.nn.ModuleList([v2.ElasticTransform(alpha=250.0)]), p=0.05
+                    ),
+                    v2.RandomApply(torch.nn.ModuleList([v2.AugMix()]), p=0.05),
                 ]
             )
 

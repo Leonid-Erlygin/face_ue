@@ -36,6 +36,7 @@ class PoolingDefault(AbstractTemplatePooling):
         # templates = np.sort(templates) # WAS THIS A PROBLEM?
         ## here we assume that after default pooling uncertainty are not used
         unique_templates, indices = np.unique(templates, return_index=True)
+        templates_kappa = np.zeros((len(unique_templates), raw_unc.shape[1]))
         # unique_templates, indices = np.unique(choose_templates, return_index=True)
         # unique_subjectids = choose_ids[indices]
 
@@ -48,25 +49,36 @@ class PoolingDefault(AbstractTemplatePooling):
             (ind_t,) = np.where(templates == uqt)
             face_norm_feats = img_feats[ind_t]
             face_medias = medias[ind_t]
+            conf_template = raw_unc[ind_t]
+
             unique_medias, unique_media_counts = np.unique(
                 face_medias, return_counts=True
             )
             media_norm_feats = []
+            kappa_in_template = []
             for u, ct in zip(unique_medias, unique_media_counts):
                 (ind_m,) = np.where(face_medias == u)
                 if ct == 1:
                     media_norm_feats += [face_norm_feats[ind_m]]
+                    kappa_in_template += [conf_template[ind_m]]
                 else:  # image features from the same video will be aggregated into one feature
+                    kappa_in_template += [
+                        np.mean(conf_template[ind_m], 0, keepdims=True)
+                    ]
                     media_norm_feats += [
                         np.mean(face_norm_feats[ind_m], 0, keepdims=True)
                     ]
             media_norm_feats = np.concatenate(media_norm_feats)
+            kappa_in_template = np.concatenate(kappa_in_template)
             template_feats[count_template] = np.sum(media_norm_feats, axis=0)
+            final_kappa_in_template = np.mean(kappa_in_template, axis=0)
+
+            templates_kappa[count_template] = final_kappa_in_template
 
         template_norm_feats = normalize(template_feats)
         return (
             template_norm_feats,
-            np.zeros((len(unique_templates), 1)),
+            templates_kappa,
         )
 
 
