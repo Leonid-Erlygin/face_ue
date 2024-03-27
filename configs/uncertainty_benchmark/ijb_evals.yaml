@@ -66,9 +66,9 @@ default_beta: 0.5
 
 
 
-far_list: 0.05 # for now
-far_list:
-  - 0.05
+far_list: 0.1 # for now
+# far_list:
+#   - 0.05
 
 # # IJBC
 # tau_list: 
@@ -111,7 +111,7 @@ far_list:
 
 
 open_set_identification_methods:
-  - embeddings: power
+  - embeddings: scf
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault  #PoolingConcentration, PoolingDefault
     probe_template_pooling_strategy:
@@ -122,33 +122,33 @@ open_set_identification_methods:
       distance_function: 
         _target_: evaluation.distance_functions.open_set_identification.CosineSim
       class_model: power
-      fars: ${far_list}
+      far: ${far_list}
       beta: ${default_beta}
       uncertainty_type: maxprob
       alpha: 1 # when 1, only scf unc is used
       aggregation: sum
-      T: 0.28836
-      T_data_unc: 30
-    pretty_name: "$u_{power}$"
+      T: 1
+      T_data_unc: 1
+    pretty_name: "$u_{SCF}$"
 
 
-  - embeddings: power_noise_v3
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault      #PoolingConcentration
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
-    use_detector_score: False
-    recognition_method:
-      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
-      distance_function: 
-        _target_: evaluation.distance_functions.open_set_identification.CosineSim
-      class_model: power
-      fars: ${far_list}
-      beta: ${default_beta}
-      uncertainty_type: maxprob
-      alpha: 1 # when 1, only scf unc is used
-      aggregation: sum
-      T: 0.28836
-      T_data_unc: 30
-    pretty_name: "$u_{noise}$"
+  # - embeddings: power_noise_v3
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault      #PoolingConcentration
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
+  #   use_detector_score: False
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
+  #     distance_function: 
+  #       _target_: evaluation.distance_functions.open_set_identification.CosineSim
+  #     class_model: power
+  #     far: ${far_list}
+  #     beta: ${default_beta}
+  #     uncertainty_type: maxprob
+  #     alpha: 1 # when 1, only scf unc is used
+  #     aggregation: sum
+  #     T: 0.5
+  #     T_data_unc: 30
+  #   pretty_name: "$u_{noise}$"
 
