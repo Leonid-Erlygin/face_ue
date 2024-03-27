@@ -4,6 +4,7 @@ from typing import Any
 import torch
 import numpy as np
 from evaluation.samplers import VonMisesFisher
+from scipy.optimize import fsolve, minimize
 
 
 class GalleryMeans(torch.nn.Module):
@@ -29,6 +30,7 @@ class MonteCarloPredictiveProb:
         gallery_prior: str,
         emb_unc_model: str,
         beta: float,
+        far: float,
         kappa_scale: float = 1.0,
         kappa_input_scale: float = 1.0,
         predict_T: float = 1.0,
@@ -45,11 +47,14 @@ class MonteCarloPredictiveProb:
         self.kappa_scale = kappa_scale
         self.kappa_input_scale = kappa_input_scale
         assert gallery_prior in ["power", "vMF"]
-        assert emb_unc_model in ["vMF", "PFE"]
+        if gallery_prior == "vMF" or emb_unc_model == "power":
+            raise NotImplementedError
+        assert emb_unc_model in ["vMF", "power"]
         if emb_unc_model == "vMF":
             self.sampler = VonMisesFisher(self.M)
 
         self.gallery_prior = gallery_prior
+        self.far = far
         self.beta = beta
         self.predict_T = predict_T
         self.pred_uncertainty_type = pred_uncertainty_type
@@ -61,9 +66,37 @@ class MonteCarloPredictiveProb:
         probe_unc: np.ndarray,
         gallery_feats: np.ndarray,
         gallery_unc: np.ndarray,
+        g_unique_ids: np.ndarray,
+        probe_unique_ids: np.ndarray,
     ):
-        gallery_unc_scaled = gallery_unc * self.kappa_scale
         probe_unc_scaled = probe_unc * self.kappa_input_scale
+
+        # find kappa
+        is_seen = np.isin(probe_unique_ids, g_unique_ids)
+        found_kappa = (
+            minimize(
+                self.find_kappa_by_far,
+                343.0 / 100,
+                (
+                    self,
+                    probe_feats,
+                    probe_unc_scaled,
+                    gallery_feats,
+                    gallery_unc,
+                    self.predict_T,
+                    self.far,
+                    is_seen,
+                ),
+                # xtol=0.001,
+                # maxfev=5,
+                method="Nelder-Mead",
+            )[0]
+            * 100
+        )
+        # gallery_unc_scaled = gallery_unc * self.kappa_scale
+
+        gallery_unc_scaled = np.ones_like(gallery_unc) * found_kappa
+
         self.all_classes_log_prob = (
             self.compute_log_prob(
                 probe_feats,
@@ -76,6 +109,38 @@ class MonteCarloPredictiveProb:
             .detach()
             .numpy()
         )
+
+    @staticmethod
+    def find_kappa_by_far(
+        kappa,
+        self,
+        probe_feats,
+        probe_unc_scaled,
+        gallery_feats,
+        gallery_unc,
+        predict_T,
+        target_far,
+        is_seen,
+    ):
+        gallery_unc_scaled = np.ones_like(gallery_unc) * kappa[0] * 100
+        all_classes_log_prob = (
+            self.compute_log_prob(
+                probe_feats,
+                probe_unc_scaled,
+                gallery_feats,
+                gallery_unc_scaled,
+                predict_T,
+            )
+            .cpu()
+            .detach()
+            .numpy()
+        )
+        probs = np.exp(all_classes_log_prob)
+        mean_probs = np.mean(probs, axis=1)
+        was_rejected = np.argmax(mean_probs, axis=-1) == (mean_probs.shape[-1] - 1)
+        far = np.mean(was_rejected[~is_seen] == False)
+        print(f"Found kappa {np.round(kappa[0]*100,4)} for far {far}")
+        return np.abs(far - target_far)
 
     def predict(self):
         probs = np.exp(self.all_classes_log_prob)
