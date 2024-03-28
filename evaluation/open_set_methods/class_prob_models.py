@@ -76,8 +76,12 @@ class MonteCarloPredictiveProb:
 
         if self.kappa_input_scale == 1.0:
             found_kappa = 345.0
+            if self.M == 0:
+                found_kappa = 567.9297
         elif self.kappa_input_scale == 1.5:
             found_kappa = 402
+        elif self.kappa_input_scale == 2.0:
+            found_kappa = 435
         else:
             found_kappa = (
                 minimize(
@@ -93,8 +97,6 @@ class MonteCarloPredictiveProb:
                         self.far,
                         is_seen,
                     ),
-                    # xtol=0.001,
-                    # maxfev=5,
                     method="Nelder-Mead",
                 )[0]
                 * 100
