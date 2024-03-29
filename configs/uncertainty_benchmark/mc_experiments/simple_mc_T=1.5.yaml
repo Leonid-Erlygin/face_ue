@@ -56,7 +56,7 @@ open_set_identification_uncertainty_metrics:
       _target_: evaluation.metrics.F1_classic
 
 default_beta: 0.5
-far_list: 0.01 # for now
+far_list: 0.1 # for now
 # far_list:
 #   - 0.05
 
