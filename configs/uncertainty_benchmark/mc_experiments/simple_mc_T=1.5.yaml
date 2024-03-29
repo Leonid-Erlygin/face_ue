@@ -2,7 +2,7 @@ hydra:
   run:
     dir: ${exp_dir}
 
-exp_dir: outputs/experiments/simple_mc_probe_scale
+exp_dir: outputs/experiments/simple_mc_probe_scale_change_T
 use_two_galleries: False
 recompute_template_pooling: True
 metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
@@ -106,20 +106,6 @@ far_list: 0.1 # for now
 
 
 open_set_identification_methods:
-  - embeddings: scf
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault  #PoolingConcentration, PoolingDefault
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
-    use_detector_score: False
-    recognition_method:
-      _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
-      M: 0
-      gallery_prior: power
-      emb_unc_model: vMF
-      beta: 0.5
-      far: ${far_list}
-    pretty_name: "$u_{MC}$ simple probe delta func"
 
   - embeddings: scf
     gallery_template_pooling_strategy:
@@ -129,28 +115,38 @@ open_set_identification_methods:
     use_detector_score: False
     recognition_method:
       _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
-      M: 50
+      M: 100
       gallery_prior: power
       emb_unc_model: vMF
+      kappa_input_scale: 2.0
       beta: 0.5
+      predict_T: 1.5
       far: ${far_list}
-    pretty_name: "$u_{MC}$ simple probe scale 1"
+    pretty_name: "$u_{MC}$ probe scale 2. M=100. T scale"
+
 
   - embeddings: scf
     gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault  #PoolingConcentration, PoolingDefault
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
     probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
     use_detector_score: False
+    distance_function: 
+      _target_: evaluation.distance_functions.open_set_identification.CosineSim
     recognition_method:
-      _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
-      M: 50
-      gallery_prior: power
-      emb_unc_model: vMF
-      kappa_input_scale: 1.5
-      beta: 0.5
+      _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
+      distance_function: 
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
       far: ${far_list}
-    pretty_name: "$u_{MC}$ probe scale 1.5"
+      beta: ${default_beta}
+      acceptance_score: 
+        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+      uncertainty_function:
+        _target_: evaluation.open_set_methods.uncertainty_functions.BernoulliVariance
+      alpha: 0
+      T: 22.79
+      T_data_unc: 1
+    pretty_name: "$u_{baseline}$"
 
   - embeddings: scf
     gallery_template_pooling_strategy:
@@ -165,8 +161,82 @@ open_set_identification_methods:
       emb_unc_model: vMF
       kappa_input_scale: 2.0
       beta: 0.5
+      predict_T: 1.5
       far: ${far_list}
-    pretty_name: "$u_{MC}$ probe scale 2.0"
+    pretty_name: "$u_{MC}$ probe scale 2. M=50. T scale"
+
+
+
+  - embeddings: scf
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault  #PoolingConcentration, PoolingDefault
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
+      M: 0
+      gallery_prior: power
+      emb_unc_model: vMF
+      beta: 0.5
+      far: ${far_list}
+      predict_T: 1.5
+      #pred_uncertainty_type: max_prob
+    pretty_name: "$u_{MC}$ probe delta func. T scale"
+
+  # - embeddings: scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault  #PoolingConcentration, PoolingDefault
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
+  #   use_detector_score: False
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
+  #     M: 0
+  #     gallery_prior: power
+  #     emb_unc_model: vMF
+  #     beta: 0.5
+  #     far: ${far_list}
+  #     predict_T: 1.0
+  #     #pred_uncertainty_type: max_prob
+  #   pretty_name: "$u_{MC}$ simple probe delta func"
+
+
+
+  # - embeddings: scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault  #PoolingConcentration, PoolingDefault
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
+  #   use_detector_score: False
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
+  #     M: 50
+  #     gallery_prior: power
+  #     emb_unc_model: vMF
+  #     beta: 0.5
+  #     predict_T: 1.5
+  #     far: ${far_list}
+  #   pretty_name: "$u_{MC}$ probe scale 1. T scale"
+
+  # - embeddings: scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault  #PoolingConcentration, PoolingDefault
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
+  #   use_detector_score: False
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
+  #     M: 50
+  #     gallery_prior: power
+  #     emb_unc_model: vMF
+  #     kappa_input_scale: 1.5
+  #     beta: 0.5
+  #     predict_T: 1.5
+  #     far: ${far_list}
+  #   pretty_name: "$u_{MC}$ probe scale 1.5. T scale"
+
+
 
 
   - embeddings: scf
@@ -189,24 +259,4 @@ open_set_identification_methods:
       T_data_unc: 1
     pretty_name: "$u_{SCF}$"
 
-
-  # - embeddings: power_noise_v3
-  #   gallery_template_pooling_strategy:
-  #     _target_: evaluation.template_pooling_strategies.PoolingDefault      #PoolingConcentration
-  #   probe_template_pooling_strategy:
-  #     _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
-  #   use_detector_score: False
-  #   recognition_method:
-  #     _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
-  #     distance_function: 
-  #       _target_: evaluation.distance_functions.open_set_identification.CosineSim
-  #     class_model: power
-  #     far: ${far_list}
-  #     beta: ${default_beta}
-  #     uncertainty_type: maxprob
-  #     alpha: 1 # when 1, only scf unc is used
-  #     aggregation: sum
-  #     T: 1
-  #     T_data_unc: 1
-  #   pretty_name: "$u_{noise}$"
 
