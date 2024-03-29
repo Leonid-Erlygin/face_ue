@@ -22,7 +22,7 @@ def plot_rejection_scores(scores, y_label, names):
         # auc_value = auc(rank, cmc)
         auc_value = np.round(fractions[-1] * np.mean(metric_value), 4)
         auc_values.append(auc_value)
-        label = name + f", AUC {y_label}={auc_value}"
+        label = name + f", AUC={auc_value}"
         plt.plot(fractions, metric_value, lw=1, label=label)
 
     plt.xlabel("Filter Out Rate")

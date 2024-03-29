@@ -56,7 +56,7 @@ open_set_identification_uncertainty_metrics:
       _target_: evaluation.metrics.F1_classic
 
 default_beta: 0.5
-far_list: 0.1 # for now
+far_list: 0.01 # for now
 # far_list:
 #   - 0.05
 
@@ -133,6 +133,7 @@ open_set_identification_methods:
       beta: 0.5
       predict_T: 1.5
       far: ${far_list}
+      pred_uncertainty_type: max_prob
     pretty_name: "$u_{MC}$ probe scale 2. M=100. T scale. Max Prob"
 
 
