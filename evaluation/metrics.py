@@ -93,6 +93,7 @@ class FrrFarIdent:
             "osr_metric:true_accept_false_ident": np.sum(true_accept_false_ident),
             "osr_metric:false_reject_false_ident": np.sum(false_reject_false_ident),
             "osr_metric:false_reject_true_ident": np.sum(false_reject_true_ident),
+            "osr_metric:false_ident": np.sum(false_ident),
             "osr_metric:false_accept": np.sum(false_accept),
             "osr_metric:error_sum": np.sum(true_accept_false_ident)
             + np.sum(false_reject_false_ident)

@@ -5,7 +5,6 @@ import torch
 import numpy as np
 from evaluation.samplers import VonMisesFisher
 from scipy.optimize import fsolve, minimize
-import optuna
 
 
 class GalleryMeans(torch.nn.Module):
@@ -89,44 +88,29 @@ class MonteCarloPredictiveProb:
             found_kappa = 493
         elif self.kappa_input_scale == 2.5 and self.far == 0.05:
             found_kappa = 520.3125
-        # elif self.kappa_input_scale == 3.0 and self.far == 0.05:
+        # elif self.kappa_input_scale == 2.5 and self.far == 0.1:
         #     found_kappa = 520.3125
+        elif self.kappa_input_scale == 3.0 and self.far == 0.05:
+            found_kappa = 538.0
         else:
-
-            def objective(trial):
-                kappa = trial.suggest_float("Kappa", 200, 700)
-                return self.find_kappa_by_far(
-                    kappa,
-                    self,
-                    probe_feats,
-                    probe_unc_scaled,
-                    gallery_feats,
-                    gallery_unc,
-                    self.predict_T,
-                    self.far,
-                    is_seen,
-                )
-
-            study = optuna.create_study()  # Create a new study.
-            study.optimize(objective, n_trials=20)
-            # found_kappa = (
-            #     minimize(
-            #         self.find_kappa_by_far,
-            #         500.0 / 100,
-            #         (
-            #             self,
-            #             probe_feats,
-            #             probe_unc_scaled,
-            #             gallery_feats,
-            #             gallery_unc,
-            #             self.predict_T,
-            #             self.far,
-            #             is_seen,
-            #         ),
-            #         method="Nelder-Mead",
-            #     )[0]
-            #     * 100
-            # )
+            found_kappa = (
+                minimize(
+                    self.find_kappa_by_far,
+                    500.0 / 100,
+                    (
+                        self,
+                        probe_feats,
+                        probe_unc_scaled,
+                        gallery_feats,
+                        gallery_unc,
+                        self.predict_T,
+                        self.far,
+                        is_seen,
+                    ),
+                    method="Nelder-Mead",
+                )[0]
+                * 100
+            )
         # gallery_unc_scaled = gallery_unc * self.kappa_scale
 
         gallery_unc_scaled = np.ones_like(gallery_unc) * found_kappa
@@ -156,7 +140,8 @@ class MonteCarloPredictiveProb:
         target_far,
         is_seen,
     ):
-        gallery_unc_scaled = np.ones_like(gallery_unc) * kappa
+        kappa = kappa[0]
+        gallery_unc_scaled = np.ones_like(gallery_unc) * kappa * 100
         all_classes_log_prob = (
             self.compute_log_prob(
                 probe_feats,
@@ -173,8 +158,8 @@ class MonteCarloPredictiveProb:
         mean_probs = np.mean(probs, axis=1)
         was_rejected = np.argmax(mean_probs, axis=-1) == (mean_probs.shape[-1] - 1)
         far = np.mean(was_rejected[~is_seen] == False)
-        print(f"Found kappa {np.round(kappa,4)} for far {far}")
-        return np.abs(far - target_far)
+        print(f"Found kappa {np.round(kappa * 100,4)} for far {far}")
+        return np.abs(far - target_far) / target_far
 
     def predict(self):
         probs = np.exp(self.all_classes_log_prob)
