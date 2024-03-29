@@ -1,8 +1,8 @@
 "models": "Method"
-"false_accept_num" : ["False Accept", "Count $(\\downarrow)$"]
-"false_reject_num": ["False Reject", "Count $(\\downarrow)$"]
-"false_ident_num": ["False Ident", "Count $(\\downarrow)$"]
-"false_ident-reject_num": ["False Reject/Ident", "Count $(\\downarrow)$"]
+"true_accept_false_ident" : ["True Accept & False Ident", "Count $(\\downarrow)$"]
+"false_reject_false_ident": ["False Reject & False Ident", "Count $(\\downarrow)$"]
+"false_reject_true_ident": ["False Reject & True Ident", "Count $(\\downarrow)$"]
+"false_accept": ["False Accept", "Count $(\\downarrow)$"]
 "error_sum": ["All errors", "Count $(\\downarrow)$"]
 "dir": ["DIR", "$(\\uparrow)$"]
 "far": ["FAR", " $(\\downarrow)$"]

@@ -64,24 +64,40 @@ class FrrFarIdent:
         probe_unique_ids: np.ndarray,
     ) -> dict:
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
-        false_accept = was_rejected[~is_seen] == False
+
         false_reject = was_rejected[is_seen]
-
+        true_accept = ~false_reject
         similar_gallery_class = g_unique_ids[predicted_id[is_seen]]
-        false_ident = probe_unique_ids[is_seen] != similar_gallery_class
 
-        false_reject_slice = np.logical_and(false_ident == False, false_reject)
-        false_ident_slice = np.logical_and(false_ident, false_reject == False)
-        false_ident_reject = np.logical_and(false_ident, false_reject)
+        false_ident = probe_unique_ids[is_seen] != similar_gallery_class
+        true_ident = ~false_ident
+
+        # errors
+        true_accept_false_ident = np.logical_and(true_accept, false_ident)
+        false_reject_false_ident = np.logical_and(false_reject, false_ident)
+        false_reject_true_ident = np.logical_and(false_reject, true_ident)
+        false_accept = was_rejected[~is_seen] == False
+        # no error
+        true_reject = was_rejected[~is_seen]
+        true_accept_true_ident = np.logical_and(true_accept, true_ident)
+
+        assert probe_unique_ids.shape[0] == np.sum(true_accept_false_ident) + np.sum(
+            false_reject_false_ident
+        ) + np.sum(false_reject_true_ident) + np.sum(false_accept) + np.sum(
+            true_reject
+        ) + np.sum(
+            true_accept_true_ident
+        )
+
         result_metrics = {
-            "osr_metric:false_accept_num": np.sum(false_accept),
-            "osr_metric:false_reject_num": np.sum(false_reject_slice),
-            "osr_metric:false_ident_num": np.sum(false_ident_slice),
-            "osr_metric:false_ident-reject_num": np.sum(false_ident_reject),
-            "osr_metric:error_sum": np.sum(false_accept)
-            + np.sum(false_reject_slice)
-            + np.sum(false_ident_slice)
-            + np.sum(false_ident_reject),
+            "osr_metric:true_accept_false_ident": np.sum(true_accept_false_ident),
+            "osr_metric:false_reject_false_ident": np.sum(false_reject_false_ident),
+            "osr_metric:false_reject_true_ident": np.sum(false_reject_true_ident),
+            "osr_metric:false_accept": np.sum(false_accept),
+            "osr_metric:error_sum": np.sum(true_accept_false_ident)
+            + np.sum(false_reject_false_ident)
+            + np.sum(false_reject_true_ident)
+            + np.sum(false_accept),
         }
         return result_metrics
 
