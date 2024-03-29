@@ -4,6 +4,7 @@
 "false_reject_true_ident": ["False Reject & True Ident", "Count $(\\downarrow)$"]
 "false_ident": ["False Ident", "Count $(\\downarrow)$"]
 "false_accept": ["False Accept", "Count $(\\downarrow)$"]
+"false_reject": ["False Reject", "Count $(\\downarrow)$"]
 "error_sum": ["All errors", "Count $(\\downarrow)$"]
 "dir": ["DIR", "$(\\uparrow)$"]
 "far": ["FAR", " $(\\downarrow)$"]

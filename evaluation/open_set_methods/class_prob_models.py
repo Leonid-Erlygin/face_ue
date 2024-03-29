@@ -88,10 +88,12 @@ class MonteCarloPredictiveProb:
             found_kappa = 493
         elif self.kappa_input_scale == 2.5 and self.far == 0.05:
             found_kappa = 520.3125
-        # elif self.kappa_input_scale == 2.5 and self.far == 0.1:
-        #     found_kappa = 520.3125
+        elif self.kappa_input_scale == 2.5 and self.far == 0.1:
+            found_kappa = 457
         elif self.kappa_input_scale == 3.0 and self.far == 0.05:
             found_kappa = 538.0
+        elif self.kappa_input_scale == 3.0 and self.far == 0.1:
+            found_kappa = 475
         else:
             found_kappa = (
                 minimize(
