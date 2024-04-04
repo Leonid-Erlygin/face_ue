@@ -4,6 +4,8 @@ cache
 datasets
 unsorted_data
 wandb
+happy_whale
+*api.yaml
 IJB_result
 model_weights
 # Byte-compiled / optimized / DLL files
