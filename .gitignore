@@ -5,6 +5,7 @@ datasets
 unsorted_data
 wandb
 happy_whale
+sandbox/happy_whale/kaggle-happywhale-1st-place/input
 *api.yaml
 IJB_result
 model_weights
