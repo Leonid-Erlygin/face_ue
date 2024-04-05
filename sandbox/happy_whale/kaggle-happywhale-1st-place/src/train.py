@@ -184,14 +184,17 @@ class SphereClassifier(LightningModule):
             self.margin_fn_species(logits_species, species), species
         )
         self.log_dict(
-            {"train/loss_ids": loss_ids.detach()}, on_step=False, on_epoch=True
+            {"train/loss_ids": loss_ids.detach()},
+            on_step=True,
         )
         self.log_dict(
-            {"train/loss_species": loss_species.detach()}, on_step=False, on_epoch=True
+            {"train/loss_species": loss_species.detach()},
+            on_step=True,
         )
         with torch.no_grad():
             self.log_dict(
-                map_dict(logits_ids, ids, "train"), on_step=False, on_epoch=True
+                map_dict(logits_ids, ids, "train"),
+                on_step=True,
             )
             self.log_dict(
                 {
@@ -201,8 +204,7 @@ class SphereClassifier(LightningModule):
                     .mean()
                     .detach()
                 },
-                on_step=False,
-                on_epoch=True,
+                on_step=True,
             )
         return loss_ids * self.hparams.loss_id_ratio + loss_species * (
             1 - self.hparams.loss_id_ratio
@@ -329,6 +331,7 @@ def train(
         logger=loggers,
         callbacks=callbacks,
         # checkpoint_callback=args.save_checkpoint,
+        log_every_n_steps=20,
         precision=16,
         sync_batchnorm=True,
     )
