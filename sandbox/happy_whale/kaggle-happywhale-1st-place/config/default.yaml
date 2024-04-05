@@ -47,8 +47,8 @@ s_species: 33.1383
 
 margin_cons_id: 0.05
 margin_cons_species: 0.05
-n_center_id: 2
-n_center_species: 2
+n_center_id: 1
+n_center_species: 1
 
 aug:
   rotate: 15

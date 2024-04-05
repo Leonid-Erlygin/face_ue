@@ -78,7 +78,7 @@ class WhaleDataModule(LightningDataModule):
         if self.additional_dataset is not None:
             dataset = ConcatDataset([dataset, self.additional_dataset])
         return DataLoader(
-            dataset,  # torch.utils.data.Subset(dataset,np.random.choice(len(dataset), 100, replace=False)),  #dataset, # torch.utils.data.Subset(self.predict_dataset, np.random.choice(len(self.predict_dataset), 5000, replace=False))
+            dataset,  # torch.utils.data.Subset(dataset,np.random.choice(len(dataset), 1000, replace=False)),  #dataset, # torch.utils.data.Subset(self.predict_dataset, np.random.choice(len(self.predict_dataset), 5000, replace=False))
             batch_size=self.cfg.batch_size,
             shuffle=True,
             num_workers=4,
@@ -314,7 +314,7 @@ def train(
             pl_loggers.WandbLogger(
                 project="kaggle-happywhale",
                 group=args.exp_name,
-                name=f"{args.exp_name}/{fold}",
+                name=f"{args.exp_name}/{-fold}",
                 save_dir=out_dir,
             )
         )
