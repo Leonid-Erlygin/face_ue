@@ -320,7 +320,7 @@ def train(
                 save_dir=out_dir,
             )
         )
-    callbacks = [LearningRateMonitor("epoch")]
+    callbacks = [LearningRateMonitor(logging_interval="step")]
     if optuna_trial is not None:
         callbacks.append(PyTorchLightningPruningCallback(optuna_trial, "val/mapNone"))
     if args.save_checkpoint:
