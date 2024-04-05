@@ -11,4 +11,3 @@ docker run -d \
  -w="/app/sandbox/happy_whale/kaggle-happywhale-1st-place" \
  face-eval \
  python -m src.train --config_path config/efficientnet_b7.yaml --exp_name b7 --save_checkpoint
-# --ckpt_path=/app/models/scf/epoch=3-step=90000.ckpt

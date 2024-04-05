@@ -4,8 +4,11 @@ cache
 datasets
 unsorted_data
 wandb
-happy_whale
+# happy_whale
+*.bin
+*.pkl
 sandbox/happy_whale/kaggle-happywhale-1st-place/input
+sandbox/happy_whale/kaggle-happywhale-1st-place/result
 *api.yaml
 IJB_result
 model_weights
