@@ -8,7 +8,7 @@ docker run \
  --rm \
  --init \
  -v /home/i.kolesnikov/face_ue:/app \
- --gpus '"device=0,2"' \
+ --gpus '"device=1,2"' \
  -w="/app" \
  kolesnikov-face \
  python trainers/train.py fit \

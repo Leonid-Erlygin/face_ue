@@ -43,7 +43,7 @@ trainer:
   callbacks:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args:
-      dirpath: outputs/scf_train/weights_scf_with_noise_v3
+      dirpath: outputs/scf_train/weights_power_noise_v3
       filename: null
       monitor: null
       verbose: false
@@ -63,7 +63,7 @@ trainer:
   - class_path: face_lib.models.scf.Prediction_writer
     init_args:
       output_dir: /app/cache/features
-      file_name: power_noise_v2_embs_IJBC
+      file_name: test_power_embs_IJBC
       write_interval: epoch
   fast_dev_run: false
   max_epochs: 6
@@ -99,7 +99,7 @@ trainer:
   default_root_dir: outputs/scf_train
 ckpt_path: null
 model:
-  class_path: face_lib.models.scf.SphereConfidenceFace
+  class_path: face_lib.models.SphereConfidenceFace
   init_args:
     backbone:
       class_path: face_lib.models.lightning_wrappers.ResNet

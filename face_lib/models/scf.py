@@ -63,6 +63,21 @@ class SphereConfidenceFace(LightningModule):
 
     def training_step(self, batch):
         images, labels = batch
+        #freezing bn layers
+        # self.backbone.backbone.bn1.eval()
+        # self.backbone.backbone.layer1.0.bn1.eval()
+        # self.backbone.backbone.layer1.0.bn2.eval()
+        # self.backbone.backbone.layer1.0.bn3.eval()
+        # self.backbone.backbone.layer1.0.downsample.1.eval()
+        # self.backbone.backbone.layer1.1.bn1.eval()
+        # self.backbone.backbone.layer1.1.bn2.eval()
+        # self.backbone.backbone.layer1.1.bn3.eval()
+        # self.backbone.backbone.layer1.2.bn1.eval()
+        # self.backbone.backbone.layer1.2.bn2.eval()
+        # self.backbone.backbone.layer1.2.bn3.eval()
+        # self.backbone.backbone.layer2.0.bn1.eval()
+        # self.backbone.backbone.layer2.0.bn2.eval()
+        self.backbone.backbone.eval()
         feature, log_kappa = self(images)
         kappa = torch.exp(log_kappa)
         wc = self.softmax_weights[labels, :]
