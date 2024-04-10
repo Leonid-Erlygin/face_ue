@@ -81,7 +81,7 @@ class WhaleDataModule(LightningDataModule):
             dataset,  # torch.utils.data.Subset(dataset,np.random.choice(len(dataset), 1000, replace=False)),  #dataset, # torch.utils.data.Subset(self.predict_dataset, np.random.choice(len(self.predict_dataset), 5000, replace=False))
             batch_size=self.cfg.batch_size,
             shuffle=True,
-            num_workers=4,
+            num_workers=32,
             pin_memory=True,
             drop_last=True,
         )
@@ -272,7 +272,7 @@ class SphereClassifier(LightningModule):
             "embed_features2": feat2.cpu(),
         }
 
-    def test_epoch_end(self, outputs: List[Dict[str, torch.Tensor]]):
+    def on_test_epoch_end(self, outputs: List[Dict[str, torch.Tensor]]):
         outputs = self.all_gather(outputs)
         if self.trainer.global_rank == 0:
             epoch_results: Dict[str, np.ndarray] = {}
