@@ -2,7 +2,7 @@ hydra:
   run:
     dir: ${exp_dir}
 
-exp_dir: outputs/experiments/simple_mc_probe_scale_change_T_new_mentrics
+exp_dir: outputs/experiments/simple_mc_probe_scale_change_T_new_mentrics_0.05_far
 use_two_galleries: False
 recompute_template_pooling: True
 metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
@@ -56,7 +56,7 @@ open_set_identification_uncertainty_metrics:
       _target_: evaluation.metrics.F1_classic
 
 default_beta: 0.5
-far_list: 0.1 # for now
+far_list: 0.05 # for now
 # far_list:
 #   - 0.05
 
@@ -101,22 +101,6 @@ open_set_identification_methods:
       far: ${far_list}
     pretty_name: "$u_{MC}$ probe scale 2. M=50. T scale"
 
-  - embeddings: scf
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault  #PoolingConcentration, PoolingDefault
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
-    use_detector_score: False
-    recognition_method:
-      _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
-      M: 100
-      gallery_prior: power
-      emb_unc_model: vMF
-      kappa_input_scale: 2.0
-      beta: 0.5
-      predict_T: 1.5
-      far: ${far_list}
-    pretty_name: "$u_{MC}$ probe scale 2. M=100. T scale"
 
   - embeddings: scf
     gallery_template_pooling_strategy:
@@ -126,16 +110,32 @@ open_set_identification_methods:
     use_detector_score: False
     recognition_method:
       _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
-      M: 100
+      M: 50
       gallery_prior: power
       emb_unc_model: vMF
-      kappa_input_scale: 2.0
+      kappa_input_scale: 2.5
       beta: 0.5
       predict_T: 1.5
       far: ${far_list}
-      pred_uncertainty_type: max_prob
-    pretty_name: "$u_{MC}$ probe scale 2. M=100. T scale. Max Prob"
+    pretty_name: "$u_{MC}$ probe scale 2.5. M=50. T scale"
 
+
+  - embeddings: scf
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault  #PoolingConcentration, PoolingDefault
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
+      M: 50
+      gallery_prior: power
+      emb_unc_model: vMF
+      kappa_input_scale: 3.0
+      beta: 0.5
+      predict_T: 1.5
+      far: ${far_list}
+    pretty_name: "$u_{MC}$ probe scale 3. M=50. T scale"
 
   - embeddings: scf
     gallery_template_pooling_strategy:
