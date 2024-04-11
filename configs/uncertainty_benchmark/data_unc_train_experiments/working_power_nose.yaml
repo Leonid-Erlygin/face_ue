@@ -2,7 +2,7 @@ hydra:
   run:
     dir: ${exp_dir}
 
-exp_dir: outputs/experiments/whale_ds
+exp_dir: outputs/experiments/power_nose_0.05
 use_two_galleries: False
 recompute_template_pooling: True
 metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
@@ -17,13 +17,9 @@ test_datasets:
   #   dataset_name: IJBB
   #   dataset_path: /app/datasets/arcface_ijb/IJBB
 
-  # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
-  #   dataset_name: IJBC
-  #   dataset_path: /app/datasets/arcface_ijb/IJBC
-
   - _target_: evaluation.test_datasets.FaceRecogntioniDataset
-    dataset_name: whale
-    dataset_path: /app/datasets/whale_train
+    dataset_name: IJBC
+    dataset_path: /app/datasets/arcface_ijb/IJBC
 
   # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
   #   dataset_name: lfw
@@ -65,45 +61,47 @@ far_list: 0.05 # for now
 #   - 0.05
 
 open_set_identification_methods:
-
-  - embeddings: b6
+  - embeddings: scf_new
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault  #PoolingConcentration, PoolingDefault
     probe_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
     use_detector_score: False
     recognition_method:
-      _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
-      M: 0
-      gallery_prior: power
-      emb_unc_model: vMF
-      beta: 0.5
-      far: ${far_list}
-      predict_T: 1.5
-    pretty_name: "Whale delta func. T scale"
-
-  - embeddings: b6
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    use_detector_score: False
-    distance_function: 
-      _target_: evaluation.distance_functions.open_set_identification.CosineSim
-    recognition_method:
-      _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
+      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
       distance_function: 
         _target_: evaluation.distance_functions.open_set_identification.CosineSim
+      class_model: power
       far: ${far_list}
       beta: ${default_beta}
-      acceptance_score: 
-        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
-      uncertainty_function:
-        _target_: evaluation.open_set_methods.uncertainty_functions.BernoulliVariance
-      alpha: 0
-      T: 22.79
+      uncertainty_type: maxprob
+      alpha: 1 # when 1, only scf unc is used
+      aggregation: sum
+      T: 1
       T_data_unc: 1
-    pretty_name: "Whale"
+    pretty_name: "$u_{SCF}$"
+
+  - embeddings: power_noise_v3_new
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault  #PoolingConcentration, PoolingDefault
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
+      distance_function: 
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
+      class_model: power
+      far: ${far_list}
+      beta: ${default_beta}
+      uncertainty_type: maxprob
+      alpha: 1 # when 1, only scf unc is used
+      aggregation: sum
+      T: 1
+      T_data_unc: 1
+    pretty_name: "$u_{Power}$ Nose"
+
+
 
 
 

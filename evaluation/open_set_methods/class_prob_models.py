@@ -73,27 +73,28 @@ class MonteCarloPredictiveProb:
 
         # find kappa
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
-        assert probe_feats.shape[0] == 19593, "Here IJB-C is hard coded"
-        if self.kappa_input_scale == 1.0 and self.far == 0.1:
-            found_kappa = 345.0
-            if self.M == 0:
-                found_kappa = 567.9297
-        elif self.far == 0.05 and self.M == 0:
-            found_kappa = 653.9001
-        elif self.kappa_input_scale == 1.5 and self.far == 0.1:
-            found_kappa = 402
-        elif self.kappa_input_scale == 2.0 and self.far == 0.1:
-            found_kappa = 435
-        elif self.kappa_input_scale == 2.0 and self.far == 0.05:
-            found_kappa = 493
-        elif self.kappa_input_scale == 2.5 and self.far == 0.05:
-            found_kappa = 520.3125
-        elif self.kappa_input_scale == 2.5 and self.far == 0.1:
-            found_kappa = 457
-        elif self.kappa_input_scale == 3.0 and self.far == 0.05:
-            found_kappa = 538.0
-        elif self.kappa_input_scale == 3.0 and self.far == 0.1:
-            found_kappa = 475
+        # assert probe_feats.shape[0] == 19593, "Here IJB-C is hard coded"
+        if probe_feats.shape[0] == 19593:
+            if self.kappa_input_scale == 1.0 and self.far == 0.1:
+                found_kappa = 345.0
+                if self.M == 0:
+                    found_kappa = 567.9297
+            elif self.far == 0.05 and self.M == 0:
+                found_kappa = 653.9001
+            elif self.kappa_input_scale == 1.5 and self.far == 0.1:
+                found_kappa = 402
+            elif self.kappa_input_scale == 2.0 and self.far == 0.1:
+                found_kappa = 435
+            elif self.kappa_input_scale == 2.0 and self.far == 0.05:
+                found_kappa = 493
+            elif self.kappa_input_scale == 2.5 and self.far == 0.05:
+                found_kappa = 520.3125
+            elif self.kappa_input_scale == 2.5 and self.far == 0.1:
+                found_kappa = 457
+            elif self.kappa_input_scale == 3.0 and self.far == 0.05:
+                found_kappa = 538.0
+            elif self.kappa_input_scale == 3.0 and self.far == 0.1:
+                found_kappa = 475
         else:
             found_kappa = (
                 minimize(
