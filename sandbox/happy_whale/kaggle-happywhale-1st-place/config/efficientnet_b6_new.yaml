@@ -1,4 +1,4 @@
-batch_size: 36
+batch_size: 48
 image_size:
 - 528
 - 528

@@ -16,6 +16,7 @@ model_weights
 __pycache__/
 *.py[cod]
 *$py.class
+*torchviz*
 *.zip
 *.npz
 scripts/whale_train.sh

@@ -81,7 +81,7 @@ class WhaleDataModule(LightningDataModule):
             dataset,  # torch.utils.data.Subset(dataset,np.random.choice(len(dataset), 1000, replace=False)),  #dataset, # torch.utils.data.Subset(self.predict_dataset, np.random.choice(len(self.predict_dataset), 5000, replace=False))
             batch_size=self.cfg.batch_size,
             shuffle=True,
-            num_workers=32,
+            num_workers=24,
             pin_memory=True,
             drop_last=True,
         )
@@ -137,11 +137,18 @@ class SphereClassifier(LightningModule):
             self.neck = torch.nn.BatchNorm1d(self.mid_features)
         elif cfg.normalization == "layernorm":
             self.neck = torch.nn.LayerNorm(self.mid_features)
+        backbone_head_out_dim = 512
+
+        # new feature bottlneck
+        self.backbone_head = torch.nn.Linear(self.mid_features, backbone_head_out_dim)
+        self.backbone_head_bn = torch.nn.BatchNorm1d(backbone_head_out_dim)
+        ###
+
         self.head_id = ArcMarginProductSubcenter(
-            self.mid_features, cfg.num_classes, cfg.n_center_id
+            backbone_head_out_dim, cfg.num_classes, cfg.n_center_id
         )
         self.head_species = ArcMarginProductSubcenter(
-            self.mid_features, cfg.num_species_classes, cfg.n_center_species
+            backbone_head_out_dim, cfg.num_species_classes, cfg.n_center_species
         )
         if id_class_nums is not None and species_class_nums is not None:
             margins_id = (
@@ -164,7 +171,7 @@ class SphereClassifier(LightningModule):
             self.loss_fn_id = torch.nn.CrossEntropyLoss()
             self.loss_fn_species = torch.nn.CrossEntropyLoss()
 
-    def get_feat(self, x: torch.Tensor) -> torch.Tensor:
+    def get_bottleneck_feature(self, x: torch.Tensor) -> torch.Tensor:
         ms = self.backbone(x)
         h = torch.cat(
             [global_pool(m) for m, global_pool in zip(ms, self.global_pools)], dim=1
@@ -172,7 +179,9 @@ class SphereClassifier(LightningModule):
         return self.neck(h)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        feat = self.get_feat(x)
+        bottleneck_feat = self.get_bottleneck_feature(x)
+        feat = self.backbone_head_bn(self.backbone_head(bottleneck_feat))
+
         return self.head_id(feat), self.head_species(feat)
 
     def training_step(self, batch, batch_idx):
