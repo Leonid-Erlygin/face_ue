@@ -95,11 +95,14 @@ class MonteCarloPredictiveProb:
                 found_kappa = 538.0
             elif self.kappa_input_scale == 3.0 and self.far == 0.1:
                 found_kappa = 475
+        elif probe_feats.shape[0] == 15587:
+            if self.M == 0 and self.far == 0.1:
+                found_kappa = 1915.4688
         else:
             found_kappa = (
                 minimize(
                     self.find_kappa_by_far,
-                    500.0 / 100,
+                    1300.0 / 100,
                     (
                         self,
                         probe_feats,
@@ -196,6 +199,7 @@ class MonteCarloPredictiveProb:
         zs = torch.tensor(self.sampler(mean, kappa), device=gallery_means.device)
         d = torch.tensor([mean.shape[-1]], device=gallery_means.device)
         similarities = zs @ gallery_means.T
+        similarities_np = similarities.cpu().numpy()[:, 0, :]
         if self.gallery_prior == "power":
             log_m_c_power = (
                 torch.special.gammaln(d - 1 + gallery_kappas)

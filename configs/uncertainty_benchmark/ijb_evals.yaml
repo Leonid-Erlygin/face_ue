@@ -60,7 +60,7 @@ open_set_identification_uncertainty_metrics:
       _target_: evaluation.metrics.F1_classic
 
 default_beta: 0.5
-far_list: 0.05 # for now
+far_list: 0.1 # for now
 # far_list:
 #   - 0.05
 
@@ -77,9 +77,9 @@ open_set_identification_methods:
       M: 0
       gallery_prior: power
       emb_unc_model: vMF
-      beta: 0.5
+      beta: 0.594
       far: ${far_list}
-      predict_T: 1.5
+      predict_T: 3
     pretty_name: "Whale delta func. T scale"
 
   - embeddings: b6
