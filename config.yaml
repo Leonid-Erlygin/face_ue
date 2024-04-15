@@ -121,15 +121,13 @@ model:
       optimizer_path: torch.optim
       optimizer_name: AdamW
       params:
-        lr: 1.0e-05
+        lr: 5.0e-05
         weight_decay: 0.005
     scheduler_params:
       scheduler: StepLR
       params:
-        step_size: 5000
+        step_size: 1
         gamma: 0.5
-      interval: step
-      frequency: 1
     permute_batch: false
     softmax_weights: null
 data:
@@ -146,5 +144,5 @@ data:
         dataset_path: /app/datasets/arcface_ijb/IJBC
         dataset_name: IJBC
         norm_image: true
-    batch_size: 9
+    batch_size: 12
     num_workers: 20

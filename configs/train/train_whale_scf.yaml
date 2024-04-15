@@ -45,15 +45,15 @@ model:
             optimizer_path: torch.optim
             optimizer_name: AdamW # Adam
             params:
-                lr: 1e-5
+                lr: 5e-5
                 weight_decay: 5e-3
         scheduler_params:
             scheduler: StepLR
             params:
-                step_size: 5000
+                step_size: 1
                 gamma: 0.5
-            interval: "step"
-            frequency: 1
+            # interval: "step"
+            # frequency: 1
         permute_batch: False
 
 
@@ -72,7 +72,7 @@ data:
                 dataset_path: /app/datasets/arcface_ijb/IJBC
                 dataset_name: IJBC
                 norm_image: True
-        batch_size: 9
+        batch_size: 12
         num_workers: 20
 
         # train_dataset:

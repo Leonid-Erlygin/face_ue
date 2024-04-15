@@ -54,6 +54,7 @@ class SphereConfidenceFace(LightningModule):
         if softmax_weights is None:
             # assume that weights are stored in the backbone
             self.softmax_weights = self.backbone.backbone.head_id.weight.data
+            delattr(self.backbone.backbone, "head_id")
             softmax_weights_norm = torch.norm(
                 self.softmax_weights, dim=1, keepdim=True
             )  # [N, 1]
@@ -105,7 +106,7 @@ class SphereConfidenceFace(LightningModule):
                     importlib.import_module("torch.optim.lr_scheduler"),
                     self.scheduler_params["scheduler"],
                 )(optimizer, **self.scheduler_params["params"]),
-                "interval": "step",
+                # "interval": "step",
             },
         }
 
