@@ -1,10 +1,10 @@
 import torch
-
 import torch.nn.functional as F
+from face_lib import models as mlib
 import sys
 
 sys.path.append("/app/sandbox/happy_whale/kaggle-happywhale-1st-place")
-from face_lib import models as mlib
+
 
 from src.train import SphereClassifier
 
@@ -13,8 +13,9 @@ class EfficientNet(torch.nn.Module):
     def __init__(self, checkpoint_path: str, learnable: bool) -> None:
         super().__init__()
         self.backbone = SphereClassifier.load_from_checkpoint(
-            checkpoint_path="/app/sandbox/happy_whale/kaggle-happywhale-1st-place/result/b6_bottleneck_feature_fix_nb/1/last-v4.ckpt"
+            checkpoint_path=checkpoint_path
         )
+        delattr(self.backbone, "head_species")
         if learnable is False:
             for p in self.backbone.modules():
                 p.requires_grad = False

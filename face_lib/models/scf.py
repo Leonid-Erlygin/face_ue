@@ -42,16 +42,29 @@ class SphereConfidenceFace(LightningModule):
         backbone: torch.nn.Module,
         head: torch.nn.Module,
         scf_loss: torch.nn.Module,
-        softmax_weights: torch.nn.Module,
         optimizer_params,
         scheduler_params,
         permute_batch: bool,
+        softmax_weights: torch.nn.Module = None,
     ):
         super().__init__()
         self.backbone = backbone
         self.head = head
         self.scf_loss = scf_loss
-        self.softmax_weights = softmax_weights.softmax_weights
+        if softmax_weights is None:
+            # assume that weights are stored in the backbone
+            self.softmax_weights = self.backbone.backbone.head_id.weight.data
+            softmax_weights_norm = torch.norm(
+                self.softmax_weights, dim=1, keepdim=True
+            )  # [N, 1]
+            self.softmax_weights = (
+                self.softmax_weights / softmax_weights_norm * scf_loss.radius
+            )  # $ w_c \in rS^{d-1} $
+            self.softmax_weights = torch.nn.Parameter(
+                self.softmax_weights, requires_grad=False
+            )
+        else:
+            self.softmax_weights = softmax_weights.softmax_weights
         self.optimizer_params = optimizer_params
         self.scheduler_params = scheduler_params
         self.permute_batch = permute_batch
