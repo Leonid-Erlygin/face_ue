@@ -135,6 +135,8 @@ class SphereClassifier(LightningModule):
         self.mid_features = np.sum(feature_dims)
         if cfg.normalization == "batchnorm":
             self.neck = torch.nn.BatchNorm1d(self.mid_features)
+            # torch.nn.init.constant_(self.neck.weight, 1.0)
+            # self.neck.weight.requires_grad = False
         elif cfg.normalization == "layernorm":
             self.neck = torch.nn.LayerNorm(self.mid_features)
         backbone_head_out_dim = 512
@@ -142,6 +144,8 @@ class SphereClassifier(LightningModule):
         # new feature bottlneck
         self.backbone_head = torch.nn.Linear(self.mid_features, backbone_head_out_dim)
         self.backbone_head_bn = torch.nn.BatchNorm1d(backbone_head_out_dim)
+        # torch.nn.init.constant_(self.backbone_head_bn.weight, 1.0)
+        # self.backbone_head_bn.weight.requires_grad = False
         ###
 
         self.head_id = ArcMarginProductSubcenter(
@@ -240,7 +244,9 @@ class SphereClassifier(LightningModule):
             self.global_pools.parameters()
         )
         head_params = (
-            list(self.neck.parameters())
+            list(self.backbone_head.parameters())
+            + list(self.backbone_head_bn.parameters())
+            + list(self.neck.parameters())
             + list(self.head_id.parameters())
             + list(self.head_species.parameters())
         )
