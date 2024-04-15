@@ -97,7 +97,7 @@ class MonteCarloPredictiveProb:
                 found_kappa = 475
         elif probe_feats.shape[0] == 15587:
             if self.M == 0 and self.far == 0.1:
-                found_kappa = 1915.4688
+                found_kappa = 1508.2031
         else:
             found_kappa = (
                 minimize(

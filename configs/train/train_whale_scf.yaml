@@ -27,9 +27,9 @@ model:
     class_path: face_lib.models.scf.SphereConfidenceFace
     init_args:
         backbone:
-            class_path: face_lib.models.lightning_wrappers.ResNet
+            class_path: face_lib.models.lightning_wrappers.EfficientNet
             init_args:
-                resnet_name: iresnet50_normalized
+                checkpoint_path: iresnet50_normalized
                 weights: /app/model_weights/backbone/ms1mv3_arcface_r50/backbone.pth
                 learnable: False
         head:

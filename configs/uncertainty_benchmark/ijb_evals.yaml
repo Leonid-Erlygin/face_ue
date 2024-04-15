@@ -79,7 +79,7 @@ open_set_identification_methods:
       emb_unc_model: vMF
       beta: 0.594
       far: ${far_list}
-      predict_T: 3
+      predict_T: 10
     pretty_name: "Whale delta func. T scale"
 
   - embeddings: b6
