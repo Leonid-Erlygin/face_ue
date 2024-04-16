@@ -227,11 +227,7 @@ class MXFaceDataset(Dataset):
 
 
 class WhaleDataset(Dataset):
-    def __init__(
-        self,
-        config_path: str,
-        image_dir: str,
-    ):
+    def __init__(self, config_path: str, image_dir: str, test: bool = False):
         super().__init__()
         val_bbox_name = "fullbody"
         cfg = load_config(
@@ -255,7 +251,8 @@ class WhaleDataset(Dataset):
         self.image_dir = f"{image_dir}/train_images"
         self.df = df
         self.val_bbox_name = val_bbox_name
-        self.data_aug = True
+        self.test = test
+        self.data_aug = not test
         augments = []
         if self.data_aug:
             aug = cfg.aug
@@ -315,7 +312,10 @@ class WhaleDataset(Dataset):
         image = cv2.resize(image, self.cfg.image_size, interpolation=cv2.INTER_CUBIC)
         # data augmentation
         augmented = self.transform(image=image)["image"]
-        return augmented, self.ids[i]
+        if self.test:
+            return augmented
+        else:
+            return augmented, self.ids[i]
 
     # {
     #         "original_index": self.index[i],
