@@ -95,7 +95,7 @@ class MonteCarloPredictiveProb:
                 found_kappa = 538.0
             elif self.kappa_input_scale == 3.0 and self.far == 0.1:
                 found_kappa = 475
-        elif probe_feats.shape[0] == 15587:
+        elif probe_feats.shape[0] == 15587 and False:
             if self.M == 0 and self.far == 0.1:
                 found_kappa = 1508.2031
             elif self.M == 0 and self.far == 0.05:
@@ -233,7 +233,7 @@ class MonteCarloPredictiveProb:
         logit_sum = (
             torch.sum(
                 torch.mul(
-                    m_c_power[..., :, 0] ** (1 / T), sim_to_power, out=similarities
+                    sim_to_power, m_c_power[..., :, 0] ** (1 / T), out=similarities
                 ),
                 dim=-1,
             )
@@ -255,7 +255,7 @@ class MonteCarloPredictiveProb:
         )
         pz_c = torch.add(
             torch.log(sim_to_power, out=similarities),
-            log_normalizer[..., :, 0],
+            (1 / T) * log_normalizer[..., :, 0],
             out=similarities,
         )
         # gallery_log_probs = (
