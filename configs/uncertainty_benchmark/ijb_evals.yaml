@@ -66,7 +66,42 @@ far_list: 0.1 # for now
 
 open_set_identification_methods:
 
+  - embeddings: scf
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault  #PoolingConcentration, PoolingDefault
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
+      distance_function: 
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
+      class_model: power
+      far: ${far_list}
+      beta: ${default_beta}
+      uncertainty_type: maxprob
+      alpha: 1 # when 1, only scf unc is used
+      aggregation: sum
+      T: 10
+      T_data_unc: 1
+    pretty_name: "$u_{SCF}$"
 
+
+  - embeddings: scf
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault  #PoolingConcentration, PoolingDefault
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
+      M: 0
+      gallery_prior: power
+      emb_unc_model: vMF
+      beta: 0.594
+      far: ${far_list}
+      predict_T: 10
+    pretty_name: "Whale delta func. T scale"
 
   - embeddings: scf
     gallery_template_pooling_strategy:
@@ -91,38 +126,6 @@ open_set_identification_methods:
       T_data_unc: 1
     pretty_name: "Whale baseline"
 
-  - embeddings: scf
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault  #PoolingConcentration, PoolingDefault
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
-    use_detector_score: False
-    recognition_method:
-      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
-      distance_function: 
-        _target_: evaluation.distance_functions.open_set_identification.CosineSim
-      class_model: power
-      far: ${far_list}
-      beta: ${default_beta}
-      uncertainty_type: maxprob
-      alpha: 1 # when 1, only scf unc is used
-      aggregation: sum
-      T: 10
-      T_data_unc: 1
-    pretty_name: "$u_{SCF}$"
 
-  - embeddings: scf
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault  #PoolingConcentration, PoolingDefault
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
-    use_detector_score: False
-    recognition_method:
-      _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
-      M: 0
-      gallery_prior: power
-      emb_unc_model: vMF
-      beta: 0.594
-      far: ${far_list}
-      predict_T: 10
-    pretty_name: "Whale delta func. T scale"
+
+
