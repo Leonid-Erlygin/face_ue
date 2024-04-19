@@ -4,7 +4,7 @@ hydra:
 
 exp_dir: outputs/experiments/whale_ds
 use_two_galleries: False
-recompute_template_pooling: True
+recompute_template_pooling: False
 metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
 create_pool_plot: False
 
@@ -74,14 +74,15 @@ open_set_identification_methods:
     use_detector_score: False
     recognition_method:
       _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
-      M: 50
+      M: 52
       gallery_prior: power
       emb_unc_model: vMF
-      kappa_input_scale: 5.0
+      kappa_input_scale: 5
+      pred_uncertainty_type: max_prob
       beta: 0.594
-      predict_T: 10
+      predict_T: 2.7
       far: ${far_list}
-    pretty_name: "$u_{MC}$ probe scale 5. M=50. T scale"
+    pretty_name: "$u_{MC}$ probe scale 1. M=50. T scale"
 
 
   # - embeddings: scf

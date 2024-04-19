@@ -1,7 +1,7 @@
 docker run \
  --shm-size=8g \
  --memory=160g \
- --gpus '"device=0,2"' \
+ --gpus '"device=0"' \
  --user 1005:1005 \
  --name whale_scf_train \
  --env WANDB_API_KEY=b2c5aadfb0bf526689d07a4bb4aae1eb58faf5b9 \

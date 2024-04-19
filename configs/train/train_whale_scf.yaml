@@ -1,9 +1,9 @@
 seed_everything: 7
 trainer:
-#   logger:
-#     class_path: pytorch_lightning.loggers.WandbLogger
-#     init_args:
-#       project: "whale_scf_uncertainty_train"
+  logger:
+    class_path: pytorch_lightning.loggers.WandbLogger
+    init_args:
+      project: "whale_scf_uncertainty_train"
   log_every_n_steps: 3
   default_root_dir: outputs/scf_train
   enable_checkpointing: true
@@ -20,9 +20,9 @@ trainer:
       output_dir: /app/cache/features
       file_name: scf_embs_whale # scf_embs_inter  #scf_embs_lfw #scf_embs_ms1m_3531-classes_0-seed_30-min-class-size
       write_interval: epoch
-  max_epochs: 5
+  max_epochs: 6
   accelerator: gpu
-  devices: 2
+  devices: 1
 model:
     class_path: face_lib.models.scf.SphereConfidenceFace
     init_args:
@@ -35,7 +35,7 @@ model:
             class_path: face_lib.models.heads.SCFHead
             init_args:
                 convf_dim: 776
-                latent_vector_size: 2048
+                latent_vector_size: 4096
         scf_loss:
             class_path: face_lib.models.losses.KLDiracVMF
             init_args:
@@ -72,8 +72,8 @@ data:
                 config_path: /app/sandbox/happy_whale/kaggle-happywhale-1st-place/config/efficientnet_b6_new.yaml
                 image_dir: /app/sandbox/happy_whale/kaggle-happywhale-1st-place/input
                 test: True
-        batch_size: 12
-        num_workers: 20
+        batch_size: 16
+        num_workers: 10
 
         # train_dataset:
         #     class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset

@@ -100,8 +100,8 @@ class MonteCarloPredictiveProb:
                 found_kappa = 1508.2031
             elif self.M == 0 and self.far == 0.05:
                 found_kappa = 1756.777
-            elif self.M == 50 and self.far == 0.1:
-                found_kappa = 1310
+            elif self.M != 0 and self.far == 0.1:
+                found_kappa = 1316  # found_kappa = 1275 4 scale
         else:
             found_kappa = (
                 minimize(
@@ -137,6 +137,23 @@ class MonteCarloPredictiveProb:
             .detach()
             .numpy()
         )
+        if self.M != 0:
+            self.sampler = VonMisesFisher(0)
+            gallery_unc_scaled = np.ones_like(gallery_unc) * 1508.2031
+            self.mean_probs_pred = (
+                self.compute_mean_probs(
+                    probe_feats,
+                    probe_unc_scaled,
+                    gallery_feats,
+                    gallery_unc_scaled,
+                    10,
+                )
+                .cpu()
+                .detach()
+                .numpy()
+            )
+        else:
+            self.mean_probs_pred = None
 
     @staticmethod
     def find_kappa_by_far(
@@ -164,20 +181,20 @@ class MonteCarloPredictiveProb:
             .detach()
             .numpy()
         )
-        # probs = np.exp(all_classes_log_prob)
-        # mean_probs = np.mean(probs, axis=1)
         was_rejected = np.argmax(mean_probs, axis=-1) == (mean_probs.shape[-1] - 1)
         far = np.mean(was_rejected[~is_seen] == False)
         print(f"Found kappa {np.round(kappa * 100,4)} for far {far}")
         return np.abs(far - target_far) / target_far
 
     def predict(self):
-        # probs = np.exp(self.all_classes_log_prob)
-        # # probs = self.all_classes_log_prob
-        # self.mean_probs = np.mean(probs, axis=1)
-        predict_id = np.argmax(self.mean_probs[:, :-1], axis=-1)
-        return predict_id, np.argmax(self.mean_probs, axis=-1) == (
-            self.mean_probs.shape[-1] - 1
+        if self.mean_probs_pred is not None:
+            predict_probs = self.mean_probs_pred
+        else:
+            predict_probs = self.mean_probs
+
+        predict_id = np.argmax(predict_probs[:, :-1], axis=-1)
+        return predict_id, np.argmax(predict_probs, axis=-1) == (
+            predict_probs.shape[-1] - 1
         )
 
     def predict_uncertainty(self):
