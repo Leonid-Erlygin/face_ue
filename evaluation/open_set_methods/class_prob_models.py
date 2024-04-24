@@ -110,22 +110,22 @@ class MonteCarloPredictiveProb:
             .numpy()
         )
         if self.M != 0:
-            self.mean_probs_pred = None
+            # self.mean_probs_pred = None
 
-            # self.sampler = VonMisesFisher(0)
-            # gallery_unc_scaled = np.ones_like(gallery_unc) * 1508.2031
-            # self.mean_probs_pred = (
-            #     self.compute_mean_probs(
-            #         probe_feats,
-            #         probe_unc_scaled,
-            #         gallery_feats,
-            #         gallery_unc_scaled,
-            #         10,
-            #     )
-            #     .cpu()
-            #     .detach()
-            #     .numpy()
-            # )
+            self.sampler = VonMisesFisher(0)
+            gallery_unc_scaled = np.ones_like(gallery_unc) * 654
+            self.mean_probs_pred = (
+                self.compute_mean_probs(
+                    probe_feats,
+                    probe_unc_scaled,
+                    gallery_feats,
+                    gallery_unc_scaled,
+                    3,
+                )
+                .cpu()
+                .detach()
+                .numpy()
+            )
         else:
             self.mean_probs_pred = None
 
