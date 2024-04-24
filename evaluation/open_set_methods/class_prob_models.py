@@ -31,6 +31,7 @@ class MonteCarloPredictiveProb:
         emb_unc_model: str,
         beta: float,
         far: float,
+        gallery_kappa: float = None,
         kappa_scale: float = 1.0,
         kappa_input_scale: float = 1.0,
         predict_T: float = 1.0,
@@ -44,6 +45,7 @@ class MonteCarloPredictiveProb:
         emb_unc_model -- form of p(z|x)
         """
         self.M = M
+        self.gallery_kappa = gallery_kappa
         self.kappa_scale = kappa_scale
         self.kappa_input_scale = kappa_input_scale
         assert gallery_prior in ["power", "vMF"]
@@ -73,40 +75,11 @@ class MonteCarloPredictiveProb:
 
         # find kappa
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
-        # assert probe_feats.shape[0] == 19593, "Here IJB-C is hard coded"
-        if probe_feats.shape[0] == 19593:
-            if self.kappa_input_scale == 1.0 and self.far == 0.1:
-                found_kappa = 345.0
-                if self.M == 0:
-                    found_kappa = 567.9297
-            elif self.far == 0.05 and self.M == 0:
-                found_kappa = 653.9001
-            elif self.kappa_input_scale == 1.5 and self.far == 0.1:
-                found_kappa = 402
-            elif self.kappa_input_scale == 2.0 and self.far == 0.1:
-                found_kappa = 435
-            elif self.kappa_input_scale == 2.0 and self.far == 0.05:
-                found_kappa = 493
-            elif self.kappa_input_scale == 2.5 and self.far == 0.05:
-                found_kappa = 520.3125
-            elif self.kappa_input_scale == 2.5 and self.far == 0.1:
-                found_kappa = 457
-            elif self.kappa_input_scale == 3.0 and self.far == 0.05:
-                found_kappa = 538.0
-            elif self.kappa_input_scale == 3.0 and self.far == 0.1:
-                found_kappa = 475
-        elif probe_feats.shape[0] == 15587:
-            if self.M == 0 and self.far == 0.1:
-                found_kappa = 1508.2031
-            elif self.M == 0 and self.far == 0.05:
-                found_kappa = 1756.777
-            elif self.M != 0 and self.far == 0.1:
-                found_kappa = 1316  # found_kappa = 1275 4 scale
-        else:
-            found_kappa = (
+        if self.gallery_kappa == None:
+            self.gallery_kappa = (
                 minimize(
                     self.find_kappa_by_far,
-                    1300.0 / 100,
+                    493.125 / 100,
                     (
                         self,
                         probe_feats,
@@ -121,9 +94,8 @@ class MonteCarloPredictiveProb:
                 )[0]
                 * 100
             )
-        # gallery_unc_scaled = gallery_unc * self.kappa_scale
 
-        gallery_unc_scaled = np.ones_like(gallery_unc) * found_kappa
+        gallery_unc_scaled = np.ones_like(gallery_unc) * self.gallery_kappa
 
         self.mean_probs = (
             self.compute_mean_probs(
@@ -138,20 +110,22 @@ class MonteCarloPredictiveProb:
             .numpy()
         )
         if self.M != 0:
-            self.sampler = VonMisesFisher(0)
-            gallery_unc_scaled = np.ones_like(gallery_unc) * 1508.2031
-            self.mean_probs_pred = (
-                self.compute_mean_probs(
-                    probe_feats,
-                    probe_unc_scaled,
-                    gallery_feats,
-                    gallery_unc_scaled,
-                    10,
-                )
-                .cpu()
-                .detach()
-                .numpy()
-            )
+            self.mean_probs_pred = None
+
+            # self.sampler = VonMisesFisher(0)
+            # gallery_unc_scaled = np.ones_like(gallery_unc) * 1508.2031
+            # self.mean_probs_pred = (
+            #     self.compute_mean_probs(
+            #         probe_feats,
+            #         probe_unc_scaled,
+            #         gallery_feats,
+            #         gallery_unc_scaled,
+            #         10,
+            #     )
+            #     .cpu()
+            #     .detach()
+            #     .numpy()
+            # )
         else:
             self.mean_probs_pred = None
 
@@ -215,16 +189,12 @@ class MonteCarloPredictiveProb:
         if type(gallery_means) == np.ndarray:
             # inference
             cuda = torch.device("cuda:0")
-            cpu = torch.device("cpu")
             gallery_means = torch.tensor(gallery_means, device=cuda)
             gallery_kappas = torch.tensor(gallery_kappas, device=cuda)
         self.K = gallery_means.shape[0]
         zs = torch.tensor(self.sampler(mean, kappa), device=gallery_means.device)
         d = torch.tensor([mean.shape[-1]], device=gallery_means.device)
-        similarities = torch.matmul(zs, gallery_means.T)  # zs @ gallery_means.T
-        # similarities = similarities.to(cpu)
-        # gallery_kappas = gallery_kappas.to(cpu)
-        # similarities_np = similarities.cpu().numpy()[:, 0, :]
+        similarities = torch.matmul(zs, gallery_means.T)
         if self.gallery_prior == "power":
             log_m_c_power = (
                 torch.special.gammaln(d - 1 + gallery_kappas)
@@ -241,7 +211,6 @@ class MonteCarloPredictiveProb:
         assert self.gallery_prior == "power"
         # compute log z prob
         p_c = ((1 - self.beta) / self.K) ** (1 / T)
-        # sim_to_power = (1 + similarities) ** (gallery_kappas[..., :, 0] * (1 / T))
         sim_to_power = torch.pow(
             torch.add(similarities, 1, out=similarities),
             (gallery_kappas[..., :, 0] * (1 / T)),
@@ -275,9 +244,7 @@ class MonteCarloPredictiveProb:
             (1 / T) * log_normalizer[..., :, 0],
             out=similarities,
         )
-        # gallery_log_probs = (
-        #     pz_c + (1 / T) * np.log((1 - self.beta) / self.K)
-        # ) - log_z_prob[..., np.newaxis]
+
         gallery_log_probs = torch.sub(
             torch.add(
                 pz_c, (1 / T) * np.log((1 - self.beta) / self.K), out=similarities
@@ -293,8 +260,5 @@ class MonteCarloPredictiveProb:
         mean_probs = torch.cat(
             [mean_gallery_probs, mean_uniform_probs[..., np.newaxis]], dim=-1
         )
-        # log_probs = torch.cat(
-        #     [gallery_log_probs, uniform_log_prob[..., np.newaxis]], dim=-1
-        # )
 
         return mean_probs

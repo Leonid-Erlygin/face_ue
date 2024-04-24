@@ -64,7 +64,7 @@ def _random_VMF_cos(d: int, kappa: float, n: int):
 
 
 class VonMisesFisher:
-    def __init__(self, num_samples: int, num_workers=11) -> None:
+    def __init__(self, num_samples: int, num_workers=21) -> None:
         self.num_samples = num_samples
         self.num_workers = num_workers
 
