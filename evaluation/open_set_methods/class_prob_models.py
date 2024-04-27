@@ -113,7 +113,8 @@ class MonteCarloPredictiveProb:
             # self.mean_probs_pred = None
 
             self.sampler = VonMisesFisher(0)
-            self.beta = 0.5
+            #self.beta = 0.5
+            self.beta = 0.594
             gallery_unc_scaled = np.ones_like(gallery_unc) * self.gallery_kappa
             self.mean_probs_pred = (
                 self.compute_mean_probs(
@@ -121,7 +122,7 @@ class MonteCarloPredictiveProb:
                     probe_unc_scaled,
                     gallery_feats,
                     gallery_unc_scaled,
-                    4,
+                    10,
                 )
                 .cpu()
                 .detach()
