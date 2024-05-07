@@ -180,6 +180,7 @@ def main(cfg):
         tt = Face_Fecognition_test(
             task_type=task_type,
             method_name=method_name,
+            pretty_name=method.pretty_name,
             recognition_method=recognition_method,
             test_dataset=test_dataset,
             embedding_type=method.embeddings,

@@ -19,8 +19,8 @@ class F1:
         was_rejected: np.ndarray,
         g_unique_ids: np.ndarray,
         probe_unique_ids: np.ndarray,
-        predicted_unc: np.ndarray,
-        method_name: str,
+        predicted_unc: np.ndarray = None,
+        method_name: str = None,
     ) -> dict:
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
         similar_gallery_class = g_unique_ids[predicted_id[is_seen]]
@@ -42,8 +42,8 @@ class F1_classic:
         was_rejected: np.ndarray,
         g_unique_ids: np.ndarray,
         probe_unique_ids: np.ndarray,
-        predicted_unc: np.ndarray,
-        method_name: str,
+        predicted_unc: np.ndarray = None,
+        method_name: str = None,
     ) -> dict:
         # as in Towards Open Set Recognition paper
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
@@ -70,8 +70,8 @@ class FrrFarIdent:
         was_rejected: np.ndarray,
         g_unique_ids: np.ndarray,
         probe_unique_ids: np.ndarray,
-        predicted_unc: np.ndarray,
-        method_name: str,
+        predicted_unc: np.ndarray = None,
+        method_name: str = None,
     ) -> dict:
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
 
@@ -116,16 +116,18 @@ class FrrFarIdent:
 
 
 class ErrorDistribution:
-    def __init__(self, plot_save_dir: str) -> None:
+    def __init__(self, plot_save_dir: str, value_types: List) -> None:
         self.plot_save_dir = plot_save_dir
+        self.value_types = value_types
+
     def __call__(
         self,
         predicted_id: np.ndarray,
         was_rejected: np.ndarray,
         g_unique_ids: np.ndarray,
         probe_unique_ids: np.ndarray,
-        predicted_unc: np.ndarray,
-        method_name: str,
+        predicted_unc: np.ndarray = None,
+        method_name: str = None,
     ) -> dict:
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
 
@@ -145,7 +147,42 @@ class ErrorDistribution:
         true_reject = was_rejected[~is_seen]
         true_accept_true_ident = np.logical_and(true_accept, true_ident)
 
-        out_name = Path(self.plot_save_dir) / (method_name + '.png')
+        unc = np.array(
+            [
+                predicted_unc[~is_seen][false_accept],
+                predicted_unc[is_seen][false_reject],
+                predicted_unc[is_seen][true_accept_false_ident],
+                predicted_unc[is_seen][false_reject_true_ident],
+                predicted_unc[is_seen][true_accept_true_ident],
+                predicted_unc[~is_seen][true_reject],
+            ],
+            dtype=object,
+        )
+        unc = np.concatenate(unc[self.value_types])
+        log_scale = False
+        if "MC" in method_name:
+            unc += 1.0000000001
+            log_scale = True
+        elif "baseline" in method_name:
+            # unc += 1.0000000001
+            # unc = np.exp(np.exp(unc))
+            log_scale = False
+        # unc = np.log(unc)
+        error_kind = np.array(
+            [
+                ["false accept"] * len(predicted_unc[~is_seen][false_accept]),
+                ["false reject"] * len(predicted_unc[is_seen][false_reject]),
+                ["true accept false ident"]
+                * len(predicted_unc[is_seen][true_accept_false_ident]),
+                ["false reject true ident"]
+                * len(predicted_unc[is_seen][false_reject_true_ident]),
+                ["true a&i"] * len(predicted_unc[is_seen][true_accept_true_ident]),
+                ["true reject"] * len(predicted_unc[~is_seen][true_reject]),
+            ],
+            dtype=object,
+        )
+        error_kind = np.concatenate(error_kind[self.value_types])
+        out_name = Path(self.plot_save_dir) / (method_name + ".png")
         data = pd.DataFrame({"unc": list(unc), "Error Kind": error_kind})
         sns.displot(
             data,
@@ -155,10 +192,10 @@ class ErrorDistribution:
             log_scale=log_scale,
             common_norm=False,
         )
-        plt.xlabel(f"{unc_name} score")
+        plt.xlabel(f"{method_name} score")
         plt.savefig(out_name, dpi=300)
-        sns.kdeplot(data=tips, x="total_bill", hue="time", multiple="fill")
         return {}
+
 
 class DirFar:
     @staticmethod
@@ -167,8 +204,8 @@ class DirFar:
         was_rejected: np.ndarray,
         g_unique_ids: np.ndarray,
         probe_unique_ids: np.ndarray,
-        predicted_unc: np.ndarray,
-        method_name: str,
+        predicted_unc: np.ndarray = None,
+        method_name: str = None,
     ) -> dict:
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
         similar_gallery_class = g_unique_ids[predicted_id[is_seen]]

@@ -21,6 +21,7 @@ class Face_Fecognition_test:
         self,
         task_type: str,
         method_name: str,
+        pretty_name: str,
         recognition_method,
         test_dataset: FaceRecogntioniDataset,
         embedding_type: str,
@@ -35,6 +36,7 @@ class Face_Fecognition_test:
     ):
         self.task_type = task_type
         self.method_name = method_name
+        self.pretty_name = pretty_name
         self.recognition_method = recognition_method
         self.use_two_galleries = use_two_galleries
         self.test_dataset = test_dataset
@@ -380,7 +382,8 @@ class Face_Fecognition_test:
                         probe_unique_ids=self.probe_pooled_templates[gallery_name][
                             "template_subject_ids_sorted"
                         ],
-                        predicted_unc=predicted_unc
+                        predicted_unc=predicted_unc,
+                        method_name=self.pretty_name,  # .split('$')[0],
                     )
                 )
 
@@ -397,7 +400,6 @@ class Face_Fecognition_test:
                             "template_subject_ids_sorted"
                         ],
                         predicted_unc=predicted_unc,
-                        method_name=self.method_name
                     )
                 )
 
