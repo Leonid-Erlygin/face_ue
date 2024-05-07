@@ -4,6 +4,10 @@ from sklearn.metrics import top_k_accuracy_score
 from tqdm import tqdm
 from sklearn.metrics import roc_curve, auc
 from scipy import interpolate
+from pathlib import Path
+import seaborn as sns
+import pandas as pd
+import matplotlib.pyplot as plt
 
 EvalMetricsT = Tuple[int, int, int, List[float], List[float], List[Tuple[float, float]]]
 
@@ -15,6 +19,8 @@ class F1:
         was_rejected: np.ndarray,
         g_unique_ids: np.ndarray,
         probe_unique_ids: np.ndarray,
+        predicted_unc: np.ndarray,
+        method_name: str,
     ) -> dict:
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
         similar_gallery_class = g_unique_ids[predicted_id[is_seen]]
@@ -36,6 +42,8 @@ class F1_classic:
         was_rejected: np.ndarray,
         g_unique_ids: np.ndarray,
         probe_unique_ids: np.ndarray,
+        predicted_unc: np.ndarray,
+        method_name: str,
     ) -> dict:
         # as in Towards Open Set Recognition paper
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
@@ -62,6 +70,8 @@ class FrrFarIdent:
         was_rejected: np.ndarray,
         g_unique_ids: np.ndarray,
         probe_unique_ids: np.ndarray,
+        predicted_unc: np.ndarray,
+        method_name: str,
     ) -> dict:
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
 
@@ -105,6 +115,51 @@ class FrrFarIdent:
         return result_metrics
 
 
+class ErrorDistribution:
+    def __init__(self, plot_save_dir: str) -> None:
+        self.plot_save_dir = plot_save_dir
+    def __call__(
+        self,
+        predicted_id: np.ndarray,
+        was_rejected: np.ndarray,
+        g_unique_ids: np.ndarray,
+        probe_unique_ids: np.ndarray,
+        predicted_unc: np.ndarray,
+        method_name: str,
+    ) -> dict:
+        is_seen = np.isin(probe_unique_ids, g_unique_ids)
+
+        false_reject = was_rejected[is_seen]
+        true_accept = ~false_reject
+        similar_gallery_class = g_unique_ids[predicted_id[is_seen]]
+
+        false_ident = probe_unique_ids[is_seen] != similar_gallery_class
+        true_ident = ~false_ident
+
+        # errors
+        true_accept_false_ident = np.logical_and(true_accept, false_ident)
+        false_reject_false_ident = np.logical_and(false_reject, false_ident)
+        false_reject_true_ident = np.logical_and(false_reject, true_ident)
+        false_accept = was_rejected[~is_seen] == False
+        # no error
+        true_reject = was_rejected[~is_seen]
+        true_accept_true_ident = np.logical_and(true_accept, true_ident)
+
+        out_name = Path(self.plot_save_dir) / (method_name + '.png')
+        data = pd.DataFrame({"unc": list(unc), "Error Kind": error_kind})
+        sns.displot(
+            data,
+            kind="kde",
+            x="unc",
+            hue="Error Kind",
+            log_scale=log_scale,
+            common_norm=False,
+        )
+        plt.xlabel(f"{unc_name} score")
+        plt.savefig(out_name, dpi=300)
+        sns.kdeplot(data=tips, x="total_bill", hue="time", multiple="fill")
+        return {}
+
 class DirFar:
     @staticmethod
     def __call__(
@@ -112,6 +167,8 @@ class DirFar:
         was_rejected: np.ndarray,
         g_unique_ids: np.ndarray,
         probe_unique_ids: np.ndarray,
+        predicted_unc: np.ndarray,
+        method_name: str,
     ) -> dict:
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
         similar_gallery_class = g_unique_ids[predicted_id[is_seen]]

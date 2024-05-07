@@ -9,7 +9,6 @@ class SimilarityBasedPrediction(OpenSetMethod):
         self,
         distance_function,
         far: float,
-        beta: float,
         acceptance_score,
         uncertainty_function,
         alpha: float,
@@ -19,7 +18,6 @@ class SimilarityBasedPrediction(OpenSetMethod):
         super().__init__()
         self.distance_function = distance_function
         self.far = far
-        self.beta = beta
         self.acceptance_score = acceptance_score
         self.uncertainty_function = uncertainty_function
         self.alpha = alpha
@@ -66,17 +64,18 @@ class SimilarityBasedPrediction(OpenSetMethod):
         unc = self.uncertainty_function(
             self.similarity_matrix, self.probe_score, self.tau
         )
-        unc_norm = (unc - np.min(unc)) / (np.max(unc) - np.min(unc))
+        # unc_norm = (unc - np.min(unc)) / (np.max(unc) - np.min(unc))
 
-        min_kappa = 150
-        max_kappa = 2700
-        data_uncertainty_norm = (self.data_uncertainty - min_kappa) / (
-            max_kappa - min_kappa
-        )
-        assert np.sum(data_uncertainty_norm < 0) == 0
+        # min_kappa = 150
+        # max_kappa = 2700
+        # data_uncertainty_norm = (self.data_uncertainty - min_kappa) / (
+        #     max_kappa - min_kappa
+        # )
+        # assert np.sum(data_uncertainty_norm < 0) == 0
         # data_uncertainty_norm = data_uncertainty
-        data_conf_norm = (data_uncertainty_norm) ** (1 / self.T_data_unc)
+        # data_conf_norm = (data_uncertainty_norm) ** (1 / self.T_data_unc)
 
-        conf_norm = (-unc_norm + 1) ** (1 / self.T)
-        comb_conf = conf_norm * (1 - self.alpha) + data_conf_norm * self.alpha
+        # conf_norm = (-unc_norm + 1) ** (1 / self.T)
+        conf_norm = -unc
+        comb_conf = conf_norm * (1 - self.alpha)  # + data_conf_norm * self.alpha
         return -comb_conf

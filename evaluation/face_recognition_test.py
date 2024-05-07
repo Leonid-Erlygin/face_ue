@@ -380,6 +380,7 @@ class Face_Fecognition_test:
                         probe_unique_ids=self.probe_pooled_templates[gallery_name][
                             "template_subject_ids_sorted"
                         ],
+                        predicted_unc=predicted_unc
                     )
                 )
 
@@ -396,6 +397,7 @@ class Face_Fecognition_test:
                             "template_subject_ids_sorted"
                         ],
                         predicted_unc=predicted_unc,
+                        method_name=self.method_name
                     )
                 )
 
