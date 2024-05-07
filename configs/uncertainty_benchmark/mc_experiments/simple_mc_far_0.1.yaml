@@ -37,9 +37,9 @@ open_set_identification_metrics:
     plot_save_dir: ${exp_dir}
     value_types: [0,1, 2, 3, 4, 5]
   - _target_: evaluation.metrics.DirFar
-  # - _target_: evaluation.metrics.F1
 
-fractions: [0, 0.3, 15]
+
+fractions: [0, 0.5, 20]
 
 open_set_identification_uncertainty_metrics:
   - _target_: evaluation.uncertainty_metrics.DisposeBasedOnUnc
