@@ -9,6 +9,10 @@ from .template_pooling_strategies import AbstractTemplatePooling
 from .distance_functions.open_set_identification.abc import Abstract1NEval
 from .test_datasets import FaceRecogntioniDataset
 
+from evaluation.distance_functions.distaince_functions import CosineSimDistance
+from evaluation.distance_functions.open_set_identification.cosine_sim import CosineSim
+from evaluation.distance_functions.verification.distance_based_evaluation import VerifEval
+
 # from embeddings import process_embeddings
 # from image2template import image2template_feature
 # from template_pooling_strategies import AbstractTemplatePooling
@@ -428,16 +432,29 @@ class Face_Fecognition_test:
     def run_model_test_verification(
         self,
     ):
-        scores = self.distance_function(
-            self.template_pooled_emb,
-            self.template_pooled_unc,
-            self.template_ids,
+        # scores = self.distance_function(
+        #     self.template_pooled_emb,
+        #     self.template_pooled_unc,
+        #     self.template_ids,
+        #     self.test_dataset.p1,
+        #     self.test_dataset.p2,
+        # )
+        dist_func = CosineSim()
+        scoring_method = VerifEval(distance_function=dist_func)
+
+
+        scores = scoring_method(
+            self.gallery_pooled_templates["g1"]["template_pooled_features"],
+            self.gallery_pooled_templates["g1"]["template_pooled_data_unc"],
+            self.gallery_pooled_templates["g1"]["template_subject_ids_sorted"],
             self.test_dataset.p1,
             self.test_dataset.p2,
         )
 
+
         metrics = {}
-        for metric in self.verification_metrics:
+        #for metric in self.verification_metrics:
+        for metric in self.recognition_metrics:
             metrics.update(
                 metric(
                     scores=scores,
