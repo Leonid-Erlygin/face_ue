@@ -74,7 +74,6 @@ open_set_identification_methods:
       distance_function: 
         _target_: evaluation.distance_functions.open_set_identification.CosineSim
       far: ${far_list}
-      beta: ${default_beta}
       acceptance_score: 
         _target_: evaluation.confidence_functions.MaxSimilarity_confidence
       uncertainty_function:
