@@ -5,7 +5,7 @@ from evaluation.distance_functions.open_set_identification.abc import Abstract1N
 from evaluation.confidence_functions import AbstractConfidence
 
 
-from evaluation.distance_functions.distaince_functions import ScfSim
+from evaluation.distance_functions.distance_functions import ScfSim
 
 
 class SCF(Abstract1NEval):

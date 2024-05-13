@@ -7,7 +7,7 @@ from evaluation.distance_functions.open_set_identification.abc import Abstract1N
 from evaluation.confidence_functions import AbstractConfidence
 
 from tqdm import tqdm
-from evaluation.distance_functions.distaince_functions import compute_pfe
+from evaluation.distance_functions.distance_functions import compute_pfe
 
 
 class PFE(Abstract1NEval):
