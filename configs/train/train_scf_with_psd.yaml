@@ -1,9 +1,9 @@
 seed_everything: 7
 trainer:
-#   logger:
-#     class_path: pytorch_lightning.loggers.WandbLogger
-#     init_args:
-#       project: "face-ue"
+  logger:
+    class_path: pytorch_lightning.loggers.WandbLogger
+    init_args:
+      project: "face-ue"
   log_every_n_steps: 3
   default_root_dir: outputs/scf_train
   enable_checkpointing: true
@@ -11,18 +11,18 @@ trainer:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args: 
       every_n_train_steps: 1000
-      dirpath: outputs/scf_train/weights_power_noise_v3
+      dirpath: outputs/scf_train/weights_power_dul_rgs
   - class_path: pytorch_lightning.callbacks.LearningRateMonitor
     init_args: 
       logging_interval: "step"
   - class_path: face_lib.models.scf.Prediction_writer
     init_args: 
       output_dir: /app/cache/features
-      file_name: power_noise_v3_new_embs_IJBC # scf_embs_inter  #scf_embs_lfw #scf_embs_ms1m_3531-classes_0-seed_30-min-class-size
+      file_name: power_big_blur_different_strength_p0.3_embs_IJBC # scf_embs_inter  #scf_embs_lfw #scf_embs_ms1m_3531-classes_0-seed_30-min-class-size
       write_interval: epoch
-  max_epochs: 6
+  max_epochs: 5
   accelerator: gpu
-  devices: 1
+  devices: 2
 model:
     class_path: face_lib.models.scf.SphereConfidenceFace
     init_args:
@@ -31,12 +31,12 @@ model:
             init_args:
                 resnet_name: iresnet50_normalized
                 weights: /app/model_weights/backbone/ms1mv3_arcface_r50/backbone.pth
-                learnable: False
+                learnable: True #False
         head:
             class_path: face_lib.models.heads.SCFHead
             init_args:
                 convf_dim: 25088
-                latent_vector_size: 2048
+                latent_vector_size: 8192 #2048
         scf_loss:
             class_path: face_lib.models.losses.KLDiracPS
             init_args:

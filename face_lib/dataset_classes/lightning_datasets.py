@@ -38,10 +38,19 @@ class MXFaceDataset(Dataset):
                     v2.ToTensor(),
                     v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
                     # v2.RandomApply(
-                    #     torch.nn.ModuleList(
-                    #         [v2.GaussianBlur(kernel_size=(29, 29), sigma=(10.0, 10.0))]
-                    #     ),
-                    #     p=0.05,
+                    #     [v2.RandomChoice(
+                    #         transforms = [
+                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(1.5, 1.5)),
+                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(2.3, 2.3)),
+                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(3.0, 3.0)),
+                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(4.0, 4.0)),
+                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(6.0, 6.0)),
+                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(10.0, 10.0)),
+                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(15.0, 15.0)),
+                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(20.0, 20.0))],
+                    #         p = [1/8 for _ in range(0, 8)]
+                    #     )],
+                    #     p=0.3,
                     # ),
                     # v2.RandomApply(
                     #     torch.nn.ModuleList([v2.ElasticTransform(alpha=250.0)]), p=0.05

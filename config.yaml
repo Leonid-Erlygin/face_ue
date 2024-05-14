@@ -43,7 +43,7 @@ trainer:
   callbacks:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args:
-      dirpath: outputs/scf_train/weights_power_noise_v3
+      dirpath: outputs/scf_train/weights_power_dul_rgs
       filename: null
       monitor: null
       verbose: false
@@ -63,10 +63,10 @@ trainer:
   - class_path: face_lib.models.scf.Prediction_writer
     init_args:
       output_dir: /app/cache/features
-      file_name: test_power_embs_IJBC
+      file_name: power_big_blur_different_strength_p0.3_embs_IJBC
       write_interval: epoch
   fast_dev_run: false
-  max_epochs: 6
+  max_epochs: 5
   min_epochs: null
   max_steps: -1
   min_steps: null
@@ -106,12 +106,12 @@ model:
       init_args:
         resnet_name: iresnet50_normalized
         weights: /app/model_weights/backbone/ms1mv3_arcface_r50/backbone.pth
-        learnable: false
+        learnable: true
     head:
       class_path: face_lib.models.heads.SCFHead
       init_args:
         convf_dim: 25088
-        latent_vector_size: 2048
+        latent_vector_size: 8192
     scf_loss:
       class_path: face_lib.models.losses.KLDiracPS
       init_args:
