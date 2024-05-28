@@ -116,12 +116,12 @@ class Face_Fecognition_test:
         template_subsets_path = (
             cache_dir
             / Path(self.embedding_type)
-            / f"template_subsets_{self.probe_template_pooling_strategy.__class__.__name__}_{self.test_dataset.dataset_name}_score-norm_{self.use_detector_score}"
+            / f"name_{self.pretty_name}_template_subsets_{self.probe_template_pooling_strategy.__class__.__name__}_{self.test_dataset.dataset_name}_score-norm_{self.use_detector_score}"
         )
         template_pool_path = (
             cache_dir
             / Path(self.embedding_type)
-            / f"template_pool_gallery-{self.gallery_template_pooling_strategy.__class__.__name__}_probe-{self.probe_template_pooling_strategy.__class__.__name__}_{self.test_dataset.dataset_name}"
+            / f"name_{self.pretty_name}_template_pool_gallery-{self.gallery_template_pooling_strategy.__class__.__name__}_probe-{self.probe_template_pooling_strategy.__class__.__name__}_{self.test_dataset.dataset_name}"
         )
 
         similarity_matrix_path = template_subsets_path / "sim_matrix"
@@ -264,17 +264,15 @@ class Face_Fecognition_test:
                     "PoolingProb"
                     in self.probe_template_pooling_strategy.__class__.__name__
                 ):
-                    if (
-                        similarity_matrix_path / f"matrix_{gallery_name}.npy"
-                    ).is_file():
-                        print("Loading similarity...")
-                        similarity = np.load(
-                            similarity_matrix_path / f"matrix_{gallery_name}.npy"
+                    if (template_pool_path / f"probe_{gallery_name}.npz").is_file():
+                        data = np.load(template_pool_path / f"probe_{gallery_name}.npz")
+                        probe_pooled_data = (
+                            data["template_pooled_features"],
+                            data["template_pooled_data_unc"],
                         )
                     else:
-                        print("Computing similarity...")
-                        similarity = self.distance_function(
-                            probe_features[:, np.newaxis, :],
+                        self.recognition_method.setup(
+                            probe_features,
                             probe_kappa,
                             self.gallery_pooled_templates[gallery_name][
                                 "template_pooled_features"
@@ -283,22 +281,14 @@ class Face_Fecognition_test:
                                 "template_pooled_data_unc"
                             ],
                         )
-                        np.save(
-                            similarity_matrix_path / f"matrix_{gallery_name}.npy",
-                            similarity,
+                        predicted_unc = self.recognition_method.predict_uncertainty()
+                        probe_pooled_data = self.probe_template_pooling_strategy(
+                            probe_features,
+                            -predicted_unc,
+                            probe_kappa,
+                            probe_templates_sorted,
+                            probe_medias,
                         )
-
-                    self.recognition_method.setup(similarity)
-                    predicted_unc = self.recognition_method.predict_uncertainty(
-                        probe_kappa
-                    )
-                    probe_pooled_data = self.probe_template_pooling_strategy(
-                        probe_features,
-                        -predicted_unc,
-                        probe_kappa,
-                        probe_templates_sorted,
-                        probe_medias,
-                    )
 
                 else:
                     # log scf pool as it is not changing

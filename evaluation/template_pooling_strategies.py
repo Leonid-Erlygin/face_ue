@@ -82,122 +82,6 @@ class PoolingDefault(AbstractTemplatePooling):
         )
 
 
-class PoolingMonteCarlo(AbstractTemplatePooling):
-    def __init__(
-        self, probability_model: Any, train_T: bool, lr: float, epoch_num: int
-    ) -> None:
-        super().__init__()
-        self.probability_model = probability_model
-        self.train_T = train_T
-        self.lr = lr
-        self.epoch_num = epoch_num
-
-    def __call__(
-        self,
-        img_featues: np.ndarray,
-        kappa: np.ndarray,
-        template_ids: np.ndarray,
-        medias: np.ndarray,
-    ):
-        unique_templates, indices, counts = np.unique(
-            template_ids, return_index=True, return_counts=True
-        )
-        # initialize class mean
-        init_means = np.array(
-            [
-                np.mean(img_featues[np.where(template_ids == uqt)], axis=0)
-                for uqt in unique_templates
-            ],
-            dtype=np.float64,
-        )
-        init_means = init_means / np.linalg.norm(init_means, axis=1)[:, np.newaxis]
-        kappa_norm = 1000
-        init_kappa = [300.0 / kappa_norm]
-        init_kappas = [init_kappa] * len(unique_templates)
-        init_T = 1.0
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        # train mean and concentration
-        gallery_means = GalleryMeans(init_means, device=device)
-        geotorch.sphere(gallery_means, "gallery_means")
-        gallery_means.gallery_means = torch.tensor(
-            init_means, dtype=torch.float64, device=device
-        )
-
-        gallery_kappas = torch.nn.Parameter(
-            torch.tensor(init_kappas, dtype=torch.float64, device=device)
-        )
-        if self.train_T:
-            T = torch.nn.Parameter(
-                torch.tensor(init_T, dtype=torch.float64, device=device)
-            )
-        else:
-            T = torch.tensor(init_T, device=device, dtype=torch.float64)
-        target_classes = []
-        for c, count in enumerate(counts):
-            target_classes.extend([c] * count)
-
-        target_classes = torch.tensor(target_classes, device=device)
-
-        optimizer_kappa = torch.optim.Adam([gallery_kappas], lr=self.lr * 2)
-        optimizer_means = torch.optim.Adam(gallery_means.parameters(), lr=self.lr / 10)
-        optimizer_T = torch.optim.Adam([T], lr=self.lr)
-        nll_loss = torch.nn.NLLLoss()
-
-        for iter in range(self.epoch_num):
-            # gallery_means_np = torch.nn.functional.normalize(gallery_params.gallery_means).cpu().detach().numpy()
-            gallery_means_np = gallery_means.gallery_means.cpu().detach().numpy()
-            similarity_to_init_mean = np.sum((init_means * gallery_means_np), axis=1)
-            print(
-                f"Mean sim {np.mean(similarity_to_init_mean)}, std sim {np.std(similarity_to_init_mean)}"
-            )
-
-            # normalize means
-
-            # = gallery_params.gallery_means / torch.norm(gallery_params.gallery_means, dim=-1, keepdim=True)
-
-            optimizer_kappa.zero_grad()
-            optimizer_means.zero_grad()
-            if self.train_T:
-                optimizer_T.zero_grad()
-            # compute nll loss
-
-            log_probs = self.compute_log_prob(
-                img_featues,
-                kappa,
-                gallery_means.gallery_means,  # torch.nn.functional.normalize(gallery_params.gallery_means),
-                gallery_kappas * kappa_norm,
-                T,
-            )[:, :, :-1]
-            probs = torch.exp(log_probs)
-            mean_probs = torch.mean(probs, axis=1)
-            log_probs_new = torch.log(mean_probs)
-            loss = nll_loss(log_probs_new, target_classes)
-
-            print(
-                f"kappa mean {torch.mean(gallery_kappas * kappa_norm)}, kappa std {torch.std(gallery_kappas * kappa_norm)}"
-            )
-            print(f"First kappa {gallery_kappas[0] * kappa_norm}")
-            print(T)
-
-            # print(torch.max(mean_probs))
-            # print(log_probs_new)
-            print(f"Iteration {iter}, Loss: {loss.item()}")
-            loss.backward()
-            optimizer_kappa.step()
-            optimizer_means.step()
-            if self.train_T:
-                optimizer_T.step()
-
-        return (
-            torch.nn.functional.normalize(gallery_means.gallery_means)
-            .cpu()
-            .detach()
-            .numpy(),
-            gallery_kappas.cpu().detach().numpy() * kappa_norm,
-        )
-
-
 class PoolingConcentration(AbstractTemplatePooling):
     def __call__(
         self,
@@ -335,14 +219,16 @@ class PoolingProb(AbstractTemplatePooling):
                         / np.sum(data_conf_template[ind_m])
                     ]
             media_norm_feats = np.concatenate(media_norm_feats)
+            if np.any(np.isnan(media_norm_feats)):
+                print("fff")
             media_norm_feats_data_conf = np.concatenate(media_norm_feats_data_conf)
             data_conf_in_template = np.concatenate(data_conf_in_template)
             conf_in_template = np.concatenate(conf_in_template)
-
             template_feats[count_template] = np.sum(
                 media_norm_feats * conf_in_template, axis=0
             ) / np.sum(conf_in_template)
-
+            if np.any(np.isnan(template_feats[count_template])):
+                print("fff")
             template_feats_data_conf[count_template] = np.sum(
                 media_norm_feats_data_conf * data_conf_in_template, axis=0
             ) / np.sum(data_conf_in_template)
@@ -353,6 +239,122 @@ class PoolingProb(AbstractTemplatePooling):
 
         template_norm_feats = normalize(template_feats)
         return template_norm_feats, templates_data_conf
+
+
+class PoolingMonteCarlo(AbstractTemplatePooling):
+    def __init__(
+        self, probability_model: Any, train_T: bool, lr: float, epoch_num: int
+    ) -> None:
+        super().__init__()
+        self.probability_model = probability_model
+        self.train_T = train_T
+        self.lr = lr
+        self.epoch_num = epoch_num
+
+    def __call__(
+        self,
+        img_featues: np.ndarray,
+        kappa: np.ndarray,
+        template_ids: np.ndarray,
+        medias: np.ndarray,
+    ):
+        unique_templates, indices, counts = np.unique(
+            template_ids, return_index=True, return_counts=True
+        )
+        # initialize class mean
+        init_means = np.array(
+            [
+                np.mean(img_featues[np.where(template_ids == uqt)], axis=0)
+                for uqt in unique_templates
+            ],
+            dtype=np.float64,
+        )
+        init_means = init_means / np.linalg.norm(init_means, axis=1)[:, np.newaxis]
+        kappa_norm = 1000
+        init_kappa = [300.0 / kappa_norm]
+        init_kappas = [init_kappa] * len(unique_templates)
+        init_T = 1.0
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # train mean and concentration
+        gallery_means = GalleryMeans(init_means, device=device)
+        geotorch.sphere(gallery_means, "gallery_means")
+        gallery_means.gallery_means = torch.tensor(
+            init_means, dtype=torch.float64, device=device
+        )
+
+        gallery_kappas = torch.nn.Parameter(
+            torch.tensor(init_kappas, dtype=torch.float64, device=device)
+        )
+        if self.train_T:
+            T = torch.nn.Parameter(
+                torch.tensor(init_T, dtype=torch.float64, device=device)
+            )
+        else:
+            T = torch.tensor(init_T, device=device, dtype=torch.float64)
+        target_classes = []
+        for c, count in enumerate(counts):
+            target_classes.extend([c] * count)
+
+        target_classes = torch.tensor(target_classes, device=device)
+
+        optimizer_kappa = torch.optim.Adam([gallery_kappas], lr=self.lr * 2)
+        optimizer_means = torch.optim.Adam(gallery_means.parameters(), lr=self.lr / 10)
+        optimizer_T = torch.optim.Adam([T], lr=self.lr)
+        nll_loss = torch.nn.NLLLoss()
+
+        for iter in range(self.epoch_num):
+            # gallery_means_np = torch.nn.functional.normalize(gallery_params.gallery_means).cpu().detach().numpy()
+            gallery_means_np = gallery_means.gallery_means.cpu().detach().numpy()
+            similarity_to_init_mean = np.sum((init_means * gallery_means_np), axis=1)
+            print(
+                f"Mean sim {np.mean(similarity_to_init_mean)}, std sim {np.std(similarity_to_init_mean)}"
+            )
+
+            # normalize means
+
+            # = gallery_params.gallery_means / torch.norm(gallery_params.gallery_means, dim=-1, keepdim=True)
+
+            optimizer_kappa.zero_grad()
+            optimizer_means.zero_grad()
+            if self.train_T:
+                optimizer_T.zero_grad()
+            # compute nll loss
+
+            log_probs = self.compute_log_prob(
+                img_featues,
+                kappa,
+                gallery_means.gallery_means,  # torch.nn.functional.normalize(gallery_params.gallery_means),
+                gallery_kappas * kappa_norm,
+                T,
+            )[:, :, :-1]
+            probs = torch.exp(log_probs)
+            mean_probs = torch.mean(probs, axis=1)
+            log_probs_new = torch.log(mean_probs)
+            loss = nll_loss(log_probs_new, target_classes)
+
+            print(
+                f"kappa mean {torch.mean(gallery_kappas * kappa_norm)}, kappa std {torch.std(gallery_kappas * kappa_norm)}"
+            )
+            print(f"First kappa {gallery_kappas[0] * kappa_norm}")
+            print(T)
+
+            # print(torch.max(mean_probs))
+            # print(log_probs_new)
+            print(f"Iteration {iter}, Loss: {loss.item()}")
+            loss.backward()
+            optimizer_kappa.step()
+            optimizer_means.step()
+            if self.train_T:
+                optimizer_T.step()
+
+        return (
+            torch.nn.functional.normalize(gallery_means.gallery_means)
+            .cpu()
+            .detach()
+            .numpy(),
+            gallery_kappas.cpu().detach().numpy() * kappa_norm,
+        )
 
 
 class PoolingPFEHarmonicMean(AbstractTemplatePooling):

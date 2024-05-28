@@ -68,14 +68,18 @@ class MonteCarloPredictiveProb:
         probe_unc: np.ndarray,
         gallery_feats: np.ndarray,
         gallery_unc: np.ndarray,
-        g_unique_ids: np.ndarray,
-        probe_unique_ids: np.ndarray,
+        g_unique_ids: np.ndarray = None,
+        probe_unique_ids: np.ndarray = None,
     ):
         probe_unc_scaled = probe_unc * self.kappa_input_scale
-
-        # find kappa
-        is_seen = np.isin(probe_unique_ids, g_unique_ids)
-        if self.gallery_kappa == None:
+        dtype = np.float64
+        probe_feats = probe_feats.astype(dtype)
+        probe_unc = probe_unc.astype(dtype)
+        gallery_feats = gallery_feats.astype(dtype)
+        gallery_unc = gallery_unc.astype(dtype)
+        if g_unique_ids is not None and self.gallery_kappa == None:
+            # find kappa
+            is_seen = np.isin(probe_unique_ids, g_unique_ids)
             self.gallery_kappa = (
                 minimize(
                     self.find_kappa_by_far,
@@ -188,6 +192,12 @@ class MonteCarloPredictiveProb:
         gallery_kappas: torch.nn.Parameter,
         T: torch.nn.Parameter,
     ) -> Any:
+        # assert (
+        #     mean.dtype == torch.float32
+        #     and kappa.dtype == torch.float32
+        #     and gallery_means.dtype == torch.float32
+        #     and gallery_kappas.dtype == torch.float32
+        # )
         if type(gallery_means) == np.ndarray:
             # inference
             cuda = torch.device("cuda:0")
