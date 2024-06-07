@@ -1,19 +1,10 @@
 import numpy as np
 from pathlib import Path
-import warnings
 from tqdm import tqdm
 
 from .embeddings import process_embeddings
-from .image2template import image2template_feature
 from .template_pooling_strategies import AbstractTemplatePooling
-from .distance_functions.open_set_identification.abc import Abstract1NEval
 from .test_datasets import FaceRecogntioniDataset
-
-# from embeddings import process_embeddings
-# from image2template import image2template_feature
-# from template_pooling_strategies import AbstractTemplatePooling
-# from distance_functions.open_set_identification.abc import Abstract1NEval
-# from test_datasets import FaceRecogntioniDataset
 
 
 class Face_Fecognition_test:
