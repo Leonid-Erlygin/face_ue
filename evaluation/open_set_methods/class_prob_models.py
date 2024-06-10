@@ -32,6 +32,7 @@ class MonteCarloPredictiveProbV2:
         beta: float,
         far: float,
         gallery_kappa: float = None,
+        ood_kappa: float = None,
         kappa_scale: float = 1.0,
         kappa_input_scale: float = 1.0,
         predict_T: float = 1.0,
@@ -48,6 +49,7 @@ class MonteCarloPredictiveProbV2:
         """
         self.M = M
         self.gallery_kappa = gallery_kappa
+        self.ood_kappa = ood_kappa
         self.kappa_scale = kappa_scale
         self.kappa_input_scale = kappa_input_scale
         assert gallery_prior in ["power", "vMF"]
@@ -80,7 +82,12 @@ class MonteCarloPredictiveProbV2:
         gallery_feats = gallery_feats.astype(dtype)
         gallery_unc = gallery_unc.astype(dtype)
         self.oog_classes_number = probe_feats.shape[-1] * 2
-        gallery_unc_scaled = np.ones_like(gallery_unc) * self.gallery_kappa
+        gallery_unc_scaled = np.concatenate(
+            [
+                np.ones_like(gallery_unc) * self.gallery_kappa,
+                np.ones((self.oog_classes_number, 1)) * self.ood_kappa,
+            ]
+        )
         self.mean_probs = (
             self.compute_mean_probs(
                 probe_feats,
@@ -95,11 +102,7 @@ class MonteCarloPredictiveProbV2:
         )
 
     def predict(self):
-        if self.mean_probs_pred is not None:
-            predict_probs = self.mean_probs_pred
-        else:
-            predict_probs = self.mean_probs
-
+        predict_probs = self.mean_probs
         predict_id = np.argmax(predict_probs[:, : -self.oog_classes_number], axis=-1)
         return predict_id, np.argmax(predict_probs, axis=-1) >= (
             predict_probs.shape[-1] - self.oog_classes_number
@@ -118,20 +121,17 @@ class MonteCarloPredictiveProbV2:
         mean: np.array,
         kappa: np.array,
         gallery_means: torch.nn.Parameter,
-        gallery_kappas: torch.nn.Parameter,
+        class_kappas: torch.nn.Parameter,
         T: torch.nn.Parameter,
     ) -> Any:
         if type(gallery_means) == np.ndarray:
             # inference
             cuda = torch.device("cuda:0")
             gallery_means = torch.tensor(gallery_means, device=cuda)
-            gallery_kappas = torch.tensor(gallery_kappas, device=cuda)
+            class_kappas = torch.tensor(class_kappas, device=cuda)
         # add out-of-gallery kappas
         self.K = gallery_means.shape[0]
         L = self.oog_classes_number
-        class_kappas = torch.concatenate(
-            [gallery_kappas, torch.tensor([[gallery_kappas[0]]] * L, device=cuda)]
-        )
         zs = torch.tensor(self.sampler(mean, kappa), device=gallery_means.device)
         d = torch.tensor([mean.shape[-1]], device=gallery_means.device)
         similarities = torch.matmul(zs, gallery_means.T)
@@ -144,7 +144,21 @@ class MonteCarloPredictiveProbV2:
             (class_kappas[..., :, 0] * (1 / T)),
             out=similarities,
         )
-        prior_class_probs = torch.tensor([p_c] * self.K + [p_out] * L, device=cuda)
+        kappa_g = class_kappas[0, 0]
+        kappa_o = class_kappas[-1, 0]
+        alpha_galley_over_alpha_out = torch.exp(
+            (1 / T)
+            * (
+                (kappa_g - kappa_o) * np.log(2.0)
+                + torch.special.gammaln(d - 1 + kappa_o)
+                + torch.special.gammaln((d - 1) / 2 + kappa_g)
+                - torch.special.gammaln(d - 1 + kappa_g)
+                - torch.special.gammaln((d - 1) / 2 + kappa_o)
+            )
+        )
+        prior_class_probs = torch.tensor(
+            [p_c] * self.K + [p_out * alpha_galley_over_alpha_out] * L, device=cuda
+        )
         class_likelihoods = torch.multiply(
             sim_to_power, prior_class_probs[..., :], out=similarities
         )

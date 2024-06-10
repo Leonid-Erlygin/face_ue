@@ -388,7 +388,8 @@ class Face_Fecognition_test:
             )
             predicted_id, was_rejected = self.recognition_method.predict()
             predicted_unc = self.recognition_method.predict_uncertainty()
-
+            assert predicted_id.shape == (19593,) and was_rejected.shape == (19593,)
+            assert predicted_unc.shape == (19593,)
             for metric in self.recognition_metrics[self.task_type]:
                 metrics[gallery_name].update(
                     metric(
