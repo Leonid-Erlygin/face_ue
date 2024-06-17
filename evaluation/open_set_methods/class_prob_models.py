@@ -100,9 +100,33 @@ class MonteCarloPredictiveProbV2:
             .detach()
             .numpy()
         )
+        if self.M != 0:
+            # self.mean_probs_pred = None
+
+            self.sampler = VonMisesFisher(0)
+            self.beta = 0.99
+            # self.beta = 0.594
+            # gallery_unc_scaled = np.ones_like(gallery_unc) * self.gallery_kappa
+            self.mean_probs_pred = (
+                self.compute_mean_probs(
+                    probe_feats,
+                    probe_unc_scaled,
+                    gallery_feats,
+                    gallery_unc_scaled,
+                    4,
+                )
+                .cpu()
+                .detach()
+                .numpy()
+            )
+        else:
+            self.mean_probs_pred = None
 
     def predict(self):
-        predict_probs = self.mean_probs
+        if self.mean_probs_pred is not None:
+            predict_probs = self.mean_probs_pred
+        else:
+            predict_probs = self.mean_probs
         predict_id = np.argmax(predict_probs[:, : -self.oog_classes_number], axis=-1)
         return predict_id, np.argmax(predict_probs, axis=-1) >= (
             predict_probs.shape[-1] - self.oog_classes_number
