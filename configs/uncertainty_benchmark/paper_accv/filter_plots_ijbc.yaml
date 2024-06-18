@@ -17,13 +17,9 @@ test_datasets:
   #   dataset_name: IJBB
   #   dataset_path: /app/datasets/arcface_ijb/IJBB
 
-  # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
-  #   dataset_name: IJBC
-  #   dataset_path: /app/datasets/arcface_ijb/IJBC
   - _target_: evaluation.test_datasets.FaceRecogntioniDataset
-    dataset_name: whale
-    dataset_path: /app/datasets/whale_train
-
+    dataset_name: IJBC
+    dataset_path: /app/datasets/arcface_ijb/IJBC
 
   # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
   #   dataset_name: lfw
@@ -61,7 +57,7 @@ open_set_identification_uncertainty_metrics:
       _target_: evaluation.metrics.F1_classic
 
 default_beta: 0.5
-far_list: 0.1 # for now
+far_list: 0.05 # for now
 
 
 open_set_identification_methods:
@@ -102,35 +98,13 @@ open_set_identification_methods:
       class_model: power
       far: ${far_list}
       beta: ${default_beta}
-      gallery_kappa: 1519.0405
+      gallery_kappa: 654.0741
       uncertainty_type: maxprob
       alpha: 0 # when 1, only scf unc is used
       aggregation: sum
       T: 3
       T_data_unc: 1
     pretty_name: "$u_{power}$"
-
-
-  # - embeddings: scf
-  #   gallery_template_pooling_strategy:
-  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
-  #   probe_template_pooling_strategy:
-  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
-  #   use_detector_score: False
-  #   recognition_method:
-  #     _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
-  #     distance_function: 
-  #       _target_: evaluation.distance_functions.open_set_identification.CosineSim
-  #     class_model: power
-  #     far: ${far_list}
-  #     beta: ${default_beta}
-  #     gallery_kappa: 654.0741
-  #     uncertainty_type: maxprob
-  #     alpha: 0.1
-  #     aggregation: sum
-  #     T: 3
-  #     T_data_unc: 1
-  #   pretty_name: "$u_{power} + u_{SC1F}$"
 
 
   - embeddings: scf
@@ -146,7 +120,29 @@ open_set_identification_methods:
       class_model: power
       far: ${far_list}
       beta: ${default_beta}
-      gallery_kappa: 1519.0405
+      gallery_kappa: 654.0741
+      uncertainty_type: maxprob
+      alpha: 0.1
+      aggregation: sum
+      T: 3
+      T_data_unc: 1
+    pretty_name: "$u_{power} + u_{SC1F}$"
+
+
+  - embeddings: scf
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
+      distance_function: 
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
+      class_model: power
+      far: ${far_list}
+      beta: ${default_beta}
+      gallery_kappa: 654.0741
       uncertainty_type: maxprob
       alpha: 0.2
       aggregation: sum
@@ -168,11 +164,11 @@ open_set_identification_methods:
       class_model: power
       far: ${far_list}
       beta: ${default_beta}
-      gallery_kappa: 1519.0405
+      gallery_kappa: 654.0741
       uncertainty_type: maxprob
       alpha: 1 # when 1, only scf unc is used
       aggregation: sum
-      T: 3
+      T: 1
       T_data_unc: 1
     pretty_name: "$u_{SCF}$"
 
