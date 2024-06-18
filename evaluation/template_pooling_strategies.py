@@ -154,7 +154,7 @@ class PoolingProb(AbstractTemplatePooling):
         medias: np.ndarray,
     ):
         # here we aggregate probe templates using conf and also return mean data conf to get pure aggregated scf conf
-        templates = np.sort(templates)
+        # templates = np.sort(templates)
         assert templates.shape[0] == img_feats.shape[0]
         assert templates.shape[0] == conf.shape[0]
         assert templates.shape[0] == data_conf.shape[0]

@@ -271,6 +271,10 @@ class Face_Fecognition_test:
                             self.gallery_pooled_templates[gallery_name][
                                 "template_pooled_data_unc"
                             ],
+                            g_unique_ids=self.gallery_pooled_templates[gallery_name][
+                                "template_subject_ids_sorted"
+                            ],
+                            probe_unique_ids=self.test_dataset.probe_ids,
                         )
                         predicted_unc = self.recognition_method.predict_uncertainty()
                         probe_pooled_data = self.probe_template_pooling_strategy(

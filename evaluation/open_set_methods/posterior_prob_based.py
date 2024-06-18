@@ -20,6 +20,7 @@ class PosteriorProbability(OpenSetMethod):
         T: Union[float, List[float]],
         T_data_unc: float,
         gallery_kappa: float = None,
+        norm_data_unc: bool = True,
     ) -> None:
         super().__init__()
         self.distance_function = distance_function
@@ -34,6 +35,7 @@ class PosteriorProbability(OpenSetMethod):
         self.T = T
         self.gallery_kappa = gallery_kappa
         self.T_data_unc = T_data_unc
+        self.norm_data_unc = norm_data_unc
 
     def setup(
         self,
@@ -149,15 +151,16 @@ class PosteriorProbability(OpenSetMethod):
         if self.data_uncertainty[0] == 0:
             # default pool
             return unc
-        # min_kappa = 150
         min_kappa = 5
         max_kappa = 2700
-        data_uncertainty_norm = (self.data_uncertainty - min_kappa) / (
-            max_kappa - min_kappa
-        )
-        assert np.sum(data_uncertainty_norm < 0) == 0
-        # data_uncertainty_norm = data_uncertainty
-        data_conf_norm = (data_uncertainty_norm) ** (1 / self.T_data_unc)
+        if self.norm_data_unc:
+            data_uncertainty_norm = (self.data_uncertainty - min_kappa) / (
+                max_kappa - min_kappa
+            )
+            data_conf_norm = (data_uncertainty_norm) ** (1 / self.T_data_unc)
+            assert np.sum(data_uncertainty_norm < 0) == 0
+        else:
+            data_conf_norm = self.data_uncertainty
 
         conf_norm = -unc
         if self.aggregation == "sum":
