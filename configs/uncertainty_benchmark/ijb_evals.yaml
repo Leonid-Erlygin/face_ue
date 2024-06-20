@@ -38,7 +38,7 @@ open_set_identification_metrics:
     value_types: [0, 1, 2, 3, 4, 5]
   - _target_: evaluation.metrics.DirFar
 
-fractions: [0, 0.2, 20]
+fractions: [0, 0.05, 20]
 
 open_set_identification_uncertainty_metrics:
   - _target_: evaluation.uncertainty_metrics.DisposeBasedOnUnc
@@ -63,6 +63,28 @@ far_list: 0.05 # for now
 open_set_identification_methods:
 
 
+  # - embeddings: scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   use_detector_score: False
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
+  #     distance_function: 
+  #       _target_: evaluation.distance_functions.open_set_identification.CosineSim
+  #     class_model: power
+  #     far: ${far_list}
+  #     beta: ${default_beta}
+  #     gallery_kappa: 654.0741
+  #     uncertainty_type: maxprob
+  #     alpha: 0 # when 1, only scf unc is used
+  #     aggregation: sum
+  #     T: 3
+  #     T_data_unc: 1
+  #   pretty_name: "$Average$"
+
+
   - embeddings: scf
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
@@ -76,42 +98,20 @@ open_set_identification_methods:
       class_model: power
       far: ${far_list}
       beta: ${default_beta}
-      gallery_kappa: 654.0741
+      #gallery_kappa: 637.6794
       uncertainty_type: maxprob
-      alpha: 0 # when 1, only scf unc is used
-      aggregation: sum
-      T: 3
-      T_data_unc: 1
-    pretty_name: "$Average$"
-
-
-  - embeddings: scf
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingConcentration
-    use_detector_score: False
-    recognition_method:
-      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
-      distance_function: 
-        _target_: evaluation.distance_functions.open_set_identification.CosineSim
-      class_model: power
-      far: ${far_list}
-      beta: ${default_beta}
-      gallery_kappa: 637.6794
-      uncertainty_type: maxprob
-      alpha: 0 # when 1, only scf unc is used
+      alpha: 1 # when 1, only scf unc is used
       aggregation: sum
       T: 3
       T_data_unc: 1
     pretty_name: "$u_{SCF}$"
 
 
-  - embeddings: power_noise_v3
+  - embeddings: power_noise_v3_new
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
     probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingConcentration
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
     use_detector_score: False
     recognition_method:
       _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
@@ -120,9 +120,9 @@ open_set_identification_methods:
       class_model: power
       far: ${far_list}
       beta: ${default_beta}
-      gallery_kappa: 619.1514
+      #gallery_kappa: 619.1514
       uncertainty_type: maxprob
-      alpha: 0 # when 1, only scf unc is used
+      alpha: 1 # when 1, only scf unc is used
       aggregation: sum
       T: 3
       T_data_unc: 1
