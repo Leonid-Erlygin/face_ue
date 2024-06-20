@@ -2,7 +2,7 @@ hydra:
   run:
     dir: ${exp_dir}
 
-exp_dir: outputs/experiments/simple_mc_probe_scale_change_T_new_mentrics_0.05_far
+exp_dir: outputs/experiments/paper_v1_pooling
 use_two_galleries: False
 recompute_template_pooling: True
 metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
@@ -98,13 +98,35 @@ open_set_identification_methods:
       class_model: power
       far: ${far_list}
       beta: ${default_beta}
-      #gallery_kappa: 637.6794
+      gallery_kappa: 637.6794
       uncertainty_type: maxprob
-      alpha: 1 # when 1, only scf unc is used
+      alpha: 0 # when 1, only scf unc is used
       aggregation: sum
       T: 3
       T_data_unc: 1
     pretty_name: "$u_{SCF}$"
+
+
+  - embeddings: power_noise_v3
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingConcentration
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
+      distance_function: 
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
+      class_model: power
+      far: ${far_list}
+      beta: ${default_beta}
+      gallery_kappa: 619.1514
+      uncertainty_type: maxprob
+      alpha: 0 # when 1, only scf unc is used
+      aggregation: sum
+      T: 3
+      T_data_unc: 1
+    pretty_name: "$u_{power}$ nose"
 
 
   # - embeddings: scf

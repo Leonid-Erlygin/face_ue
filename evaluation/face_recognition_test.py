@@ -78,7 +78,7 @@ class Face_Fecognition_test:
             / Path(self.embedding_type)
             / f"template_pool-{self.gallery_template_pooling_strategy.__class__.__name__}_probe-{self.probe_template_pooling_strategy.__class__.__name__}_{self.test_dataset.dataset_name}"
         )
-        #print(template_pool_path)
+        # print(template_pool_path)
         template_pool_path.mkdir(parents=True, exist_ok=True)
         if (
             template_pool_path / f"pool.npz"
@@ -88,7 +88,6 @@ class Face_Fecognition_test:
             pooled_data = (
                 data["template_pooled_features"],
                 data["template_pooled_data_unc"],
-                data[]
             )
         else:
             pooled_data = self.gallery_template_pooling_strategy(
@@ -103,10 +102,10 @@ class Face_Fecognition_test:
                 template_pooled_features=pooled_data[0],
                 template_pooled_data_unc=pooled_data[1],
             )
-        
+
         self.template_pooled_emb = pooled_data[0]
         self.template_pooled_unc = pooled_data[1]
-        #self.template_ids = pooled_data["template_ids"]
+        # self.template_ids = pooled_data["template_ids"]
 
     def pool_templates_osfr(self, cache_dir: str):
         cache_dir = Path(cache_dir)
@@ -467,7 +466,6 @@ class Face_Fecognition_test:
             self.test_dataset.p1,
             self.test_dataset.p2,
         )
-
 
         metrics = {}
         for metric in self.recognition_metrics:

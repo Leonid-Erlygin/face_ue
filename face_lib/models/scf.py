@@ -77,8 +77,8 @@ class SphereConfidenceFace(LightningModule):
 
     def training_step(self, batch):
         images, labels = batch
-        #freezing bn layers
-        #self.backbone.backbone.eval()
+        # freezing bn layers
+        # self.backbone.backbone.eval()
         feature, log_kappa = self(images)
         kappa = torch.exp(log_kappa)
         wc = self.softmax_weights[labels, :]
@@ -100,7 +100,10 @@ class SphereConfidenceFace(LightningModule):
         optimizer = getattr(
             importlib.import_module(self.optimizer_params["optimizer_path"]),
             self.optimizer_params["optimizer_name"],
-        )([*self.head.parameters(), *self.backbone.backbone.parameters()], **self.optimizer_params["params"]) #!!! добавил бэкбон
+        )(
+            [*self.head.parameters(), *self.backbone.backbone.parameters()],
+            **self.optimizer_params["params"],
+        )  #!!! добавил бэкбон
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
