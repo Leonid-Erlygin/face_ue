@@ -1,0 +1,107 @@
+hydra:
+  run:
+    dir: ${exp_dir}
+
+exp_dir: outputs/experiments/power_nose_0.05
+use_two_galleries: False
+recompute_template_pooling: True
+metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
+create_pool_plot: False
+
+test_datasets:
+  # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
+  #   dataset_name: ms1m
+  #   dataset_path: /app/datasets/ms1m_ident
+
+  # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
+  #   dataset_name: IJBB
+  #   dataset_path: /app/datasets/arcface_ijb/IJBB
+
+  - _target_: evaluation.test_datasets.FaceRecogntioniDataset
+    dataset_name: IJBC
+    dataset_path: /app/datasets/arcface_ijb/IJBC
+
+  # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
+  #   dataset_name: lfw
+  #   dataset_path: /app/datasets/lfw_ident
+
+
+  # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
+  #   dataset_name: survFace
+  #   dataset_path: /app/datasets/QMUL-SurvFace/Face_Identification_Test_Set
+
+
+
+open_set_identification_metrics:
+  # - _target_: evaluation.metrics.FrrFarIdent
+  - _target_: evaluation.metrics.DirFar
+  # - _target_: evaluation.metrics.F1
+
+fractions: [0, 0.3, 15]
+
+open_set_identification_uncertainty_metrics:
+  - _target_: evaluation.uncertainty_metrics.DisposeBasedOnUnc
+    fractions: ${fractions}
+    metric_to_monitor:
+      _target_: evaluation.metrics.FrrFarIdent
+  
+  - _target_: evaluation.uncertainty_metrics.DisposeBasedOnUnc
+    fractions: ${fractions}
+    metric_to_monitor:
+      _target_: evaluation.metrics.DirFar
+
+  - _target_: evaluation.uncertainty_metrics.DisposeBasedOnUnc
+    fractions: ${fractions}
+    metric_to_monitor:
+      _target_: evaluation.metrics.F1_classic
+
+default_beta: 0.5
+far_list: 0.05 # for now
+# far_list:
+#   - 0.05
+
+open_set_identification_methods:
+  - embeddings: scf_new
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault  #PoolingConcentration, PoolingDefault
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
+      distance_function: 
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
+      class_model: power
+      far: ${far_list}
+      beta: ${default_beta}
+      uncertainty_type: maxprob
+      alpha: 1 # when 1, only scf unc is used
+      aggregation: sum
+      T: 1
+      T_data_unc: 1
+    pretty_name: "$u_{SCF}$"
+
+  - embeddings: power_noise_v3_new
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault  #PoolingConcentration, PoolingDefault
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
+      distance_function: 
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
+      class_model: power
+      far: ${far_list}
+      beta: ${default_beta}
+      uncertainty_type: maxprob
+      alpha: 1 # when 1, only scf unc is used
+      aggregation: sum
+      T: 1
+      T_data_unc: 1
+    pretty_name: "$u_{Power}$ Nose"
+
+
+
+
+

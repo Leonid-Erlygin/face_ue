@@ -1,6 +1,7 @@
 from typing import Any
 import numpy as np
 import warnings
+from multiprocessing import Pool
 
 np.seterr(all="warn")
 
@@ -12,6 +13,7 @@ def random_VMF(mu, kappa, size=None):
     Source:https://hal.science/hal-04004568
     """
     # parse input parameters
+    kappa = kappa[0]
     n = 1 if size is None else np.product(size)
     shape = () if size is None else tuple(np.ravel(size))
     mu = np.asarray(mu)
@@ -36,7 +38,7 @@ def random_VMF(mu, kappa, size=None):
     sin = np.sqrt(1 - cos**2)
     # combine angles with the z component
     x = z * sin[:, None] + cos[:, None] * mu_norm[None, :]
-    return x.reshape((*shape, d))
+    return x.reshape((*shape, d))[np.newaxis, :, :]
 
 
 def _random_VMF_cos(d: int, kappa: float, n: int):
@@ -62,17 +64,23 @@ def _random_VMF_cos(d: int, kappa: float, n: int):
 
 
 class VonMisesFisher:
-    def __init__(self, num_samples: int) -> None:
+    def __init__(self, num_samples: int, num_workers=21) -> None:
         self.num_samples = num_samples
+        self.num_workers = num_workers
 
     def __call__(self, feature_mean: np.ndarray, kappas: np.ndarray) -> Any:
         if self.num_samples > 0:
             sample_list = []
-            for mu, kappa in zip(feature_mean, kappas):
-                samples = random_VMF(mu, kappa=kappa[0], size=self.num_samples)[
-                    np.newaxis, :, :
-                ]
-                sample_list.append(samples)
+            with Pool(self.num_workers) as p:
+                sample_list = p.starmap(
+                    random_VMF,
+                    zip(feature_mean, kappas, [self.num_samples] * len(feature_mean)),
+                )
+            # for mu, kappa in zip(feature_mean, kappas):
+            #     samples = random_VMF(mu, kappa=kappa[0], size=self.num_samples)[
+            #         np.newaxis, :, :
+            #     ]
+            #     sample_list.append(samples)
             return np.concatenate(sample_list, axis=0)
         else:
             return feature_mean[:, np.newaxis, :]

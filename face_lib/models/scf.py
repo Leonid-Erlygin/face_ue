@@ -42,16 +42,30 @@ class SphereConfidenceFace(LightningModule):
         backbone: torch.nn.Module,
         head: torch.nn.Module,
         scf_loss: torch.nn.Module,
-        softmax_weights: torch.nn.Module,
         optimizer_params,
         scheduler_params,
         permute_batch: bool,
+        softmax_weights: torch.nn.Module = None,
     ):
         super().__init__()
         self.backbone = backbone
         self.head = head
         self.scf_loss = scf_loss
-        self.softmax_weights = softmax_weights.softmax_weights
+        if softmax_weights is None:
+            # assume that weights are stored in the backbone
+            self.softmax_weights = self.backbone.backbone.head_id.weight.data
+            delattr(self.backbone.backbone, "head_id")
+            softmax_weights_norm = torch.norm(
+                self.softmax_weights, dim=1, keepdim=True
+            )  # [N, 1]
+            self.softmax_weights = (
+                self.softmax_weights / softmax_weights_norm * scf_loss.radius
+            )  # $ w_c \in rS^{d-1} $
+            self.softmax_weights = torch.nn.Parameter(
+                self.softmax_weights, requires_grad=False
+            )
+        else:
+            self.softmax_weights = softmax_weights.softmax_weights
         self.optimizer_params = optimizer_params
         self.scheduler_params = scheduler_params
         self.permute_batch = permute_batch
@@ -72,9 +86,6 @@ class SphereConfidenceFace(LightningModule):
 
         kappa_mean = kappa.mean()
         total_loss = losses.mean()
-        # neg_kappa_times_cos_theta = l1.mean()
-        # neg_dim_scalar_times_log_kappa = l2.mean()
-        # log_iv_kappa = l3.mean()
 
         self.log("train_loss", total_loss.item(), prog_bar=True)
         self.log("kappa", kappa_mean.item())
@@ -97,7 +108,7 @@ class SphereConfidenceFace(LightningModule):
                     importlib.import_module("torch.optim.lr_scheduler"),
                     self.scheduler_params["scheduler"],
                 )(optimizer, **self.scheduler_params["params"]),
-                "interval": "step",
+                # "interval": "step",
             },
         }
 

@@ -19,6 +19,7 @@ class PosteriorProbability(OpenSetMethod):
         class_model: str,
         T: Union[float, List[float]],
         T_data_unc: float,
+        gallery_kappa: float = None,
     ) -> None:
         super().__init__()
         self.distance_function = distance_function
@@ -31,6 +32,7 @@ class PosteriorProbability(OpenSetMethod):
         self.class_model = class_model
         self.C = 0.5
         self.T = T
+        self.gallery_kappa = gallery_kappa
         self.T_data_unc = T_data_unc
 
     def setup(
@@ -59,27 +61,28 @@ class PosteriorProbability(OpenSetMethod):
         T = self.T
         # find kappa
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
-        found_kappa = (
-            fsolve(
-                self.find_kappa_by_far,
-                600.0 / 100,
-                (
-                    self.beta,
-                    T,
-                    self.class_model,
-                    self.far,
-                    is_seen,
-                    similarity_matrix,
-                ),
-            )[0]
-            * 100
-        )
-        print(f"Found kappa {np.round(found_kappa,4)} for far {self.far}")
+        if self.gallery_kappa is None:
+            self.gallery_kappa = (
+                fsolve(
+                    self.find_kappa_by_far,
+                    600.0 / 100,
+                    (
+                        self.beta,
+                        T,
+                        self.class_model,
+                        self.far,
+                        is_seen,
+                        similarity_matrix,
+                    ),
+                )[0]
+                * 100
+            )
+            print(f"Found kappa {np.round(self.gallery_kappa,4)} for far {self.far}")
         if self.class_model == "vMF_Power":
             raise ValueError
         else:
             self.posterior_prob = PosteriorProb(
-                kappa=found_kappa,
+                kappa=self.gallery_kappa,
                 beta=self.beta,
                 class_model=self.class_model,
                 K=similarity_matrix.shape[-1],
@@ -147,7 +150,7 @@ class PosteriorProbability(OpenSetMethod):
             # default pool
             return unc
         # min_kappa = 150
-        min_kappa = 10
+        min_kappa = 5
         max_kappa = 2700
         data_uncertainty_norm = (self.data_uncertainty - min_kappa) / (
             max_kappa - min_kappa

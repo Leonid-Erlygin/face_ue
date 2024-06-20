@@ -3,7 +3,7 @@ seed_everything: 7
 trainer:
   accelerator: gpu
   strategy: auto
-  devices: 2
+  devices: 1
   num_nodes: 1
   precision: 32-true
   logger:
@@ -16,7 +16,7 @@ trainer:
       dir: null
       id: null
       anonymous: null
-      project: face-ue
+      project: whale_scf_uncertainty_train
       log_model: false
       experiment: null
       prefix: ''
@@ -39,6 +39,7 @@ trainer:
       sync_tensorboard: null
       monitor_gym: null
       save_code: null
+      fork_from: null
       settings: null
   callbacks:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
@@ -102,7 +103,7 @@ model:
   class_path: face_lib.models.SphereConfidenceFace
   init_args:
     backbone:
-      class_path: face_lib.models.lightning_wrappers.ResNet
+      class_path: face_lib.models.lightning_wrappers.EfficientNet
       init_args:
         resnet_name: iresnet50_normalized
         weights: /app/model_weights/backbone/ms1mv3_arcface_r50/backbone.pth
@@ -113,38 +114,37 @@ model:
         convf_dim: 25088
         latent_vector_size: 8192
     scf_loss:
-      class_path: face_lib.models.losses.KLDiracPS
+      class_path: face_lib.models.losses.KLDiracVMF
       init_args:
         z_dim: 512
-        radius: 64
-    softmax_weights:
-      class_path: face_lib.models.scf.SoftmaxWeights
-      init_args:
-        softmax_weights_path: /app/model_weights/backbone/ms1mv3_arcface_r50/softmax_weight.pt
         radius: 64
     optimizer_params:
       optimizer_path: torch.optim
       optimizer_name: AdamW
       params:
-        lr: 3.0e-05
-        weight_decay: 0.0005
+        lr: 5.0e-05
+        weight_decay: 0.005
     scheduler_params:
       scheduler: StepLR
       params:
-        step_size: 15000
+        step_size: 1
         gamma: 0.5
-      interval: step
-      frequency: 1
     permute_batch: false
+    softmax_weights: null
 data:
   class_path: face_lib.dataset_classes.lightning_datasets.UncertaintyDataModule
   init_args:
-    data_train_dir: /app/datasets/ms1m/
-    predict_dataset:
-      class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+    train_dataset:
+      class_path: face_lib.dataset_classes.lightning_datasets.WhaleDataset
       init_args:
-        dataset_path: /app/datasets/arcface_ijb/IJBC
-        dataset_name: IJBC
-        norm_image: true
-    batch_size: 256
-    num_workers: 36
+        config_path: /app/sandbox/happy_whale/kaggle-happywhale-1st-place/config/efficientnet_b6_new.yaml
+        image_dir: /app/sandbox/happy_whale/kaggle-happywhale-1st-place/input
+        test: false
+    predict_dataset:
+      class_path: face_lib.dataset_classes.lightning_datasets.WhaleDataset
+      init_args:
+        config_path: /app/sandbox/happy_whale/kaggle-happywhale-1st-place/config/efficientnet_b6_new.yaml
+        image_dir: /app/sandbox/happy_whale/kaggle-happywhale-1st-place/input
+        test: true
+    batch_size: 16
+    num_workers: 10

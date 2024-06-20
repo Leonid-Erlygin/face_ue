@@ -4,6 +4,10 @@ from sklearn.metrics import top_k_accuracy_score
 from tqdm import tqdm
 from sklearn.metrics import roc_curve, auc
 from scipy import interpolate
+from pathlib import Path
+import seaborn as sns
+import pandas as pd
+import matplotlib.pyplot as plt
 
 EvalMetricsT = Tuple[int, int, int, List[float], List[float], List[Tuple[float, float]]]
 
@@ -15,6 +19,8 @@ class F1:
         was_rejected: np.ndarray,
         g_unique_ids: np.ndarray,
         probe_unique_ids: np.ndarray,
+        predicted_unc: np.ndarray = None,
+        method_name: str = None,
     ) -> dict:
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
         similar_gallery_class = g_unique_ids[predicted_id[is_seen]]
@@ -36,6 +42,8 @@ class F1_classic:
         was_rejected: np.ndarray,
         g_unique_ids: np.ndarray,
         probe_unique_ids: np.ndarray,
+        predicted_unc: np.ndarray = None,
+        method_name: str = None,
     ) -> dict:
         # as in Towards Open Set Recognition paper
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
@@ -62,28 +70,131 @@ class FrrFarIdent:
         was_rejected: np.ndarray,
         g_unique_ids: np.ndarray,
         probe_unique_ids: np.ndarray,
+        predicted_unc: np.ndarray = None,
+        method_name: str = None,
     ) -> dict:
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
-        false_accept = was_rejected[~is_seen] == False
+
         false_reject = was_rejected[is_seen]
-
+        true_accept = ~false_reject
         similar_gallery_class = g_unique_ids[predicted_id[is_seen]]
-        false_ident = probe_unique_ids[is_seen] != similar_gallery_class
 
-        false_reject_slice = np.logical_and(false_ident == False, false_reject)
-        false_ident_slice = np.logical_and(false_ident, false_reject == False)
-        false_ident_reject = np.logical_and(false_ident, false_reject)
+        false_ident = probe_unique_ids[is_seen] != similar_gallery_class
+        true_ident = ~false_ident
+
+        # errors
+        true_accept_false_ident = np.logical_and(true_accept, false_ident)
+        false_reject_false_ident = np.logical_and(false_reject, false_ident)
+        false_reject_true_ident = np.logical_and(false_reject, true_ident)
+        false_accept = was_rejected[~is_seen] == False
+        # no error
+        true_reject = was_rejected[~is_seen]
+        true_accept_true_ident = np.logical_and(true_accept, true_ident)
+
+        assert probe_unique_ids.shape[0] == np.sum(true_accept_false_ident) + np.sum(
+            false_reject_false_ident
+        ) + np.sum(false_reject_true_ident) + np.sum(false_accept) + np.sum(
+            true_reject
+        ) + np.sum(
+            true_accept_true_ident
+        )
+
         result_metrics = {
-            "osr_metric:false_accept_num": np.sum(false_accept),
-            "osr_metric:false_reject_num": np.sum(false_reject_slice),
-            "osr_metric:false_ident_num": np.sum(false_ident_slice),
-            "osr_metric:false_ident-reject_num": np.sum(false_ident_reject),
-            "osr_metric:error_sum": np.sum(false_accept)
-            + np.sum(false_reject_slice)
-            + np.sum(false_ident_slice)
-            + np.sum(false_ident_reject),
+            "osr_metric:true_accept_false_ident": np.sum(true_accept_false_ident),
+            "osr_metric:false_reject_false_ident": np.sum(false_reject_false_ident),
+            "osr_metric:false_reject_true_ident": np.sum(false_reject_true_ident),
+            "osr_metric:false_ident": np.sum(false_ident),
+            "osr_metric:false_reject": np.sum(false_reject_false_ident)
+            + np.sum(false_reject_true_ident),
+            "osr_metric:false_accept": np.sum(false_accept),
+            "osr_metric:error_sum": np.sum(true_accept_false_ident)
+            + np.sum(false_reject_false_ident)
+            + np.sum(false_reject_true_ident)
+            + np.sum(false_accept),
         }
         return result_metrics
+
+
+class ErrorDistribution:
+    def __init__(self, plot_save_dir: str, value_types: List) -> None:
+        self.plot_save_dir = plot_save_dir
+        self.value_types = value_types
+
+    def __call__(
+        self,
+        predicted_id: np.ndarray,
+        was_rejected: np.ndarray,
+        g_unique_ids: np.ndarray,
+        probe_unique_ids: np.ndarray,
+        predicted_unc: np.ndarray = None,
+        method_name: str = None,
+    ) -> dict:
+        is_seen = np.isin(probe_unique_ids, g_unique_ids)
+
+        false_reject = was_rejected[is_seen]
+        true_accept = ~false_reject
+        similar_gallery_class = g_unique_ids[predicted_id[is_seen]]
+
+        false_ident = probe_unique_ids[is_seen] != similar_gallery_class
+        true_ident = ~false_ident
+
+        # errors
+        true_accept_false_ident = np.logical_and(true_accept, false_ident)
+        false_reject_false_ident = np.logical_and(false_reject, false_ident)
+        false_reject_true_ident = np.logical_and(false_reject, true_ident)
+        false_accept = was_rejected[~is_seen] == False
+        # no error
+        true_reject = was_rejected[~is_seen]
+        true_accept_true_ident = np.logical_and(true_accept, true_ident)
+
+        unc = np.array(
+            [
+                predicted_unc[~is_seen][false_accept],
+                predicted_unc[is_seen][false_reject],
+                predicted_unc[is_seen][true_accept_false_ident],
+                predicted_unc[is_seen][false_reject_true_ident],
+                predicted_unc[is_seen][true_accept_true_ident],
+                predicted_unc[~is_seen][true_reject],
+            ],
+            dtype=object,
+        )
+        unc = np.concatenate(unc[self.value_types])
+        log_scale = False
+        if "MC" in method_name:
+            unc += 1.0000000001
+            log_scale = True
+        elif "baseline" in method_name:
+            # unc += 1.0000000001
+            # unc = np.exp(np.exp(unc))
+            log_scale = False
+        # unc = np.log(unc)
+        error_kind = np.array(
+            [
+                ["false accept"] * len(predicted_unc[~is_seen][false_accept]),
+                ["false reject"] * len(predicted_unc[is_seen][false_reject]),
+                ["true accept false ident"]
+                * len(predicted_unc[is_seen][true_accept_false_ident]),
+                ["false reject true ident"]
+                * len(predicted_unc[is_seen][false_reject_true_ident]),
+                ["true a&i"] * len(predicted_unc[is_seen][true_accept_true_ident]),
+                ["true reject"] * len(predicted_unc[~is_seen][true_reject]),
+            ],
+            dtype=object,
+        )
+        error_kind = np.concatenate(error_kind[self.value_types])
+        out_name = Path(self.plot_save_dir) / (method_name + ".png")
+        data = pd.DataFrame({"unc": list(unc), "Error Kind": error_kind})
+        sns.displot(
+            data,
+            kind="kde",
+            x="unc",
+            hue="Error Kind",
+            log_scale=log_scale,
+            common_norm=False,
+        )
+        plt.xlabel(f"{method_name} score")
+        plt.savefig(out_name, dpi=300)
+        return {}
 
 
 class DirFar:
@@ -93,6 +204,8 @@ class DirFar:
         was_rejected: np.ndarray,
         g_unique_ids: np.ndarray,
         probe_unique_ids: np.ndarray,
+        predicted_unc: np.ndarray = None,
+        method_name: str = None,
     ) -> dict:
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
         similar_gallery_class = g_unique_ids[predicted_id[is_seen]]

@@ -144,9 +144,12 @@ def main(cfg):
         gallery_template_pooling_strategy = instantiate(
             method.gallery_template_pooling_strategy
         )
-        probe_template_pooling_strategy = instantiate(
-            method.probe_template_pooling_strategy
-        )
+        if hasattr(method, "probe_template_pooling_strategy"):
+            probe_template_pooling_strategy = instantiate(
+                method.probe_template_pooling_strategy
+            )
+        else:
+            probe_template_pooling_strategy = None
         recognition_method = instantiate(method.recognition_method)
 
         # create unique method name
@@ -180,6 +183,7 @@ def main(cfg):
         tt = Face_Fecognition_test(
             task_type=task_type,
             method_name=method_name,
+            pretty_name=method.pretty_name,
             recognition_method=recognition_method,
             test_dataset=test_dataset,
             embedding_type=method.embeddings,

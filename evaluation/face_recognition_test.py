@@ -25,20 +25,22 @@ class Face_Fecognition_test:
         self,
         task_type: str,
         method_name: str,
+        pretty_name: str,
         recognition_method,
         test_dataset: FaceRecogntioniDataset,
         embedding_type: str,
         embeddings_path: str,
-        gallery_template_pooling_strategy: AbstractTemplatePooling,
-        probe_template_pooling_strategy: AbstractTemplatePooling,
         use_detector_score: bool,
         use_two_galleries: bool,
         recompute_template_pooling: bool,
         recognition_metrics: dict,
         uncertainty_metrics: dict,
+        gallery_template_pooling_strategy: AbstractTemplatePooling,
+        probe_template_pooling_strategy: AbstractTemplatePooling = None,
     ):
         self.task_type = task_type
         self.method_name = method_name
+        self.pretty_name = pretty_name
         self.recognition_method = recognition_method
         self.use_two_galleries = use_two_galleries
         self.test_dataset = test_dataset
@@ -70,12 +72,49 @@ class Face_Fecognition_test:
             face_scores=self.test_dataset.face_scores,
         )
         # pool templates
-        self.pool_templates(cache_dir="/app/cache/template_cache_new")
+
+        if self.task_type == "open_set_identification":
+            self.pool_templates_osfr(cache_dir="/app/cache/template_cache_new")
+        elif self.task_type == "verification":
+            self.pool_templates_verification(
+                cache_dir="/app/cache/template_cache_verif"
+            )
 
         assert self.image_input_feats.shape[0] == self.unc.shape[0]
         assert self.image_input_feats.shape[0] == self.test_dataset.medias.shape[0]
 
-    def pool_templates(self, cache_dir: str):
+    def pool_templates_verification(self, cache_dir: str):
+        cache_dir = Path(cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        template_pool_path = (
+            cache_dir
+            / Path(self.embedding_type)
+            / f"template_pool-{self.gallery_template_pooling_strategy.__class__.__name__}_probe-{self.probe_template_pooling_strategy.__class__.__name__}_{self.test_dataset.dataset_name}"
+        )
+
+        if (
+            template_pool_path / f"pool.npz"
+        ).is_file() and self.recompute_template_pooling is False:
+            print("Loading pool")
+            data = np.load(template_pool_path / f"pool.npz")
+            pooled_data = (
+                data["template_pooled_features"],
+                data["template_pooled_data_unc"],
+            )
+        else:
+            pooled_data = self.gallery_template_pooling_strategy(
+                self.image_input_feats,
+                self.unc,
+                self.test_dataset.templates,
+                self.test_dataset.medias,
+            )
+            np.savez(
+                template_pool_path / f"pool.npz",
+                template_pooled_features=pooled_data[0],
+                template_pooled_data_unc=pooled_data[1],
+            )
+
+    def pool_templates_osfr(self, cache_dir: str):
         cache_dir = Path(cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)
         template_subsets_path = (
@@ -384,6 +423,8 @@ class Face_Fecognition_test:
                         probe_unique_ids=self.probe_pooled_templates[gallery_name][
                             "template_subject_ids_sorted"
                         ],
+                        predicted_unc=predicted_unc,
+                        method_name=self.pretty_name,  # .split('$')[0],
                     )
                 )
 
@@ -432,28 +473,16 @@ class Face_Fecognition_test:
     def run_model_test_verification(
         self,
     ):
-        # scores = self.distance_function(
-        #     self.template_pooled_emb,
-        #     self.template_pooled_unc,
-        #     self.template_ids,
-        #     self.test_dataset.p1,
-        #     self.test_dataset.p2,
-        # )
-        dist_func = CosineSim()
-        scoring_method = VerifEval(distance_function=dist_func)
-
-
-        scores = scoring_method(
-            self.gallery_pooled_templates["g1"]["template_pooled_features"],
-            self.gallery_pooled_templates["g1"]["template_pooled_data_unc"],
-            self.gallery_pooled_templates["g1"]["template_subject_ids_sorted"],
+        scores = self.recognition_method(
+            self.template_pooled_emb,
+            self.template_pooled_unc,
+            self.template_ids,
             self.test_dataset.p1,
             self.test_dataset.p2,
         )
 
 
         metrics = {}
-        #for metric in self.verification_metrics:
         for metric in self.recognition_metrics:
             metrics.update(
                 metric(
@@ -461,7 +490,7 @@ class Face_Fecognition_test:
                     labels=self.test_dataset.label,
                 )
             )
-        return metrics
+        return None
 
     def run_model_test_closed_set_identification(self):
         (
