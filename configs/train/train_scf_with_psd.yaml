@@ -1,9 +1,9 @@
 seed_everything: 7
 trainer:
-  logger:
-    class_path: pytorch_lightning.loggers.WandbLogger
-    init_args:
-      project: "face-ue"
+#   logger:
+#     class_path: pytorch_lightning.loggers.WandbLogger
+#     init_args:
+#       project: "face-ue"
   log_every_n_steps: 3
   default_root_dir: outputs/scf_train
   enable_checkpointing: true
@@ -18,11 +18,11 @@ trainer:
   - class_path: face_lib.models.scf.Prediction_writer
     init_args: 
       output_dir: /app/cache/features
-      file_name: power_big_blur_different_strength_p0.3_embs_IJBC # scf_embs_inter  #scf_embs_lfw #scf_embs_ms1m_3531-classes_0-seed_30-min-class-size
+      file_name: power_dul_rgs_embs_IJBC # scf_embs_inter  #scf_embs_lfw #scf_embs_ms1m_3531-classes_0-seed_30-min-class-size
       write_interval: epoch
   max_epochs: 5
   accelerator: gpu
-  devices: 2
+  devices: 1
 model:
     class_path: face_lib.models.scf.SphereConfidenceFace
     init_args:
@@ -77,7 +77,12 @@ model:
 data:
     class_path: face_lib.dataset_classes.lightning_datasets.UncertaintyDataModule
     init_args:
-        data_train_dir: /app/datasets/ms1m/
+        train_dataset:
+            class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
+            init_args:
+                root_dir: /app/datasets/ms1m/
+        #data_train_dir: /app/datasets/ms1m/
+
         # predict_dataset:
         #     class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
         #     init_args: 

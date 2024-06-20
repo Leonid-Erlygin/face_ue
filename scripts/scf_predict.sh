@@ -12,5 +12,5 @@ docker run \
  kolesnikov-face \
  python trainers/train.py predict \
  --config configs/train/train_scf_with_psd.yaml \
- --ckpt_path=/app/outputs/scf_train/weights_power_big_blur_different_strength_p0.3/epoch=4-step=56000.ckpt
+ --ckpt_path=/app/outputs/scf_train/weights_power_dul_rgs/epoch=4-step=56000.ckpt
 #  --trainer.devices=1 

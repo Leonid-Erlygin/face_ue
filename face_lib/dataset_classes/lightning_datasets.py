@@ -1,6 +1,6 @@
 import torch
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
+# import albumentations as A
+# from albumentations.pytorch import ToTensorV2
 import cv2
 
 # import albumentations as A
@@ -18,9 +18,9 @@ import pandas as pd
 
 import sys
 
-sys.path.append("/app/sandbox/happy_whale/kaggle-happywhale-1st-place")
-from config.config import load_config
-from src.dataset import load_df
+# sys.path.append("/app/sandbox/happy_whale/kaggle-happywhale-1st-place")
+# from config.config import load_config
+# from src.dataset import load_df
 
 
 class MXFaceDataset(Dataset):

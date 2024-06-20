@@ -9,9 +9,9 @@ from .template_pooling_strategies import AbstractTemplatePooling
 from .distance_functions.open_set_identification.abc import Abstract1NEval
 from .test_datasets import FaceRecogntioniDataset
 
-from evaluation.distance_functions.distaince_functions import CosineSimDistance
+from evaluation.distance_functions.distance_functions import CosineSimDistance
 from evaluation.distance_functions.open_set_identification.cosine_sim import CosineSim
-from evaluation.distance_functions.verification.distance_based_evaluation import VerifEval
+from evaluation.verification_methods.distance_based_verification import VerifEval
 
 # from embeddings import process_embeddings
 # from image2template import image2template_feature
@@ -91,7 +91,8 @@ class Face_Fecognition_test:
             / Path(self.embedding_type)
             / f"template_pool-{self.gallery_template_pooling_strategy.__class__.__name__}_probe-{self.probe_template_pooling_strategy.__class__.__name__}_{self.test_dataset.dataset_name}"
         )
-
+        #print(template_pool_path)
+        template_pool_path.mkdir(parents=True, exist_ok=True)
         if (
             template_pool_path / f"pool.npz"
         ).is_file() and self.recompute_template_pooling is False:
@@ -100,6 +101,7 @@ class Face_Fecognition_test:
             pooled_data = (
                 data["template_pooled_features"],
                 data["template_pooled_data_unc"],
+                data[]
             )
         else:
             pooled_data = self.gallery_template_pooling_strategy(
@@ -108,11 +110,16 @@ class Face_Fecognition_test:
                 self.test_dataset.templates,
                 self.test_dataset.medias,
             )
+            print(len(pooled_data))
             np.savez(
                 template_pool_path / f"pool.npz",
                 template_pooled_features=pooled_data[0],
                 template_pooled_data_unc=pooled_data[1],
             )
+        
+        self.template_pooled_emb = pooled_data[0]
+        self.template_pooled_unc = pooled_data[1]
+        #self.template_ids = pooled_data["template_ids"]
 
     def pool_templates_osfr(self, cache_dir: str):
         cache_dir = Path(cache_dir)

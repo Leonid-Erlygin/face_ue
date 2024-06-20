@@ -34,7 +34,7 @@ dependencies:
     - exman~=0.1.9
     - easydict~=1.9
     - pytorch-lightning==2.0.0
-    - opencv-python==4.8.0.74
+    - opencv-python~=4.5.1.48
     - mxnet
     - numpy==1.19.5
     - PyYAML~=5.4.1
@@ -48,8 +48,3 @@ dependencies:
     - scikit-learn-intelex
     - "black[jupyter]"
     - geotorch
-    - optuna
-    - timm
-    - optuna-integration
-    - albumentations
-    - ipywidgets
