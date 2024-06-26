@@ -284,6 +284,7 @@ class Face_Fecognition_test:
                             probe_templates_sorted,
                             probe_medias,
                         )
+                        self.recognition_method.gallery_kappa = None
 
                 else:
                     # log scf pool as it is not changing

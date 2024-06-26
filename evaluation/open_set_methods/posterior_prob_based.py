@@ -138,8 +138,12 @@ class PosteriorProbability(OpenSetMethod):
         if self.uncertainty_type == "maxprob":
             unc = -np.exp(np.max(self.all_classes_log_prob, axis=-1))
         elif self.uncertainty_type == "entr":
-            unc = -np.sum(
-                np.exp(self.all_classes_log_prob) * self.all_classes_log_prob, axis=-1
+            unc = (
+                -np.sum(
+                    np.exp(self.all_classes_log_prob) * self.all_classes_log_prob,
+                    axis=-1,
+                )
+                + 1
             )
         else:
             raise ValueError
