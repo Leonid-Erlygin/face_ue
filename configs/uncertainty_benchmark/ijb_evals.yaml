@@ -121,7 +121,7 @@ open_set_identification_methods:
       uncertainty_type: maxprob
       alpha: 0 # when 1, only scf unc is used
       aggregation: sum
-      T: 5
+      T: 3
       T_data_unc: 1
     pretty_name: "$u_{power}$"
 
@@ -142,7 +142,7 @@ open_set_identification_methods:
   #     uncertainty_type: maxprob
   #     alpha: 0 # when 1, only scf unc is used
   #     aggregation: sum
-  #     T: 5
+  #     T: 3
   #     T_data_unc: 1
   #     calibrate_gallery_unc: True
   #   pretty_name: "$u_{power}$ calib"

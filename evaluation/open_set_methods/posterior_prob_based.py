@@ -215,6 +215,7 @@ class PosteriorProbability(OpenSetMethod):
                 [m, gamma],
                 lr=0.1,
                 iter_num=100,
+                verbose=True,
             )
             data_conf = prob_compute(
                 torch.tensor(data_uncertainty_norm, dtype=torch.float32),
@@ -260,6 +261,7 @@ class PosteriorProbability(OpenSetMethod):
                 [a, b, c],
                 lr=0.1,
                 iter_num=100,
+                verbose=True,
             )
             conf_gallery = prob_compute(
                 torch.tensor(conf_gallery, dtype=torch.float32),

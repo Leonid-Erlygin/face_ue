@@ -276,6 +276,7 @@ class Face_Fecognition_test:
                             ],
                             probe_unique_ids=self.test_dataset.probe_ids,
                         )
+                        predicted_id, was_rejected = self.recognition_method.predict()
                         predicted_unc = self.recognition_method.predict_uncertainty()
                         probe_pooled_data = self.probe_template_pooling_strategy(
                             probe_features,
