@@ -1,5 +1,6 @@
 import numpy as np
 from .base_method import OpenSetMethod
+from evaluation.metrics import FrrFarIdent
 from scipy.special import ive, hyp0f1, loggamma
 from scipy.optimize import fsolve, minimize
 from typing import List, Union, Any
@@ -20,7 +21,8 @@ class PosteriorProbability(OpenSetMethod):
         T: Union[float, List[float]],
         T_data_unc: float,
         gallery_kappa: float = None,
-        norm_data_unc: bool = True,
+        calibrate_unc: bool = False,
+        calibrate_gallery_unc: bool = False,
     ) -> None:
         super().__init__()
         self.distance_function = distance_function
@@ -35,7 +37,8 @@ class PosteriorProbability(OpenSetMethod):
         self.T = T
         self.gallery_kappa = gallery_kappa
         self.T_data_unc = T_data_unc
-        self.norm_data_unc = norm_data_unc
+        self.calibrate_unc = calibrate_unc
+        self.calibrate_gallery_unc = calibrate_gallery_unc
 
     def setup(
         self,
@@ -51,7 +54,8 @@ class PosteriorProbability(OpenSetMethod):
         """
         probe_feats = probe_feats[:, np.newaxis, :]
         self.data_uncertainty = probe_unc
-
+        self.g_unique_ids = g_unique_ids
+        self.probe_unique_ids = probe_unique_ids
         similarity_matrix = torch.tensor(
             self.distance_function(
                 probe_feats,
@@ -129,16 +133,39 @@ class PosteriorProbability(OpenSetMethod):
         return self.all_classes_log_prob
 
     def predict(self):
-        predict_id = np.argmax(self.all_classes_log_prob[:, :-1], axis=-1)
-        return predict_id, np.argmax(self.all_classes_log_prob, axis=-1) == (
+        self.predicted_id = np.argmax(self.all_classes_log_prob[:, :-1], axis=-1)
+        self.was_rejected = np.argmax(self.all_classes_log_prob, axis=-1) == (
             self.all_classes_log_prob.shape[-1] - 1
         )
+        return self.predicted_id, self.was_rejected
+
+    @staticmethod
+    def train_calibration(
+        confidence_score,
+        true_pred_labels,
+        prob_compute,
+        params,
+        lr,
+        iter_num,
+    ):
+        optimizer = torch.optim.SGD(params, lr=lr, momentum=0.5)
+        bce_loss = nn.BCELoss()
+        confidence_score = torch.tensor(confidence_score, dtype=torch.float32)
+        true_pred_labels = torch.tensor(true_pred_labels, dtype=torch.float32)
+        for iter in range(iter_num):
+            optimizer.zero_grad()
+            probs = prob_compute(confidence_score, params)
+            loss = bce_loss(probs, true_pred_labels)
+            loss.backward()
+            optimizer.step()
+            param_values = [param.item() for param in params]
+            print(f"Iteration {iter}, Loss: {loss.item()} params: {param_values}")
 
     def predict_uncertainty(self):
         if self.uncertainty_type == "maxprob":
-            unc = -np.exp(np.max(self.all_classes_log_prob, axis=-1))
+            conf_gallery = np.exp(np.max(self.all_classes_log_prob, axis=-1))
         elif self.uncertainty_type == "entr":
-            unc = (
+            conf_gallery = -(
                 -np.sum(
                     np.exp(self.all_classes_log_prob) * self.all_classes_log_prob,
                     axis=-1,
@@ -152,25 +179,88 @@ class PosteriorProbability(OpenSetMethod):
             self.data_uncertainty = self.data_uncertainty[:, 0]
         else:
             raise NotImplemented
-        if self.data_uncertainty[0] == 0:
-            # default pool
-            return unc
-        min_kappa = 5
-        max_kappa = 2700
-        if self.norm_data_unc:
-            data_uncertainty_norm = (self.data_uncertainty - min_kappa) / (
-                max_kappa - min_kappa
+        data_conf_calibrated = self.data_uncertainty
+        if self.calibrate_unc:
+            # logistic calibration for scf confidence
+            error_calc = FrrFarIdent()
+            error_calc(
+                self.predicted_id,
+                self.was_rejected,
+                self.g_unique_ids,
+                self.probe_unique_ids,
             )
-            data_conf_norm = (data_uncertainty_norm) ** (1 / self.T_data_unc)
-            assert np.sum(data_uncertainty_norm < 0) == 0
-        else:
-            data_conf_norm = self.data_uncertainty
+            true_pred_label = np.zeros(self.probe_unique_ids.shape[0])
+            true_pred_label[error_calc.is_seen] = error_calc.true_accept_true_ident
+            true_pred_label[~error_calc.is_seen] = error_calc.true_reject
+            m = torch.nn.Parameter(
+                torch.tensor(0.5, dtype=torch.float64), requires_grad=True
+            )
+            gamma = torch.nn.Parameter(
+                torch.tensor(1.0, dtype=torch.float64), requires_grad=True
+            )
+            # norm data unc to prevent saturation
+            data_uncertainty_norm = self.data_uncertainty / 500
 
-        conf_norm = -unc
+            # train logistic calibration
+            def prob_compute(conf, params):
+                return torch.special.expit(params[1] * (conf - params[0]))
+
+            self.train_calibration(
+                data_uncertainty_norm,
+                true_pred_label,
+                prob_compute,
+                [m, gamma],
+                lr=0.1,
+                iter_num=100,
+            )
+            data_conf_calibrated = prob_compute(
+                torch.tensor(data_uncertainty_norm, dtype=torch.float32),
+                [m.data, gamma.data],
+            ).numpy()
+
+        if self.calibrate_gallery_unc:
+            assert self.uncertainty_type == "maxprob"
+            # beta calibration for gallery confidence
+            error_calc = FrrFarIdent()
+            error_calc(
+                self.predicted_id,
+                self.was_rejected,
+                self.g_unique_ids,
+                self.probe_unique_ids,
+            )
+            true_pred_label = np.zeros(self.probe_unique_ids.shape[0])
+            true_pred_label[error_calc.is_seen] = error_calc.true_accept_true_ident
+            true_pred_label[~error_calc.is_seen] = error_calc.true_reject
+            a = torch.nn.Parameter(
+                torch.tensor(1.0, dtype=torch.float64), requires_grad=True
+            )
+            b = torch.nn.Parameter(
+                torch.tensor(1.0, dtype=torch.float64), requires_grad=True
+            )
+            c = torch.nn.Parameter(
+                torch.tensor(1.0, dtype=torch.float64), requires_grad=True
+            )
+
+            def prob_compute(conf, params):
+                return torch.special.expit(params[1] * (conf - params[0]))
+
+            self.train_calibration(
+                conf_gallery,
+                true_pred_label,
+                prob_compute,
+                [a, b, c],
+                lr=0.1,
+                iter_num=100,
+            )
+
         if self.aggregation == "sum":
-            comb_conf = conf_norm * (1 - self.alpha) + data_conf_norm * self.alpha
+            comb_conf = (
+                conf_gallery * (1 - self.alpha) + data_conf_calibrated * self.alpha
+            )
         elif self.aggregation == "product":
-            comb_conf = (conf_norm ** (1 - self.alpha)) * (data_conf_norm**self.alpha)
+            comb_conf = (conf_gallery ** (1 - self.alpha)) * (
+                data_conf_calibrated**self.alpha
+            )
         else:
             raise ValueError
         return -comb_conf
