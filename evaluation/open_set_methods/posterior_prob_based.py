@@ -147,6 +147,7 @@ class PosteriorProbability(OpenSetMethod):
         params,
         lr,
         iter_num,
+        verbose=False,
     ):
         optimizer = torch.optim.SGD(params, lr=lr, momentum=0.5)
         bce_loss = nn.BCELoss()
@@ -159,11 +160,13 @@ class PosteriorProbability(OpenSetMethod):
             loss.backward()
             optimizer.step()
             param_values = [param.item() for param in params]
-            print(f"Iteration {iter}, Loss: {loss.item()} params: {param_values}")
+            if verbose:
+                print(f"Iteration {iter}, Loss: {loss.item()} params: {param_values}")
 
     def predict_uncertainty(self):
         if self.uncertainty_type == "maxprob":
             conf_gallery = np.exp(np.max(self.all_classes_log_prob, axis=-1))
+            # conf_gallery = np.max(self.all_classes_log_prob, axis=-1)
         elif self.uncertainty_type == "entr":
             conf_gallery = -(
                 -np.sum(
@@ -179,7 +182,7 @@ class PosteriorProbability(OpenSetMethod):
             self.data_uncertainty = self.data_uncertainty[:, 0]
         else:
             raise NotImplemented
-        data_conf_calibrated = self.data_uncertainty
+
         if self.calibrate_unc:
             # logistic calibration for scf confidence
             error_calc = FrrFarIdent()
@@ -213,11 +216,12 @@ class PosteriorProbability(OpenSetMethod):
                 lr=0.1,
                 iter_num=100,
             )
-            data_conf_calibrated = prob_compute(
+            data_conf = prob_compute(
                 torch.tensor(data_uncertainty_norm, dtype=torch.float32),
                 [m.data, gamma.data],
             ).numpy()
-
+        else:
+            data_conf = self.data_uncertainty
         if self.calibrate_gallery_unc:
             assert self.uncertainty_type == "maxprob"
             # beta calibration for gallery confidence
@@ -242,7 +246,12 @@ class PosteriorProbability(OpenSetMethod):
             )
 
             def prob_compute(conf, params):
-                return torch.special.expit(params[1] * (conf - params[0]))
+                logit = (
+                    params[0] * torch.log(conf)
+                    + params[1] * (-torch.log(1 - conf + 1e-40))
+                    + params[2]
+                )
+                return torch.special.expit(logit)
 
             self.train_calibration(
                 conf_gallery,
@@ -252,15 +261,15 @@ class PosteriorProbability(OpenSetMethod):
                 lr=0.1,
                 iter_num=100,
             )
+            conf_gallery = prob_compute(
+                torch.tensor(conf_gallery, dtype=torch.float32),
+                [a.data, b.data, c.data],
+            ).numpy()
 
         if self.aggregation == "sum":
-            comb_conf = (
-                conf_gallery * (1 - self.alpha) + data_conf_calibrated * self.alpha
-            )
+            comb_conf = conf_gallery * (1 - self.alpha) + data_conf * self.alpha
         elif self.aggregation == "product":
-            comb_conf = (conf_gallery ** (1 - self.alpha)) * (
-                data_conf_calibrated**self.alpha
-            )
+            comb_conf = (conf_gallery ** (1 - self.alpha)) * (data_conf**self.alpha)
         else:
             raise ValueError
         return -comb_conf
