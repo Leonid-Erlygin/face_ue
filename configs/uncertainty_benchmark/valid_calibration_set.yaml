@@ -2,7 +2,7 @@ hydra:
   run:
     dir: ${exp_dir}
 
-exp_dir: outputs/experiments/paper_v1_calibration_val_set_scf_calib_far_0.1
+exp_dir: outputs/experiments/paper_v1_calibration_val_set_scf_calib_v2
 use_two_galleries: False
 recompute_template_pooling: True
 metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
@@ -57,17 +57,7 @@ open_set_identification_uncertainty_metrics:
       _target_: evaluation.metrics.F1_classic
 
 default_beta: 0.5
-far_list: 0.1
-
-# calibration_set:
-#   _target_: evaluation.test_datasets.FaceRecogntioniDataset
-#   dataset_name: ms1m
-#   dataset_path: /app/datasets/ms1m_ident
-
-calibration_set:
-  _target_: evaluation.test_datasets.FaceRecogntioniDataset
-  dataset_name: IJBC
-  dataset_path: /app/datasets/arcface_ijb/IJBC
+far_list: 0.05
 
 open_set_identification_methods:
 
@@ -104,7 +94,7 @@ open_set_identification_methods:
       class_model: power
       far: ${far_list}
       beta: ${default_beta}
-      #gallery_kappa: 654.0731
+      gallery_kappa: 654.0731
       uncertainty_type: maxprob
       alpha: 1 # when 1, only scf unc is used
       aggregation: sum
@@ -127,14 +117,17 @@ open_set_identification_methods:
       class_model: power
       far: ${far_list}
       beta: ${default_beta}
-      #gallery_kappa: 654.0731
+      gallery_kappa: 654.0731
       uncertainty_type: maxprob
       alpha: 1 # when 1, only scf unc is used
       aggregation: sum
       T: 3
       T_data_unc: 1
       calibrate_unc: True
-      calibration_set: ${calibration_set}
+      calibration_set:
+        _target_: evaluation.test_datasets.FaceRecogntioniDataset
+        dataset_name: ms1m
+        dataset_path: /app/datasets/ms1m_ident
     pretty_name: "$u_{SCF}$ calib"
 
   - embeddings: scf
@@ -150,7 +143,7 @@ open_set_identification_methods:
       class_model: power
       far: ${far_list}
       beta: ${default_beta}
-      #gallery_kappa: 654.0731
+      gallery_kappa: 654.0731
       uncertainty_type: maxprob
       alpha: 1 # when 1, only scf unc is used
       aggregation: sum
@@ -158,7 +151,10 @@ open_set_identification_methods:
       T_data_unc: 1
       calibrate_unc: True
       calibrate_by_false_reject: True
-      calibration_set: ${calibration_set}
+      calibration_set:
+        _target_: evaluation.test_datasets.FaceRecogntioniDataset
+        dataset_name: ms1m
+        dataset_path: /app/datasets/ms1m_ident
     pretty_name: "$u_{SCF}$ calib false reject"
 
 
@@ -175,7 +171,7 @@ open_set_identification_methods:
       class_model: power
       far: ${far_list}
       beta: ${default_beta}
-      #gallery_kappa: 654.0741
+      gallery_kappa: 654.0741
       uncertainty_type: maxprob
       alpha: 0.5
       aggregation: sum
@@ -183,7 +179,10 @@ open_set_identification_methods:
       T_data_unc: 1
       calibrate_unc: True
       calibrate_gallery_unc: True
-      calibration_set: ${calibration_set}
+      calibration_set:
+        _target_: evaluation.test_datasets.FaceRecogntioniDataset
+        dataset_name: ms1m
+        dataset_path: /app/datasets/ms1m_ident
     pretty_name: "$u_{power} + u_{SC1F}$ calib"
 
   - embeddings: scf
@@ -199,7 +198,7 @@ open_set_identification_methods:
       class_model: power
       far: ${far_list}
       beta: ${default_beta}
-      #gallery_kappa: 654.0741
+      gallery_kappa: 654.0741
       uncertainty_type: maxprob
       alpha: 0.5
       aggregation: sum
@@ -208,7 +207,10 @@ open_set_identification_methods:
       calibrate_unc: True
       calibrate_by_false_reject: True
       calibrate_gallery_unc: True
-      calibration_set: ${calibration_set}
+      calibration_set:
+        _target_: evaluation.test_datasets.FaceRecogntioniDataset
+        dataset_name: ms1m
+        dataset_path: /app/datasets/ms1m_ident
     pretty_name: "$u_{power} + u_{SC1F}$ calib false reject"
 
   - embeddings: scf
@@ -224,7 +226,7 @@ open_set_identification_methods:
       class_model: power
       far: ${far_list}
       beta: ${default_beta}
-      #gallery_kappa: 654.0731
+      gallery_kappa: 654.0731
       uncertainty_type: maxprob
       alpha: 0 # when 1, only scf unc is used
       aggregation: sum
@@ -272,7 +274,7 @@ open_set_identification_methods:
       class_model: power
       far: ${far_list}
       beta: ${default_beta}
-      #gallery_kappa: 654.0741
+      gallery_kappa: 654.0741
       uncertainty_type: maxprob
       alpha: 0.5
       aggregation: sum
@@ -280,7 +282,10 @@ open_set_identification_methods:
       T_data_unc: 1
       calibrate_unc: True
       calibrate_gallery_unc: False
-      calibration_set: ${calibration_set}
+      calibration_set:
+        _target_: evaluation.test_datasets.FaceRecogntioniDataset
+        dataset_name: ms1m
+        dataset_path: /app/datasets/ms1m_ident
     pretty_name: "$u_{power} + u_{SC1F}$"
 
   # - embeddings: scf

@@ -28,6 +28,7 @@ class PosteriorProbability(OpenSetMethod):
         T_data_unc: float,
         gallery_kappa: float = None,
         calibrate_unc: bool = False,
+        calibrate_by_false_reject: bool = False,
         calibrate_gallery_unc: bool = False,
         calibration_set: FaceRecogntioniDataset = None,
     ) -> None:
@@ -45,6 +46,7 @@ class PosteriorProbability(OpenSetMethod):
         self.gallery_kappa = gallery_kappa
         self.T_data_unc = T_data_unc
         self.calibrate_unc = calibrate_unc
+        self.calibrate_by_false_reject = calibrate_by_false_reject
         self.calibrate_gallery_unc = calibrate_gallery_unc
         self.calibration_set = calibration_set
 
@@ -397,8 +399,12 @@ class PosteriorProbability(OpenSetMethod):
                 self.probe_unique_ids_calib,
             )
             true_pred_label = np.zeros(self.probe_unique_ids_calib.shape[0])
-            true_pred_label[error_calc.is_seen] = error_calc.true_accept_true_ident
-            true_pred_label[~error_calc.is_seen] = error_calc.true_reject
+            if self.calibrate_by_false_reject:
+                true_pred_label[~error_calc.is_seen] = True
+                true_pred_label[error_calc.is_seen] = error_calc.true_accept_true_ident
+            else:
+                true_pred_label[error_calc.is_seen] = error_calc.true_accept_true_ident
+                true_pred_label[~error_calc.is_seen] = error_calc.true_reject
             m = torch.nn.Parameter(
                 torch.tensor(0.5, dtype=torch.float64), requires_grad=True
             )
