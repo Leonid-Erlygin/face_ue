@@ -59,15 +59,15 @@ open_set_identification_uncertainty_metrics:
 default_beta: 0.5
 far_list: 0.1
 
-# calibration_set:
-#   _target_: evaluation.test_datasets.FaceRecogntioniDataset
-#   dataset_name: ms1m
-#   dataset_path: /app/datasets/ms1m_ident
-
 calibration_set:
   _target_: evaluation.test_datasets.FaceRecogntioniDataset
-  dataset_name: IJBC
-  dataset_path: /app/datasets/arcface_ijb/IJBC
+  dataset_name: ms1m
+  dataset_path: /app/datasets/ms1m_ident
+
+# calibration_set:
+#   _target_: evaluation.test_datasets.FaceRecogntioniDataset
+#   dataset_name: IJBC
+#   dataset_path: /app/datasets/arcface_ijb/IJBC
 
 open_set_identification_methods:
 
