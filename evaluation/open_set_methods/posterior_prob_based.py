@@ -432,15 +432,20 @@ class PosteriorProbability(OpenSetMethod):
             assert self.uncertainty_type == "maxprob"
             # beta calibration for gallery confidence
             error_calc = FrrFarIdent()
-            error_calc(
-                self.predicted_id,
-                self.was_rejected,
-                self.g_unique_ids,
-                self.probe_unique_ids,
+            predicted_id = np.argmax(self.all_classes_log_prob_calib[:, :-1], axis=-1)
+            was_rejected = np.argmax(self.all_classes_log_prob_calib, axis=-1) == (
+                self.all_classes_log_prob_calib.shape[-1] - 1
             )
-            true_pred_label = np.zeros(self.probe_unique_ids.shape[0])
+            error_calc(
+                predicted_id,
+                was_rejected,
+                self.g_unique_ids_calib,
+                self.probe_unique_ids_calib,
+            )
+            true_pred_label = np.zeros(self.probe_unique_ids_calib.shape[0])
             true_pred_label[error_calc.is_seen] = error_calc.true_accept_true_ident
             true_pred_label[~error_calc.is_seen] = error_calc.true_reject
+
             a = torch.nn.Parameter(
                 torch.tensor(1.0, dtype=torch.float64), requires_grad=True
             )
@@ -459,8 +464,11 @@ class PosteriorProbability(OpenSetMethod):
                 )
                 return torch.special.expit(logit)
 
+            conf_gallery_calib = np.exp(
+                np.max(self.all_classes_log_prob_calib, axis=-1)
+            )
             self.train_calibration(
-                conf_gallery,
+                conf_gallery_calib,
                 true_pred_label,
                 prob_compute,
                 [a, b, c],
