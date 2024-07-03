@@ -426,7 +426,9 @@ class PosteriorProbability(OpenSetMethod):
                 print(f"Iteration {iter}, Loss: {loss.item()} params: {param_values}")
 
     @staticmethod
-    def calibrate_scf_unc(data_uncertainty, data_uncertainty_calib, true_pred_label):
+    def calibrate_scf_unc(
+        data_uncertainty, data_uncertainty_calib, true_pred_label, verbose=False
+    ):
 
         m = torch.nn.Parameter(
             torch.tensor(0.5, dtype=torch.float64), requires_grad=True
@@ -447,9 +449,9 @@ class PosteriorProbability(OpenSetMethod):
             true_pred_label,
             prob_compute,
             [m, gamma],
-            lr=0.01,
+            lr=0.1,
             iter_num=100,
-            verbose=False,
+            verbose=verbose,
         )
         data_conf = prob_compute(
             torch.tensor(data_uncertainty_norm, dtype=torch.float32),
@@ -506,7 +508,9 @@ class PosteriorProbability(OpenSetMethod):
             data_uncertainty_calib = self.probe_pooled_templates_calib["g1"][
                 "template_pooled_data_unc"
             ]
-            data_conf = self.calibrate_scf_unc(self.data_uncertainty,data_uncertainty_calib, true_pred_label)
+            data_conf = self.calibrate_scf_unc(
+                self.data_uncertainty, data_uncertainty_calib, true_pred_label
+            )
         else:
             data_conf = self.data_uncertainty
         if self.calibrate_gallery_unc:

@@ -2,7 +2,10 @@ import numpy as np
 from .base_method import OpenSetMethod
 from evaluation.open_set_methods.posterior_prob_based import PosteriorProb
 from scipy import interpolate
-from evaluation.open_set_methods.posterior_prob_based import prepare_calibration_dataset, PosteriorProbability
+from evaluation.open_set_methods.posterior_prob_based import (
+    prepare_calibration_dataset,
+    PosteriorProbability,
+)
 from evaluation.metrics import FrrFarIdent
 
 
@@ -64,7 +67,7 @@ class SimilarityBasedPrediction(OpenSetMethod):
         ]
         if self.calibration_set is not None:
             probe_feats_calib = self.probe_pooled_templates_calib["g1"][
-                    "template_pooled_features"
+                "template_pooled_features"
             ][:, np.newaxis, :]
             # probe_templates_feature,
             probe_unc_calib = self.probe_pooled_templates_calib["g1"][
@@ -78,13 +81,12 @@ class SimilarityBasedPrediction(OpenSetMethod):
             ]
 
             self.similarity_matrix_calib = self.distance_function(
-                    probe_feats_calib,
-                    probe_unc_calib,
-                    gallery_feats_calib,
-                    gallery_unc_calib,
-                )
+                probe_feats_calib,
+                probe_unc_calib,
+                gallery_feats_calib,
+                gallery_unc_calib,
+            )
             self.probe_score_calib = self.acceptance_score(self.similarity_matrix_calib)
-        
 
     def predict(self):
         predict_id = np.argmax(self.similarity_matrix, axis=-1)
@@ -102,8 +104,8 @@ class SimilarityBasedPrediction(OpenSetMethod):
         if self.calibration_set is not None:
             # logistic calibration for scf confidence
             error_calc = FrrFarIdent()
-            predicted_id = np.argmax(self.similarity_matrix_calib, axis=-1)[:,0]
-            was_rejected = (self.probe_score_calib < self.tau)[:,0]
+            predicted_id = np.argmax(self.similarity_matrix_calib, axis=-1)[:, 0]
+            was_rejected = (self.probe_score_calib < self.tau)[:, 0]
             error_calc(
                 predicted_id,
                 was_rejected,
@@ -126,9 +128,22 @@ class SimilarityBasedPrediction(OpenSetMethod):
             data_uncertainty_calib = self.probe_pooled_templates_calib["g1"][
                 "template_pooled_data_unc"
             ]
-            data_conf = PosteriorProbability.calibrate_scf_unc(self.data_uncertainty,data_uncertainty_calib, true_pred_label)
+            data_conf = PosteriorProbability.calibrate_scf_unc(
+                self.data_uncertainty,
+                data_uncertainty_calib,
+                true_pred_label,
+                verbose=True,
+            )
+
+            # calibration for baseline scores
+            unc_calib = self.uncertainty_function(
+                self.similarity_matrix_calib, self.probe_score_calib, self.tau
+            )
+            conf_norm = PosteriorProbability.calibrate_scf_unc(
+                -unc, -unc_calib, true_pred_label, verbose=True
+            )
         else:
             data_conf = self.data_uncertainty
-        conf_norm = -unc
+            conf_norm = -unc
         comb_conf = conf_norm * (1 - self.alpha) + data_conf * self.alpha
         return -comb_conf
