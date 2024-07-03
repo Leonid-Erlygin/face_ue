@@ -35,7 +35,7 @@ used_columns_dict:
     lfw:
       [
         "models",
-        #"FAR=0.005",
+        "FAR=0.005",
         "FAR=0.01",
         "FAR=0.05",
         "FAR=0.1",
@@ -52,7 +52,7 @@ used_columns_dict:
       [
         "models",
         #"FAR=0.005",
-        #"FAR=0.01",
+        "FAR=0.01",
         "FAR=0.05",
         "FAR=0.1",
       ]

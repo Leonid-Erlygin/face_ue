@@ -2,6 +2,8 @@ import numpy as np
 from .base_method import OpenSetMethod
 from evaluation.open_set_methods.posterior_prob_based import PosteriorProb
 from scipy import interpolate
+from evaluation.open_set_methods.posterior_prob_based import prepare_calibration_dataset, PosteriorProbability
+from evaluation.metrics import FrrFarIdent
 
 
 class SimilarityBasedPrediction(OpenSetMethod):
@@ -11,9 +13,10 @@ class SimilarityBasedPrediction(OpenSetMethod):
         acceptance_score,
         uncertainty_function,
         alpha: float,
-        T: float,
-        T_data_unc: float,
+        T: float = None,
+        T_data_unc: float = None,
         far: float = None,
+        calibration_set=None,
     ) -> None:
         super().__init__()
         self.distance_function = distance_function
@@ -23,6 +26,13 @@ class SimilarityBasedPrediction(OpenSetMethod):
         self.alpha = alpha
         self.T = T
         self.T_data_unc = T_data_unc
+        self.calibration_set = calibration_set
+        if self.calibration_set is None:
+            return
+        self.calibrate_by_false_reject = False
+        self.gallery_pooled_templates_calib, self.probe_pooled_templates_calib = (
+            prepare_calibration_dataset(calibration_set)
+        )
 
     def setup(
         self,
@@ -52,6 +62,29 @@ class SimilarityBasedPrediction(OpenSetMethod):
         self.tau = np.sort(out_of_gallery_scores)[
             int(out_of_gallery_scores.shape[0] * (1 - self.far))
         ]
+        if self.calibration_set is not None:
+            probe_feats_calib = self.probe_pooled_templates_calib["g1"][
+                    "template_pooled_features"
+            ][:, np.newaxis, :]
+            # probe_templates_feature,
+            probe_unc_calib = self.probe_pooled_templates_calib["g1"][
+                "template_pooled_data_unc"
+            ]
+            gallery_feats_calib = self.gallery_pooled_templates_calib["g1"][
+                "template_pooled_features"
+            ]
+            gallery_unc_calib = self.gallery_pooled_templates_calib["g1"][
+                "template_pooled_data_unc"
+            ]
+
+            self.similarity_matrix_calib = self.distance_function(
+                    probe_feats_calib,
+                    probe_unc_calib,
+                    gallery_feats_calib,
+                    gallery_unc_calib,
+                )
+            self.probe_score_calib = self.acceptance_score(self.similarity_matrix_calib)
+        
 
     def predict(self):
         predict_id = np.argmax(self.similarity_matrix, axis=-1)
@@ -66,18 +99,36 @@ class SimilarityBasedPrediction(OpenSetMethod):
         unc = self.uncertainty_function(
             self.similarity_matrix, self.probe_score, self.tau
         )
-        # unc_norm = (unc - np.min(unc)) / (np.max(unc) - np.min(unc))
-
-        # min_kappa = 150
-        # max_kappa = 2700
-        # data_uncertainty_norm = (self.data_uncertainty - min_kappa) / (
-        #     max_kappa - min_kappa
-        # )
-        # assert np.sum(data_uncertainty_norm < 0) == 0
-        # data_uncertainty_norm = data_uncertainty
-        # data_conf_norm = (data_uncertainty_norm) ** (1 / self.T_data_unc)
-
-        # conf_norm = (-unc_norm + 1) ** (1 / self.T)
+        if self.calibration_set is not None:
+            # logistic calibration for scf confidence
+            error_calc = FrrFarIdent()
+            predicted_id = np.argmax(self.similarity_matrix_calib, axis=-1)[:,0]
+            was_rejected = (self.probe_score_calib < self.tau)[:,0]
+            error_calc(
+                predicted_id,
+                was_rejected,
+                self.gallery_pooled_templates_calib["g1"][
+                    "template_subject_ids_sorted"
+                ],
+                self.probe_pooled_templates_calib["g1"]["template_subject_ids_sorted"],
+            )
+            true_pred_label = np.zeros(
+                self.probe_pooled_templates_calib["g1"][
+                    "template_subject_ids_sorted"
+                ].shape[0]
+            )
+            if self.calibrate_by_false_reject:
+                true_pred_label[~error_calc.is_seen] = True
+                true_pred_label[error_calc.is_seen] = error_calc.true_accept_true_ident
+            else:
+                true_pred_label[error_calc.is_seen] = error_calc.true_accept_true_ident
+                true_pred_label[~error_calc.is_seen] = error_calc.true_reject
+            data_uncertainty_calib = self.probe_pooled_templates_calib["g1"][
+                "template_pooled_data_unc"
+            ]
+            data_conf = PosteriorProbability.calibrate_scf_unc(self.data_uncertainty,data_uncertainty_calib, true_pred_label)
+        else:
+            data_conf = self.data_uncertainty
         conf_norm = -unc
-        comb_conf = conf_norm * (1 - self.alpha)  # + data_conf_norm * self.alpha
+        comb_conf = conf_norm * (1 - self.alpha) + data_conf * self.alpha
         return -comb_conf
