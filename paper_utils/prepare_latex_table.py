@@ -6,7 +6,6 @@ from omegaconf import OmegaConf
 
 
 def compute_best_values(table, metric_order):
-    # assume that high values are the best
     numerics = ["int16", "int32", "int64", "float16", "float32", "float64"]
 
     newdf = table.select_dtypes(include=numerics)
