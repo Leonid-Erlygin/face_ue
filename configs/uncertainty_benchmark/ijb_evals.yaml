@@ -2,7 +2,7 @@ hydra:
   run:
     dir: ${exp_dir}
 
-exp_dir: outputs/experiments/paper_v1_calibration_whale
+exp_dir: outputs/experiments/paper_v1_plots_and_tabels
 use_two_galleries: False
 recompute_template_pooling: True
 metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
@@ -16,12 +16,12 @@ test_datasets:
   # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
   #   dataset_name: IJBB
   #   dataset_path: /app/datasets/arcface_ijb/IJBB
-  - _target_: evaluation.test_datasets.FaceRecogntioniDataset
-    dataset_name: whale
-    dataset_path: /app/datasets/whale_train
   # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
-  #   dataset_name: IJBC
-  #   dataset_path: /app/datasets/arcface_ijb/IJBC
+  #   dataset_name: whale
+  #   dataset_path: /app/datasets/whale_train
+  - _target_: evaluation.test_datasets.FaceRecogntioniDataset
+    dataset_name: IJBC
+    dataset_path: /app/datasets/arcface_ijb/IJBC
 
   # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
   #   dataset_name: lfw
@@ -37,7 +37,7 @@ test_datasets:
 open_set_identification_metrics:
   - _target_: evaluation.metrics.ErrorDistribution
     plot_save_dir: ${exp_dir}
-    value_types: [0,1, 2, 3, 4, 5]
+    value_types: [0, 1, 2, 3, 4, 5]
   - _target_: evaluation.metrics.DirFar
 
 fractions: [0, 0.2, 20]
@@ -59,7 +59,7 @@ open_set_identification_uncertainty_metrics:
       _target_: evaluation.metrics.F1_classic
 
 default_beta: 0.5
-far_list: 0.05
+far_list: [0.05, 0.1]
 
 # calibration_set:
   # _target_: evaluation.test_datasets.FaceRecogntioniDataset
@@ -87,7 +87,6 @@ open_set_identification_methods:
       _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
       distance_function: 
         _target_: evaluation.distance_functions.open_set_identification.CosineSim
-      far: ${far_list}
       acceptance_score: 
         _target_: evaluation.confidence_functions.MaxSimilarity_confidence
       uncertainty_function:
@@ -108,15 +107,13 @@ open_set_identification_methods:
       distance_function: 
         _target_: evaluation.distance_functions.open_set_identification.CosineSim
       class_model: power
-      far: ${far_list}
       beta: ${default_beta}
-      #gallery_kappa: 1519.7087
       uncertainty_type: maxprob
       alpha: 1 # when 1, only scf unc is used
       aggregation: sum
       T: 5
       T_data_unc: 1
-      calibrate_unc: False
+      calibrate_unc: True
       calibration_set: ${calibration_set}
     pretty_name: "$u_{SCF}$ calib"
 

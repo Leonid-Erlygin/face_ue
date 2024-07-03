@@ -8,12 +8,12 @@ class SimilarityBasedPrediction(OpenSetMethod):
     def __init__(
         self,
         distance_function,
-        far: float,
         acceptance_score,
         uncertainty_function,
         alpha: float,
         T: float,
         T_data_unc: float,
+        far: float = None,
     ) -> None:
         super().__init__()
         self.distance_function = distance_function
@@ -33,6 +33,8 @@ class SimilarityBasedPrediction(OpenSetMethod):
         g_unique_ids: np.ndarray,
         probe_unique_ids: np.ndarray,
     ):
+        if self.far is None:
+            raise ValueError
         probe_feats = probe_feats[:, np.newaxis, :]
         self.data_uncertainty = probe_unc
 

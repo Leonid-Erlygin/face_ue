@@ -12,13 +12,49 @@ from scipy.optimize import fsolve, minimize
 from typing import List, Union, Any
 from torch import nn
 import torch
+from utils.golden_section import golden_selection_search
+
+
+class FarLossCalc:
+    def __init__(
+        self,
+        beta: float,
+        T: float,
+        class_model: str,
+        target_far: float,
+        is_seen: np.ndarray,
+        similarity_matrix: torch.tensor,
+    ) -> None:
+        self.beta = beta
+        self.T = T
+        self.class_model = class_model
+        self.target_far = target_far
+        self.is_seen = is_seen
+        self.similarity_matrix = similarity_matrix
+
+    def __call__(self, kappa: float) -> float:
+        posterior_prob = PosteriorProb(
+            kappa=kappa,
+            beta=self.beta,
+            class_model=self.class_model,
+            K=self.similarity_matrix.shape[-1],
+        )
+        all_classes_log_prob = posterior_prob.compute_all_class_log_probabilities(
+            self.similarity_matrix, self.T
+        )
+        all_classes_log_prob = torch.mean(all_classes_log_prob, dim=1).numpy()
+        was_rejected = np.argmax(all_classes_log_prob, axis=-1) == (
+            all_classes_log_prob.shape[-1] - 1
+        )
+        far = np.mean(was_rejected[~self.is_seen] == False)
+        print(f"Found kappa {np.round(kappa,4)} for far {far}")
+        return -np.abs(far - self.target_far)
 
 
 class PosteriorProbability(OpenSetMethod):
     def __init__(
         self,
         distance_function: Any,
-        far: float,
         beta: float,
         uncertainty_type: str,
         alpha: float,
@@ -26,6 +62,7 @@ class PosteriorProbability(OpenSetMethod):
         class_model: str,
         T: Union[float, List[float]],
         T_data_unc: float,
+        far: float = None,
         gallery_kappa: float = None,
         calibrate_unc: bool = False,
         calibrate_by_false_reject: bool = False,
@@ -189,6 +226,8 @@ class PosteriorProbability(OpenSetMethod):
         """
         g_unique_ids and probe_unique_ids are needed to find kappa that gives certan self.far
         """
+        if self.far is None:
+            raise ValueError
         probe_feats = probe_feats[:, np.newaxis, :]
         self.data_uncertainty = probe_unc
         self.g_unique_ids = g_unique_ids
@@ -204,21 +243,17 @@ class PosteriorProbability(OpenSetMethod):
         T = self.T
         # find kappa
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
+
         if self.gallery_kappa is None:
-            self.gallery_kappa = (
-                fsolve(
-                    self.find_kappa_by_far,
-                    1000.0 / 300,
-                    (
-                        self.beta,
-                        T,
-                        self.class_model,
-                        self.far,
-                        is_seen,
-                        similarity_matrix,
-                    ),
-                )[0]
-                * 300
+            kappa_low = 300
+            kappa_high = 1800
+            max_iter = 15
+            eps = 0.005
+            far_loss_func = FarLossCalc(
+                self.beta, T, self.class_model, self.far, is_seen, similarity_matrix
+            )
+            self.gallery_kappa = golden_selection_search(
+                kappa_high, kappa_low, eps, max_iter, far_loss_func
             )
             print(f"Found kappa {np.round(self.gallery_kappa,4)} for far {self.far}")
         if self.class_model == "vMF_Power":
@@ -274,23 +309,23 @@ class PosteriorProbability(OpenSetMethod):
                     gallery_unc_calib,
                 )
             )
-            calibratation_set_kappa = (
-                fsolve(
-                    self.find_kappa_by_far,
-                    600.0 / 100,
-                    (
-                        self.beta,
-                        T,
-                        self.class_model,
-                        self.far,
-                        is_seen_calib,
-                        similarity_matrix_calib,
-                    ),
-                )[0]
-                * 100
+            kappa_low = 300
+            kappa_high = 1800
+            max_iter = 15
+            eps = 0.005
+            far_loss_func = FarLossCalc(
+                self.beta,
+                T,
+                self.class_model,
+                self.far,
+                is_seen_calib,
+                similarity_matrix_calib,
+            )
+            calibratation_set_kappa = golden_selection_search(
+                kappa_high, kappa_low, eps, max_iter, far_loss_func
             )
             print(
-                f"Found kappa_calib {np.round(self.gallery_kappa,4)} for far {self.far}"
+                f"Found kappa_calib {np.round(calibratation_set_kappa,4)} for far {self.far}"
             )
             posterior_prob_calib = PosteriorProb(
                 kappa=calibratation_set_kappa,
@@ -332,7 +367,7 @@ class PosteriorProbability(OpenSetMethod):
         )
         far = np.mean(was_rejected[~is_seen] == False)
         print(f"Found kappa {np.round(kappa[0]*100,4)} for far {far}")
-        return np.abs(far - target_far)
+        return -np.abs(far - target_far)
 
     def predict(self):
         self.predicted_id = np.argmax(self.all_classes_log_prob[:, :-1], axis=-1)

@@ -107,9 +107,8 @@ def multiply_methods(cfg, methods, method_task_type):
     version_base="1.2",
 )
 def main(cfg):
-    # define methods
+    # 0. Define methods
     methods, method_task_type = init_methods(cfg)
-    methods, method_task_type = multiply_methods(cfg, methods, method_task_type)
     tasks_names = list(set(method_task_type))
 
     # instantiate metrics
@@ -134,9 +133,9 @@ def main(cfg):
     # create pretty name map
     pretty_names = {task: {} for task in tasks_names}
 
-    # run face recognition methods
-    for (method, task_type), test_dataset in product(
-        zip(methods, method_task_type), test_datasets
+    # 1. Compute recognition and uncertaity metrics
+    for (method, task_type), far, test_dataset in product(
+        zip(methods, method_task_type), cfg.far_list, test_datasets
     ):
         dataset_name = test_dataset.dataset_name
 
@@ -151,7 +150,8 @@ def main(cfg):
         else:
             probe_template_pooling_strategy = None
         recognition_method = instantiate(method.recognition_method)
-
+        # set far value
+        recognition_method.far = far
         # create unique method name
         if cfg.create_pool_plot is False:
             method_name = (
@@ -161,7 +161,6 @@ def main(cfg):
                     recognition_method,
                 )
                 + f"_{method.pretty_name}"
-                # + f"far:{cfg.tau_to_far[dataset_name][method.recognition_method.kappa]}"
             )
         else:
             method_name = (
@@ -171,7 +170,6 @@ def main(cfg):
                     recognition_method,
                 )
                 + f"_{method.pretty_name}"
-                # + f"tau-{method.recognition_method.kappa}"
             )
         print(method_name)
         pretty_names[task_type][method_name] = method.pretty_name
@@ -203,34 +201,29 @@ def main(cfg):
             predicted_unc,
         ) = tt.predict_and_compute_metrics()
         metric_values[(task_type, dataset_name)]["recognition"][
-            method_name
+            (method_name, far)
         ] = recognition_metric_values
         metric_values[(task_type, dataset_name)]["uncertainty"][
-            method_name
+            (method_name, far)
         ] = uncertainty_metric_values
-        unc_values[dataset_name][method_name] = predicted_unc
+        unc_values[dataset_name][(method_name, far)] = predicted_unc
 
-    # create plots and tables
+    # 2. Create plots and tables
+
     # load metric name converter
-    metric_pretty_name = OmegaConf.load(cfg.metric_pretty_name_path)
+    metric_pretty_names = OmegaConf.load(cfg.metric_pretty_name_path)
     for task_type, dataset_name in metric_values:
         # create output dir
-        out_dir = Path(cfg.exp_dir) / str(dataset_name) / str(task_type)
+        out_dir = Path(cfg.exp_dir) / str(task_type) / str(dataset_name)
         out_table_dir = out_dir / "tabels"
         out_table_fractions_dir = out_table_dir / "fractions"
         out_table_fractions_dir.mkdir(exist_ok=True, parents=True)
-        # save unc distributions
-        data_to_save = {}
-        for model_name in unc_values[dataset_name]:
-            data_to_save[pretty_names[task_type][model_name]] = unc_values[
-                dataset_name
-            ][model_name]
-            np.savez(out_dir / "unc_distr.npz", **data_to_save)
+
         # create rejection plots
         metric_names = []
         model_names = []
 
-        for model_name, metric in metric_values[(task_type, dataset_name)][
+        for (model_name, far), metric in metric_values[(task_type, dataset_name)][
             "uncertainty"
         ].items():
             for key in metric:
@@ -247,42 +240,34 @@ def main(cfg):
         ]
         column_names = ["models", *[str(np.round(frac, 4)) for frac in fractions]]
 
-        for method_name, metrics in metric_values[(task_type, dataset_name)][
-            "uncertainty"
-        ].items():
-            for i, frac in enumerate(fractions):
-                frac_data_rows = [pretty_names[task_type][method_name]]
-                for metric_name in metric_names:
-                    frac_data_rows.append(metrics[metric_name][i])
-                fraction_data_rows[frac].append(frac_data_rows)
         for metric_name in metric_names:
-            model_names = []
-            method_names = []
-            scores = []
-            data_rows = []
-            for method_name, metrics in metric_values[(task_type, dataset_name)][
+            far_to_model_names = {far: [] for far in cfg.far_list}
+            far_to_scores = {far: [] for far in cfg.far_list}
+            for (method_name, far), metrics in metric_values[(task_type, dataset_name)][
                 "uncertainty"
             ].items():
-                model_names.append(pretty_names[task_type][method_name])
-                method_names.append(method_name)
-                scores.append((metrics["fractions"], metrics[metric_name]))
-                data_rows.append(
-                    [pretty_names[task_type][method_name], *metrics[metric_name]]
-                )
-            pretty_name = metric_pretty_name[metric_name.split(":")[-1]]
-            if isinstance(pretty_name, str):
-                pretty_name = [pretty_name]
-            pretty_name = " ".join(pretty_name)
-            fig, auc_values = plot_rejection_scores(
-                scores=scores,
-                names=model_names,
-                y_label=f"{pretty_name}",
-            )
-            fig.savefig(
-                out_dir / f"{metric_name.split(':')[-1]}_rejection.png", dpi=300
-            )
-            plt.close(fig)
+                far_to_model_names[far].append(pretty_names[task_type][method_name])
+                far_to_scores[far].append((metrics["fractions"], metrics[metric_name]))
 
+            metric_pretty_name = metric_pretty_names[metric_name.split(":")[-1]]
+            if isinstance(metric_pretty_name, str):
+                metric_pretty_name = [metric_pretty_name]
+            metric_pretty_name = " ".join(metric_pretty_name)
+
+            for far in far_to_scores:
+                filter_plots_dir = out_dir / "filter_plots" / str(far)
+                filter_plots_dir.mkdir(parents=True, exist_ok=True)
+                fig, auc_values = plot_rejection_scores(
+                    scores=far_to_scores[far],
+                    names=far_to_model_names[far],
+                    y_label=f"{metric_pretty_name}",
+                )
+                fig.savefig(
+                    filter_plots_dir / f"{metric_name.split(':')[-1]}_filtering.png",
+                    dpi=300,
+                )
+                plt.close(fig)
+            continue
             # save table
 
             rejection_df = pd.DataFrame(data_rows, columns=column_names)
@@ -318,12 +303,13 @@ def main(cfg):
             new_auc_df.to_csv(
                 out_table_dir / f'{metric_name.split(":")[-1]}_aucs_pretty.csv'
             )
-        for frac, data_rows in fraction_data_rows.items():
-            frac_rejection_df = pd.DataFrame(data_rows, columns=fraction_column_names)
-            frac_rejection_df.to_csv(
-                out_table_fractions_dir
-                / f'{str(np.round(frac, 4)).ljust(6, "0")}_frac_rejection.csv'
-            )
+
+        # for frac, data_rows in fraction_data_rows.items():
+        #     frac_rejection_df = pd.DataFrame(data_rows, columns=fraction_column_names)
+        #     frac_rejection_df.to_csv(
+        #         out_table_fractions_dir
+        #         / f'{str(np.round(frac, 4)).ljust(6, "0")}_frac_rejection.csv'
+        #     )
         if cfg.create_pool_plot:
             # create pool plot
             tables_path = out_dir / "tabels"
