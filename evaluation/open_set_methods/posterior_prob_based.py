@@ -122,7 +122,13 @@ class PosteriorProbability(OpenSetMethod):
             / Path("scf")
             / f"name_calib_template_subsets_PoolingDefault_{calibration_set.dataset_name}"
         )
+        template_pool_path = (
+            "/app/cache/template_cache_new"
+            / Path("scf")
+            / f"name_template_pool_gallery-PoolingDefault_probe-PoolingDefault_{calibration_set.dataset_name}"
+        )
         template_subsets_path.mkdir(parents=True, exist_ok=True)
+        template_pool_path.mkdir(parents=True, exist_ok=True)
         if (template_subsets_path / "probe.npz").is_file():
             data = np.load(template_subsets_path / "probe.npz")
             probe_features = data["probe_features"]
@@ -194,20 +200,34 @@ class PosteriorProbability(OpenSetMethod):
             gallery_templates_sorted,
             gallery_medias,
         )
-
         self.gallery_pooled_templates_calib[gallery_name] = {
             "template_pooled_features": pooled_data[0],
             "template_pooled_data_unc": pooled_data[1],
             "template_subject_ids_sorted": gallery_subject_ids_sorted,
         }
-        # pool gallery
+
+        # pool probe
         probe_kappa = np.exp(probe_unc)
-        probe_pooled_data = average_pooling(
-            probe_features,
-            probe_kappa,
-            probe_templates_sorted,
-            probe_medias,
-        )
+        if (template_pool_path / f"probe_{gallery_name}.npz").is_file():
+            data = np.load(template_pool_path / f"probe_{gallery_name}.npz")
+            probe_pooled_data = (
+                data["template_pooled_features"],
+                data["template_pooled_data_unc"],
+            )
+        else:
+            average_pooling = PoolingDefault()
+            probe_pooled_data = average_pooling(
+                probe_features,
+                probe_kappa,
+                probe_templates_sorted,
+                probe_medias,
+            )
+            np.savez(
+                template_pool_path / f"probe_{gallery_name}.npz",
+                template_pooled_features=probe_pooled_data[0],
+                template_pooled_data_unc=probe_pooled_data[1],
+            )
+
         self.probe_pooled_templates_calib[gallery_name] = {
             "template_pooled_features": probe_pooled_data[0],
             "template_pooled_data_unc": probe_pooled_data[1],
@@ -461,7 +481,7 @@ class PosteriorProbability(OpenSetMethod):
                 [m, gamma],
                 lr=0.01,
                 iter_num=100,
-                verbose=True,
+                verbose=False,
             )
             data_conf = prob_compute(
                 torch.tensor(data_uncertainty_norm, dtype=torch.float32),
@@ -515,7 +535,7 @@ class PosteriorProbability(OpenSetMethod):
                 [a, b, c],
                 lr=0.1,
                 iter_num=100,
-                verbose=True,
+                verbose=False,
             )
             conf_gallery = prob_compute(
                 torch.tensor(conf_gallery, dtype=torch.float32),

@@ -212,6 +212,7 @@ def main(cfg):
 
     # load metric name converter
     metric_pretty_names = OmegaConf.load(cfg.metric_pretty_name_path)
+
     for task_type, dataset_name in metric_values:
         # create output dir
         out_dir = Path(cfg.exp_dir) / str(task_type) / str(dataset_name)
@@ -243,20 +244,30 @@ def main(cfg):
         for metric_name in metric_names:
             far_to_model_names = {far: [] for far in cfg.far_list}
             far_to_scores = {far: [] for far in cfg.far_list}
+            far_to_data_rows = {far: [] for far in cfg.far_list}
             for (method_name, far), metrics in metric_values[(task_type, dataset_name)][
                 "uncertainty"
             ].items():
                 far_to_model_names[far].append(pretty_names[task_type][method_name])
                 far_to_scores[far].append((metrics["fractions"], metrics[metric_name]))
+                far_to_data_rows[far].append(
+                    [pretty_names[task_type][method_name], *metrics[metric_name]]
+                )
 
             metric_pretty_name = metric_pretty_names[metric_name.split(":")[-1]]
             if isinstance(metric_pretty_name, str):
                 metric_pretty_name = [metric_pretty_name]
             metric_pretty_name = " ".join(metric_pretty_name)
 
+            auc_at_far_data_frames = []
+            aggr_filter_tables_dir = out_dir / "filter_tabels"
+            aggr_filter_tables_dir.mkdir(parents=True, exist_ok=True)
             for far in far_to_scores:
                 filter_plots_dir = out_dir / "filter_plots" / str(far)
+                filter_tables_dir = out_dir / "filter_tabels" / str(far)
                 filter_plots_dir.mkdir(parents=True, exist_ok=True)
+                filter_tables_dir.mkdir(parents=True, exist_ok=True)
+
                 fig, auc_values = plot_rejection_scores(
                     scores=far_to_scores[far],
                     names=far_to_model_names[far],
@@ -267,25 +278,30 @@ def main(cfg):
                     dpi=300,
                 )
                 plt.close(fig)
-            continue
-            # save table
 
-            rejection_df = pd.DataFrame(data_rows, columns=column_names)
-            rejection_df.to_csv(
-                out_table_dir / f'{metric_name.split(":")[-1]}_rejection.csv'
-            )
-            # save auc table
-            auc_data_rows = []
-            for model_pretty_name, method_name, auc in zip(
-                model_names, method_names, auc_values
-            ):
-                auc_data_rows.append(
-                    [model_pretty_name, auc, method_name.split("_")[-1].split(":")[-1]]
+                # save filter table
+                rejection_df = pd.DataFrame(far_to_data_rows[far], columns=column_names)
+                rejection_df.to_csv(
+                    filter_tables_dir / f'{metric_name.split(":")[-1]}_filtering.csv'
                 )
-            auc_df = pd.DataFrame(auc_data_rows, columns=["models", "auc", "far"])
-            auc_df.to_csv(
-                out_table_dir / f'{metric_name.split(":")[-1]}_auc_rejection.csv'
+                # save auc table
+
+                auc_at_far_data_frames.append(
+                    pd.DataFrame(
+                        {"models": far_to_model_names[far], f"FAR={far}": auc_values}
+                    )
+                )
+            for i in range(len(auc_at_far_data_frames) - 1):
+                auc_at_far_data_frames[0] = pd.merge(
+                    auc_at_far_data_frames[0],
+                    auc_at_far_data_frames[i + 1],
+                    on="models",
+                )
+            auc_at_far_data_frames[0].to_csv(
+                aggr_filter_tables_dir
+                / f'{metric_name.split(":")[-1]}_auc_filtering.csv'
             )
+            continue
             # save trans auc table
             new_auc_df_lines = []
             new_auc_df_columns = ["models"] + list(auc_df.columns[3:-1])

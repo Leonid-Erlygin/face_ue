@@ -21,6 +21,7 @@ def plot_rejection_scores(scores, y_label, names):
 
         # auc_value = auc(rank, cmc)
         auc_value = np.round(fractions[-1] * np.mean(metric_value), 4)
+        # relative_area_value = (fractions[-1] * np.mean(1 - metric_value)) / (1 - metric_value[0]) * fractions[-1]
         auc_values.append(auc_value)
         label = name + f", AUC={auc_value}"
         plt.plot(fractions, metric_value, lw=1, label=label)

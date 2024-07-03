@@ -13,12 +13,13 @@ test_datasets:
   #   dataset_name: ms1m
   #   dataset_path: /app/datasets/ms1m_ident
 
-  # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
-  #   dataset_name: IJBB
-  #   dataset_path: /app/datasets/arcface_ijb/IJBB
-  # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
-  #   dataset_name: whale
-  #   dataset_path: /app/datasets/whale_train
+  - _target_: evaluation.test_datasets.FaceRecogntioniDataset
+    dataset_name: IJBB
+    dataset_path: /app/datasets/arcface_ijb/IJBB
+
+  - _target_: evaluation.test_datasets.FaceRecogntioniDataset
+    dataset_name: whale
+    dataset_path: /app/datasets/whale_train
   - _target_: evaluation.test_datasets.FaceRecogntioniDataset
     dataset_name: IJBC
     dataset_path: /app/datasets/arcface_ijb/IJBC
