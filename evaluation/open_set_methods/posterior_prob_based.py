@@ -208,7 +208,7 @@ class PosteriorProbability(OpenSetMethod):
             self.gallery_kappa = (
                 fsolve(
                     self.find_kappa_by_far,
-                    600.0 / 100,
+                    1000.0 / 300,
                     (
                         self.beta,
                         T,
@@ -218,7 +218,7 @@ class PosteriorProbability(OpenSetMethod):
                         similarity_matrix,
                     ),
                 )[0]
-                * 100
+                * 300
             )
             print(f"Found kappa {np.round(self.gallery_kappa,4)} for far {self.far}")
         if self.class_model == "vMF_Power":
@@ -424,7 +424,7 @@ class PosteriorProbability(OpenSetMethod):
                 true_pred_label,
                 prob_compute,
                 [m, gamma],
-                lr=0.1,
+                lr=0.01,
                 iter_num=100,
                 verbose=True,
             )
