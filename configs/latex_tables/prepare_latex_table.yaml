@@ -12,13 +12,15 @@ defaults:
   - meta_data@metric_order: metric_order
 
 # dataset: survFace
-dataset: IJBC
+#dataset: IJBC
+#dataset: IJBB
+dataset: whale
 #task: open_set_identification
 task: filter
 #task: verification
 #task: closed_set_identification
 # CHANGE
-metric_table_path: /app/outputs/experiments/paper_v1_plots_and_tabels/open_set_identification/IJBC/filter_tabels/f1_class_auc_filtering.csv
+metric_table_path: /app/outputs/experiments/paper_v1_plots_and_tabels/open_set_identification/whale/filter_tabels/f1_class_auc_filtering.csv
 
 caption: >
   Area under $F_1$ filtering curve on {dataset_name}.
@@ -32,10 +34,9 @@ use_adjustbox: False
 used_columns: []
 used_columns_dict:
   filter:
-    lfw:
+    whale:
       [
         "models",
-        "FAR=0.005",
         "FAR=0.01",
         "FAR=0.05",
         "FAR=0.1",
@@ -43,7 +44,6 @@ used_columns_dict:
     IJBB:
       [
         "models",
-        #"FAR=0.005",
         "FAR=0.01",
         "FAR=0.05",
         "FAR=0.1",
@@ -51,7 +51,6 @@ used_columns_dict:
     IJBC:
       [
         "models",
-        #"FAR=0.005",
         "FAR=0.01",
         "FAR=0.05",
         "FAR=0.1",
