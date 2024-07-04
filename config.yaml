@@ -44,7 +44,7 @@ trainer:
   callbacks:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args:
-      dirpath: outputs/scf_train/weights
+      dirpath: outputs/scf_train/weights_whale_v2
       filename: null
       monitor: null
       verbose: false
