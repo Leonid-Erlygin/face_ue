@@ -19,7 +19,8 @@ class SimilarityBasedPrediction(OpenSetMethod):
         T: float = None,
         T_data_unc: float = None,
         far: float = None,
-        calibration_set=None,
+        calibration_set: bool = None,
+        oracle_predictions: bool = False,
     ) -> None:
         super().__init__()
         self.distance_function = distance_function
@@ -30,6 +31,7 @@ class SimilarityBasedPrediction(OpenSetMethod):
         self.T = T
         self.T_data_unc = T_data_unc
         self.calibration_set = calibration_set
+        self.oracle_predictions = oracle_predictions
         if self.calibration_set is None:
             return
         self.calibrate_by_false_reject = False
@@ -48,6 +50,9 @@ class SimilarityBasedPrediction(OpenSetMethod):
     ):
         if self.far is None:
             raise ValueError
+        self.g_unique_ids = g_unique_ids
+        self.probe_unique_ids = probe_unique_ids
+
         probe_feats = probe_feats[:, np.newaxis, :]
         self.data_uncertainty = probe_unc
 
@@ -98,9 +103,27 @@ class SimilarityBasedPrediction(OpenSetMethod):
             self.data_uncertainty = self.data_uncertainty[:, 0]
         else:
             raise NotImplemented
-        unc = self.uncertainty_function(
-            self.similarity_matrix, self.probe_score, self.tau
-        )
+        if self.oracle_predictions:
+            # compute true pred labels
+            error_calc = FrrFarIdent()
+            predicted_id = np.argmax(self.similarity_matrix, axis=-1)
+            was_rejected = self.probe_score < self.tau
+            error_calc(
+                predicted_id, was_rejected, self.g_unique_ids, self.probe_unique_ids
+            )
+            true_pred_label = np.zeros(self.probe_unique_ids.shape[0], dtype=bool)
+            true_pred_label[error_calc.is_seen] = error_calc.true_accept_true_ident
+            true_pred_label[~error_calc.is_seen] = error_calc.true_reject
+            unc = np.zeros(self.probe_unique_ids.shape[0])
+            # false predictions with random priority
+            false_pred_unc = np.arange(np.sum(~true_pred_label)) + 1
+            np.random.shuffle(false_pred_unc)
+            unc[~true_pred_label] = false_pred_unc
+
+        else:
+            unc = self.uncertainty_function(
+                self.similarity_matrix, self.probe_score, self.tau
+            )
         if self.calibration_set is not None:
             # logistic calibration for scf confidence
             error_calc = FrrFarIdent()
