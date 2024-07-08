@@ -1,9 +1,9 @@
 seed_everything: 7
 trainer:
-  logger:
-    class_path: pytorch_lightning.loggers.WandbLogger
-    init_args:
-      project: "whale_scf_uncertainty_train"
+#   logger:
+#     class_path: pytorch_lightning.loggers.WandbLogger
+#     init_args:
+#       project: "whale_scf_uncertainty_train"
   log_every_n_steps: 3
   default_root_dir: outputs/scf_train
   enable_checkpointing: true
@@ -72,7 +72,7 @@ data:
                 config_path: /app/sandbox/happy_whale/kaggle-happywhale-1st-place/config/efficientnet_b6_new.yaml
                 image_dir: /app/sandbox/happy_whale/kaggle-happywhale-1st-place/input
                 test: True
-        batch_size:  16 # 50
+        batch_size:  16
         num_workers: 10
 
         # train_dataset:

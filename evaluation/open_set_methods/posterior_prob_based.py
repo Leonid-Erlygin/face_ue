@@ -210,9 +210,9 @@ class PosteriorProbability(OpenSetMethod):
         T_data_unc: float,
         far: float = None,
         gallery_kappa: float = None,
-        calibrate_unc: bool = False,
+        calibrate_unc: bool = None,
         calibrate_by_false_reject: bool = False,
-        calibrate_gallery_unc: bool = False,
+        calibrate_gallery_unc: str = None,
         calibration_set: FaceRecogntioniDataset = None,
     ) -> None:
         super().__init__()
@@ -438,7 +438,7 @@ class PosteriorProbability(OpenSetMethod):
         )
         # norm data unc to prevent saturation
         data_uncertainty_norm = data_uncertainty / 500
-        data_uncertainty_norm_calib = data_uncertainty_calib[:, 0] / 500
+        data_uncertainty_norm_calib = data_uncertainty_calib / 500
 
         # train logistic calibration
         def prob_compute(conf, params):
@@ -449,8 +449,8 @@ class PosteriorProbability(OpenSetMethod):
             true_pred_label,
             prob_compute,
             [m, gamma],
-            lr=0.1,
-            iter_num=100,
+            lr=0.01,
+            iter_num=500,
             verbose=verbose,
         )
         data_conf = prob_compute(
@@ -507,13 +507,16 @@ class PosteriorProbability(OpenSetMethod):
                 true_pred_label[~error_calc.is_seen] = error_calc.true_reject
             data_uncertainty_calib = self.probe_pooled_templates_calib["g1"][
                 "template_pooled_data_unc"
-            ]
+            ][:, 0]
             data_conf = self.calibrate_scf_unc(
-                self.data_uncertainty, data_uncertainty_calib, true_pred_label
+                self.data_uncertainty,
+                data_uncertainty_calib,
+                true_pred_label,
+                verbose=True,
             )
         else:
             data_conf = self.data_uncertainty
-        if self.calibrate_gallery_unc:
+        if self.calibrate_gallery_unc is not None:
             assert self.uncertainty_type == "maxprob"
             # beta calibration for gallery confidence
             error_calc = FrrFarIdent()
@@ -530,41 +533,52 @@ class PosteriorProbability(OpenSetMethod):
             true_pred_label = np.zeros(self.probe_unique_ids_calib.shape[0])
             true_pred_label[error_calc.is_seen] = error_calc.true_accept_true_ident
             true_pred_label[~error_calc.is_seen] = error_calc.true_reject
-
-            a = torch.nn.Parameter(
-                torch.tensor(1.0, dtype=torch.float64), requires_grad=True
-            )
-            b = torch.nn.Parameter(
-                torch.tensor(1.0, dtype=torch.float64), requires_grad=True
-            )
-            c = torch.nn.Parameter(
-                torch.tensor(1.0, dtype=torch.float64), requires_grad=True
-            )
-
-            def prob_compute(conf, params):
-                logit = (
-                    params[0] * torch.log(conf)
-                    + params[1] * (-torch.log(1 - conf + 1e-40))
-                    + params[2]
+            if self.calibrate_gallery_unc == "logistic":
+                conf_gallery = np.max(self.all_classes_log_prob, axis=-1)
+                conf_gallery_calib = np.exp(
+                    np.max(self.all_classes_log_prob_calib, axis=-1)
                 )
-                return torch.special.expit(logit)
+                conf_gallery = self.calibrate_scf_unc(
+                    conf_gallery,
+                    conf_gallery_calib,
+                    true_pred_label,
+                    verbose=True,
+                )
+            else:
+                a = torch.nn.Parameter(
+                    torch.tensor(1.0, dtype=torch.float64), requires_grad=True
+                )
+                b = torch.nn.Parameter(
+                    torch.tensor(1.0, dtype=torch.float64), requires_grad=True
+                )
+                c = torch.nn.Parameter(
+                    torch.tensor(1.0, dtype=torch.float64), requires_grad=True
+                )
 
-            conf_gallery_calib = np.exp(
-                np.max(self.all_classes_log_prob_calib, axis=-1)
-            )
-            self.train_calibration(
-                conf_gallery_calib,
-                true_pred_label,
-                prob_compute,
-                [a, b, c],
-                lr=0.1,
-                iter_num=100,
-                verbose=False,
-            )
-            conf_gallery = prob_compute(
-                torch.tensor(conf_gallery, dtype=torch.float32),
-                [a.data, b.data, c.data],
-            ).numpy()
+                def prob_compute(conf, params):
+                    logit = (
+                        params[0] * torch.log(conf)
+                        + params[1] * (-torch.log(1 - conf + 1e-40))
+                        + params[2]
+                    )
+                    return torch.special.expit(logit)
+
+                conf_gallery_calib = np.exp(
+                    np.max(self.all_classes_log_prob_calib, axis=-1)
+                )
+                self.train_calibration(
+                    conf_gallery_calib,
+                    true_pred_label,
+                    prob_compute,
+                    [a, b, c],
+                    lr=0.01,
+                    iter_num=500,
+                    verbose=True,
+                )
+                conf_gallery = prob_compute(
+                    torch.tensor(conf_gallery, dtype=torch.float32),
+                    [a.data, b.data, c.data],
+                ).numpy()
 
         if self.aggregation == "sum":
             comb_conf = conf_gallery * (1 - self.alpha) + data_conf * self.alpha
