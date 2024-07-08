@@ -216,9 +216,9 @@ def main(cfg):
     for task_type, dataset_name in metric_values:
         # create output dir
         out_dir = Path(cfg.exp_dir) / str(task_type) / str(dataset_name)
-        out_table_dir = out_dir / "tabels"
-        out_table_fractions_dir = out_table_dir / "fractions"
-        out_table_fractions_dir.mkdir(exist_ok=True, parents=True)
+        # out_table_dir = out_dir / "tabels"
+        # out_table_fractions_dir = out_table_dir / "fractions"
+        # out_table_fractions_dir.mkdir(exist_ok=True, parents=True)
 
         # create rejection plots
         metric_names = []
@@ -245,6 +245,7 @@ def main(cfg):
             far_to_model_names = {far: [] for far in cfg.far_list}
             far_to_scores = {far: [] for far in cfg.far_list}
             far_to_data_rows = {far: [] for far in cfg.far_list}
+            far_to_random_oracle_areas = {far: [None, None] for far in cfg.far_list}
             for (method_name, far), metrics in metric_values[(task_type, dataset_name)][
                 "uncertainty"
             ].items():
@@ -253,6 +254,16 @@ def main(cfg):
                 far_to_data_rows[far].append(
                     [pretty_names[task_type][method_name], *metrics[metric_name]]
                 )
+                if "random" in pretty_names[task_type][method_name]:
+                    random_area = metrics["fractions"][-1] * np.mean(
+                        metrics[metric_name]
+                    )
+                    far_to_random_oracle_areas[far][0] = random_area
+                elif "oracle" in pretty_names[task_type][method_name]:
+                    oracle_area = metrics["fractions"][-1] * np.mean(
+                        metrics[metric_name]
+                    )
+                    far_to_random_oracle_areas[far][1] = oracle_area
 
             metric_pretty_name = metric_pretty_names[metric_name.split(":")[-1]]
             if isinstance(metric_pretty_name, str):
@@ -268,10 +279,12 @@ def main(cfg):
                 filter_plots_dir.mkdir(parents=True, exist_ok=True)
                 filter_tables_dir.mkdir(parents=True, exist_ok=True)
 
-                fig, auc_values = plot_rejection_scores(
+                fig, rejection_metric_values = plot_rejection_scores(
                     scores=far_to_scores[far],
                     names=far_to_model_names[far],
                     y_label=f"{metric_pretty_name}",
+                    random_area=far_to_random_oracle_areas[far][0],
+                    oracle_area=far_to_random_oracle_areas[far][1],
                 )
                 fig.savefig(
                     filter_plots_dir / f"{metric_name.split(':')[-1]}_filtering.png",
@@ -288,7 +301,10 @@ def main(cfg):
 
                 auc_at_far_data_frames.append(
                     pd.DataFrame(
-                        {"models": far_to_model_names[far], f"FAR={far}": auc_values}
+                        {
+                            "models": far_to_model_names[far],
+                            f"FAR={far}": rejection_metric_values,
+                        }
                     )
                 )
             for i in range(len(auc_at_far_data_frames) - 1):
@@ -299,7 +315,7 @@ def main(cfg):
                 )
             auc_at_far_data_frames[0].to_csv(
                 aggr_filter_tables_dir
-                / f'{metric_name.split(":")[-1]}_auc_filtering.csv'
+                / f'{metric_name.split(":")[-1]}_prr_filtering.csv'
             )
             continue
             # save trans auc table

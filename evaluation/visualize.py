@@ -6,11 +6,13 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 
-def plot_rejection_scores(scores, y_label, names):
+def plot_rejection_scores(
+    scores, y_label, names, random_area: float, oracle_area: float
+):
     import matplotlib.pyplot as plt
 
     fig = plt.figure()
-    auc_values = []
+    rejection_metric_values = []
     for id, score in enumerate(scores):
         name = names[id]
         if isinstance(score, str) and score.endswith(".npz"):
@@ -19,11 +21,14 @@ def plot_rejection_scores(scores, y_label, names):
         fractions, metric_value = score[0], score[1]
         name = name if name is not None else str(id)
 
-        # auc_value = auc(rank, cmc)
-        auc_value = np.round(fractions[-1] * np.mean(metric_value), 4)
+        # rejection_metric_value = rejection_metric(rank, cmc)
+        auc_value = fractions[-1] * np.mean(metric_value)
+        rejection_metric_value = np.abs(
+            np.round((auc_value - random_area) / (oracle_area - random_area), 4)
+        )
         # relative_area_value = (fractions[-1] * np.mean(1 - metric_value)) / (1 - metric_value[0]) * fractions[-1]
-        auc_values.append(auc_value)
-        label = name + f", AUC={auc_value}"
+        rejection_metric_values.append(rejection_metric_value)
+        label = name + f", PRR score={rejection_metric_value}"
         plt.plot(fractions, metric_value, lw=1, label=label)
 
     plt.xlabel("Filter Out Rate")
@@ -35,7 +40,7 @@ def plot_rejection_scores(scores, y_label, names):
     plt.grid(linestyle="--", linewidth=1)
     plt.legend()  # (fontsize="x-small")
     plt.tight_layout()
-    return fig, auc_values
+    return fig, rejection_metric_values
 
 
 def plot_roc_and_calculate_tpr(scores, names=None, label=None):
