@@ -8,6 +8,7 @@ from pathlib import Path
 import seaborn as sns
 import pandas as pd
 import matplotlib.pyplot as plt
+from utils.reliability_diagrams import _reliability_diagram_combined
 
 EvalMetricsT = Tuple[int, int, int, List[float], List[float], List[Tuple[float, float]]]
 
@@ -119,6 +120,93 @@ class FrrFarIdent:
             + np.sum(false_accept),
         }
         return result_metrics
+
+
+class CalibrationPlot:
+    def __init__(
+        self,
+        plot_save_dir: str,
+        num_bins: int,
+        draw_ece,
+        draw_bin_importance,
+        draw_averages,
+        figsize,
+        dpi=300,
+    ) -> None:
+        self.plot_save_dir = plot_save_dir
+        self.num_bins = num_bins
+        self.draw_ece = draw_ece
+        self.draw_bin_importance = draw_bin_importance
+        self.draw_averages = draw_averages
+        self.figsize = figsize
+        self.dpi = dpi
+
+    def __call__(
+        self,
+        predicted_id: np.ndarray,
+        was_rejected: np.ndarray,
+        g_unique_ids: np.ndarray,
+        probe_unique_ids: np.ndarray,
+        predicted_unc: np.ndarray = None,
+        method_name: str = None,
+    ) -> dict:
+        error_calc = FrrFarIdent()
+        error_calc(predicted_id, was_rejected, g_unique_ids, probe_unique_ids)
+        true_pred_label = np.zeros(probe_unique_ids.shape[0], dtype=bool)
+        true_pred_label[error_calc.is_seen] = error_calc.true_accept_true_ident
+        true_pred_label[~error_calc.is_seen] = error_calc.true_reject
+
+        predicted_conf = -predicted_unc
+        assert self.num_bins > 0
+
+        bins = np.linspace(0.0, 1.0, self.num_bins + 1)
+        indices = np.digitize(predicted_conf, bins, right=True)
+
+        bin_accuracies = np.zeros(self.num_bins, dtype=np.float)
+        bin_confidences = np.zeros(self.num_bins, dtype=np.float)
+        bin_counts = np.zeros(self.num_bins, dtype=np.int)
+
+        for b in range(self.num_bins):
+            selected = np.where(indices == b + 1)[0]
+            if len(selected) > 0:
+                bin_accuracies[b] = np.mean(true_pred_label[selected])
+                bin_confidences[b] = np.mean(predicted_conf[selected])
+                bin_counts[b] = len(selected)
+
+            avg_acc = np.sum(bin_accuracies * bin_counts) / np.sum(bin_counts)
+            avg_conf = np.sum(bin_confidences * bin_counts) / np.sum(bin_counts)
+
+            gaps = np.abs(bin_accuracies - bin_confidences)
+            ece = np.sum(gaps * bin_counts) / np.sum(bin_counts)
+            mce = np.max(gaps)
+
+        bin_data = {
+            "accuracies": bin_accuracies,
+            "confidences": bin_confidences,
+            "counts": bin_counts,
+            "bins": bins,
+            "avg_accuracy": avg_acc,
+            "avg_confidence": avg_conf,
+            "expected_calibration_error": ece,
+            "max_calibration_error": mce,
+        }
+        title = f"{method_name} calibration"
+        fig = _reliability_diagram_combined(
+            bin_data,
+            self.draw_ece,
+            self.draw_bin_importance,
+            self.draw_averages,
+            title,
+            figsize=self.figsize,
+            dpi=self.dpi,
+            return_fig=True,
+        )
+        save_dir = Path(self.plot_save_dir)
+        save_dir.mkdir(exist_ok=True)
+        out_file = save_dir / f"{method_name}_calibration.png"
+        fig.savefig(out_file, dpi=300)
+        plt.close(fig)
+        return {}
 
 
 class ErrorDistribution:

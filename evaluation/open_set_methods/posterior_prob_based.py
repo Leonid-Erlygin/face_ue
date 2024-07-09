@@ -426,8 +426,47 @@ class PosteriorProbability(OpenSetMethod):
                 print(f"Iteration {iter}, Loss: {loss.item()} params: {param_values}")
 
     @staticmethod
+    def beta_calib(conf_gallery, conf_gallery_calib, true_pred_label):
+        a = torch.nn.Parameter(
+            torch.tensor(1.0, dtype=torch.float64), requires_grad=True
+        )
+        b = torch.nn.Parameter(
+            torch.tensor(1.0, dtype=torch.float64), requires_grad=True
+        )
+        c = torch.nn.Parameter(
+            torch.tensor(1.0, dtype=torch.float64), requires_grad=True
+        )
+
+        def prob_compute(conf, params):
+            logit = (
+                params[0] * torch.log(conf)
+                + params[1] * (-torch.log(1 - conf + 1e-40))
+                + params[2]
+            )
+            return torch.special.expit(logit)
+
+        PosteriorProbability.train_calibration(
+            conf_gallery_calib,
+            true_pred_label,
+            prob_compute,
+            [a, b, c],
+            lr=0.01,
+            iter_num=500,
+            verbose=True,
+        )
+        conf_gallery = prob_compute(
+            torch.tensor(conf_gallery, dtype=torch.float32),
+            [a.data, b.data, c.data],
+        ).numpy()
+        return conf_gallery
+
+    @staticmethod
     def calibrate_scf_unc(
-        data_uncertainty, data_uncertainty_calib, true_pred_label, verbose=False
+        data_uncertainty,
+        data_uncertainty_calib,
+        true_pred_label,
+        verbose=False,
+        scale_factor: float = 500,
     ):
 
         m = torch.nn.Parameter(
@@ -437,8 +476,8 @@ class PosteriorProbability(OpenSetMethod):
             torch.tensor(1.0, dtype=torch.float64), requires_grad=True
         )
         # norm data unc to prevent saturation
-        data_uncertainty_norm = data_uncertainty / 500
-        data_uncertainty_norm_calib = data_uncertainty_calib / 500
+        data_uncertainty_norm = data_uncertainty / scale_factor
+        data_uncertainty_norm_calib = data_uncertainty_calib / scale_factor
 
         # train logistic calibration
         def prob_compute(conf, params):
@@ -545,40 +584,12 @@ class PosteriorProbability(OpenSetMethod):
                     verbose=True,
                 )
             else:
-                a = torch.nn.Parameter(
-                    torch.tensor(1.0, dtype=torch.float64), requires_grad=True
-                )
-                b = torch.nn.Parameter(
-                    torch.tensor(1.0, dtype=torch.float64), requires_grad=True
-                )
-                c = torch.nn.Parameter(
-                    torch.tensor(1.0, dtype=torch.float64), requires_grad=True
-                )
-
-                def prob_compute(conf, params):
-                    logit = (
-                        params[0] * torch.log(conf)
-                        + params[1] * (-torch.log(1 - conf + 1e-40))
-                        + params[2]
-                    )
-                    return torch.special.expit(logit)
-
                 conf_gallery_calib = np.exp(
                     np.max(self.all_classes_log_prob_calib, axis=-1)
                 )
-                self.train_calibration(
-                    conf_gallery_calib,
-                    true_pred_label,
-                    prob_compute,
-                    [a, b, c],
-                    lr=0.01,
-                    iter_num=500,
-                    verbose=True,
+                conf_gallery = self.beta_calib(
+                    conf_gallery, conf_gallery_calib, true_pred_label
                 )
-                conf_gallery = prob_compute(
-                    torch.tensor(conf_gallery, dtype=torch.float32),
-                    [a.data, b.data, c.data],
-                ).numpy()
 
         if self.aggregation == "sum":
             comb_conf = conf_gallery * (1 - self.alpha) + data_conf * self.alpha

@@ -7,8 +7,8 @@ class BernoulliVariance:
     def __call__(self, similarity: np.ndarray, probe_score: np.ndarray, tau) -> Any:
         s = probe_score
         # unc_score = -(s**2) + 2 * s * tau + 1 - 2 * tau
-        unc_score = -np.abs(s - tau) + np.abs(1 - tau)  # - 0.5 rewrite this
-        return unc_score
+        conf_score = 1 - (-np.abs(s - tau) + np.abs(1 - tau))  # - 0.5 rewrite this
+        return -conf_score
 
 
 class RandomScore:

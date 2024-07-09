@@ -249,21 +249,25 @@ def main(cfg):
             for (method_name, far), metrics in metric_values[(task_type, dataset_name)][
                 "uncertainty"
             ].items():
-                far_to_model_names[far].append(pretty_names[task_type][method_name])
-                far_to_scores[far].append((metrics["fractions"], metrics[metric_name]))
-                far_to_data_rows[far].append(
-                    [pretty_names[task_type][method_name], *metrics[metric_name]]
-                )
                 if "random" in pretty_names[task_type][method_name]:
                     random_area = metrics["fractions"][-1] * np.mean(
                         metrics[metric_name]
                     )
                     far_to_random_oracle_areas[far][0] = random_area
+                    if cfg.display_oracle_curve is False:
+                        continue
                 elif "oracle" in pretty_names[task_type][method_name]:
                     oracle_area = metrics["fractions"][-1] * np.mean(
                         metrics[metric_name]
                     )
                     far_to_random_oracle_areas[far][1] = oracle_area
+                    if cfg.display_oracle_curve is False:
+                        continue
+                far_to_model_names[far].append(pretty_names[task_type][method_name])
+                far_to_scores[far].append((metrics["fractions"], metrics[metric_name]))
+                far_to_data_rows[far].append(
+                    [pretty_names[task_type][method_name], *metrics[metric_name]]
+                )
 
             metric_pretty_name = metric_pretty_names[metric_name.split(":")[-1]]
             if isinstance(metric_pretty_name, str):
