@@ -164,22 +164,24 @@ class SimilarityBasedPrediction(OpenSetMethod):
             )
 
             # calibration for baseline scores
-
-            unc_calib = self.uncertainty_function(
-                self.similarity_matrix_calib, self.probe_score_calib, self.tau
-            )
-            if self.beta_calib:
-                conf_norm = PosteriorProbability.beta_calib(
-                    -unc, -unc_calib, true_pred_label
-                )
+            if self.alpha == 1:
+                conf_norm = -unc
             else:
-                conf_norm = PosteriorProbability.calibrate_scf_unc(
-                    -unc,
-                    -unc_calib,
-                    true_pred_label,
-                    verbose=True,
-                    scale_factor=1,
+                unc_calib = self.uncertainty_function(
+                    self.similarity_matrix_calib, self.probe_score_calib, self.tau
                 )
+                if self.beta_calib:
+                    conf_norm = PosteriorProbability.beta_calib(
+                        -unc, -unc_calib, true_pred_label
+                    )
+                else:
+                    conf_norm = PosteriorProbability.calibrate_scf_unc(
+                        -unc,
+                        -unc_calib,
+                        true_pred_label,
+                        verbose=True,
+                        scale_factor=1,
+                    )
         else:
             data_conf = self.data_uncertainty
             conf_norm = -unc

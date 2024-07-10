@@ -203,7 +203,7 @@ class CalibrationPlot:
         )
         save_dir = Path(self.plot_save_dir)
         save_dir.mkdir(exist_ok=True)
-        out_file = save_dir / f"{method_name}_calibration.png"
+        out_file = save_dir / f"{method_name}.png"
         fig.savefig(out_file, dpi=300)
         plt.close(fig)
         return {}
