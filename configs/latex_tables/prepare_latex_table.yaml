@@ -37,9 +37,12 @@ used_columns_dict:
     whale:
       [
         "models",
-        "FAR=0.01",
-        "FAR=0.05",
+        #"FAR=0.01",
+        #"FAR=0.05",
         "FAR=0.1",
+        "FAR=0.2",
+        #"FAR=0.25",
+        "FAR=0.3",
       ]
     IJBB:
       [

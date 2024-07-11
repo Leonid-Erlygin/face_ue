@@ -131,6 +131,7 @@ class CalibrationPlot:
         draw_bin_importance,
         draw_averages,
         figsize,
+        draw_confidence,
         dpi=300,
     ) -> None:
         self.plot_save_dir = plot_save_dir
@@ -139,6 +140,7 @@ class CalibrationPlot:
         self.draw_bin_importance = draw_bin_importance
         self.draw_averages = draw_averages
         self.figsize = figsize
+        self.draw_confidence = draw_confidence
         self.dpi = dpi
 
     def __call__(
@@ -196,6 +198,7 @@ class CalibrationPlot:
             self.draw_ece,
             self.draw_bin_importance,
             self.draw_averages,
+            self.draw_confidence,
             title,
             figsize=self.figsize,
             dpi=self.dpi,

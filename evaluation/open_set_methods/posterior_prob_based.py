@@ -335,9 +335,9 @@ class PosteriorProbability(OpenSetMethod):
                 )
             )
             kappa_low = 300
-            kappa_high = 2600
-            max_iter = 15
-            eps = 0.005
+            kappa_high = 3000
+            max_iter = 20
+            eps = 0.0001
             far_loss_func = FarLossCalc(
                 self.beta,
                 T,
