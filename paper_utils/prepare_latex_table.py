@@ -121,6 +121,8 @@ def run(cfg):
         )
     else:
         caption = cfg.caption
+    if "{dataset}" in cfg.metric_table_path:
+        cfg.metric_table_path = cfg.metric_table_path.format(dataset=cfg.dataset)
     cfg.used_columns = OmegaConf.to_container(cfg.used_columns_dict)[cfg.task][
         cfg.dataset
     ]

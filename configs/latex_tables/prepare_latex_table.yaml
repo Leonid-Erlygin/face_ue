@@ -20,14 +20,14 @@ task: filter
 #task: verification
 #task: closed_set_identification
 # CHANGE
-metric_table_path: /app/outputs/experiments/paper_v1_plots_and_tabels/open_set_identification/whale/filter_tabels/f1_class_auc_filtering.csv
+metric_table_path: outputs/experiments/paper_v1_tables/open_set_identification/{dataset}/filter_tabels/f1_class_prr_filtering.csv
 
 caption: >
-  Area under $F_1$ filtering curve on {dataset_name}.
+  Prediction Rejection Ration (PRR) of $F_1$ filtering curve on {dataset_name}.
   
 fix_table: False
 table_lable: "tab:${task}_${dataset}"
-round_num: 4
+round_num: 3
 use_scriptsize: True
 use_adjustbox: False
 

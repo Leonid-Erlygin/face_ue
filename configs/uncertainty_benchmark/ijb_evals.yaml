@@ -2,7 +2,7 @@ hydra:
   run:
     dir: ${exp_dir}
 
-exp_dir: outputs/experiments/paper_v1_plots
+exp_dir: outputs/experiments/paper_v1_tables
 use_two_galleries: False
 recompute_template_pooling: True
 metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
@@ -13,13 +13,14 @@ test_datasets:
   #   dataset_name: ms1m
   #   dataset_path: /app/datasets/ms1m_ident
 
-  # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
-  #   dataset_name: IJBB
-  #   dataset_path: /app/datasets/arcface_ijb/IJBB
+  - _target_: evaluation.test_datasets.FaceRecogntioniDataset
+    dataset_name: IJBB
+    dataset_path: /app/datasets/arcface_ijb/IJBB
 
   - _target_: evaluation.test_datasets.FaceRecogntioniDataset
     dataset_name: IJBC
     dataset_path: /app/datasets/arcface_ijb/IJBC
+
   # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
   #   dataset_name: whale
   #   dataset_path: /app/datasets/whale
@@ -48,7 +49,7 @@ open_set_identification_metrics:
   - _target_: evaluation.metrics.DirFar
 
 
-fractions: [0, 0.1, 20]
+fractions: [0, 0.05, 20]
 
 open_set_identification_uncertainty_metrics:
   - _target_: evaluation.uncertainty_metrics.DisposeBasedOnUnc
@@ -67,7 +68,7 @@ open_set_identification_uncertainty_metrics:
       _target_: evaluation.metrics.F1_classic
 
 default_beta: 0.5
-far_list: [0.05] #
+far_list: [0.01, 0.05, 0.1] #
 
 
 # calibration_set:
@@ -82,10 +83,15 @@ calibration_set:
 
 # calibration_set:
 #   _target_: evaluation.test_datasets.FaceRecogntioniDataset
+#   dataset_name: IJBB
+#   dataset_path: /app/datasets/arcface_ijb/IJBB
+
+# calibration_set:
+#   _target_: evaluation.test_datasets.FaceRecogntioniDataset
 #   dataset_name: IJBC
 #   dataset_path: /app/datasets/arcface_ijb/IJBC
 
-display_oracle_curve: True
+display_oracle_curve: False
 open_set_identification_methods:
 
   - embeddings: scf
@@ -161,7 +167,7 @@ open_set_identification_methods:
         _target_: evaluation.open_set_methods.uncertainty_functions.BernoulliVariance
       alpha: 0.5
       calibration_set: ${calibration_set}
-    pretty_name: "$u_{baseline}$ + $u_{SCF}$"
+    pretty_name: "$u_{baseline} + u_{SCF}$"
 
 
   - embeddings: scf
