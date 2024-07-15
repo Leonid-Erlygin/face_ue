@@ -29,7 +29,7 @@ def create_table_head(result_latex_code, caption, table_lable, cfg):
     else:
         result_latex_code += "\\begin{table}\n"
     if cfg.use_scriptsize:
-        result_latex_code += "\\footnotesize\n"
+        result_latex_code += "\\scriptsize\n"
     # result_latex_code += "\\caption{" + caption + "}\n"
     # result_latex_code += "\\label{" + table_lable + "}\n"
     if cfg.use_adjustbox:
