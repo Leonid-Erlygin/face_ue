@@ -131,7 +131,7 @@ class CalibrationPlot:
         draw_bin_importance,
         draw_averages,
         figsize,
-        draw_confidence,
+        draw_confidence=False,
         dpi=300,
     ) -> None:
         self.plot_save_dir = plot_save_dir

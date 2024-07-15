@@ -13,8 +13,8 @@ defaults:
 
 # dataset: survFace
 #dataset: IJBC
-#dataset: IJBB
-dataset: whale
+dataset: IJBB
+# dataset: whale
 #task: open_set_identification
 task: filter
 #task: verification
