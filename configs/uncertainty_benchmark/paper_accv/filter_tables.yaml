@@ -17,13 +17,14 @@ test_datasets:
     dataset_name: IJBB
     dataset_path: /app/datasets/arcface_ijb/IJBB
 
-  - _target_: evaluation.test_datasets.FaceRecogntioniDataset
-    dataset_name: IJBC
-    dataset_path: /app/datasets/arcface_ijb/IJBC
+  # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
+  #   dataset_name: IJBC
+  #   dataset_path: /app/datasets/arcface_ijb/IJBC
 
   # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
   #   dataset_name: whale
   #   dataset_path: /app/datasets/whale
+
   # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
   #   dataset_name: lfw
   #   dataset_path: /app/datasets/lfw_ident
@@ -45,6 +46,7 @@ open_set_identification_metrics:
     draw_ece: True
     draw_bin_importance: True
     draw_averages: True
+    draw_confidence: False
     figsize: [6, 6]
   - _target_: evaluation.metrics.DirFar
 
@@ -68,13 +70,13 @@ open_set_identification_uncertainty_metrics:
       _target_: evaluation.metrics.F1_classic
 
 default_beta: 0.5
-far_list: [0.01, 0.05, 0.1] #
+far_list: [0.1, 0.2, 0.3] #
 
 
 # calibration_set:
-#   _target_: evaluation.test_datasets.FaceRecogntioniDataset
-#   dataset_name: whale_val
-#   dataset_path: /app/datasets/whale_val
+  # _target_: evaluation.test_datasets.FaceRecogntioniDataset
+  # dataset_name: whale_val
+  # dataset_path: /app/datasets/whale_val
 
 calibration_set:
   _target_: evaluation.test_datasets.FaceRecogntioniDataset

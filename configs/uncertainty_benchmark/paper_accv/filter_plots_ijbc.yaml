@@ -143,7 +143,7 @@ open_set_identification_methods:
       aggregation: sum
       T: 3
       T_data_unc: 1
-    pretty_name: "$u_{power}$"
+    pretty_name: "$u_{power}$ (our)"
 
   - embeddings: scf
     gallery_template_pooling_strategy:
@@ -185,7 +185,7 @@ open_set_identification_methods:
       calibrate_unc: True
       calibrate_gallery_unc: True
       calibration_set: ${calibration_set}
-    pretty_name: "$u_{power} + u_{SCF}$"
+    pretty_name: "$u_{power} + u_{SCF}$ (our)"
 
 
   # - embeddings: scf
