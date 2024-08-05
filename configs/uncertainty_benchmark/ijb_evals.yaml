@@ -64,14 +64,14 @@ far_list: 0.05 # for now
 
 verification_metrics:
   - _target_: evaluation.metrics.TarFar
-    far_range: [0.0, 0.05, 0.01]
+    far_range: [-5, -0.5, 0.1]
     display_fars: [0.03, 0.05]
 verification_uncertainty_metrics:
   - _target_: evaluation.uncertainty_metrics.DisposeBasedOnUnc
     fractions: ${fractions}
     metric_to_monitor:
       _target_: evaluation.metrics.TarFar
-      far_range: [0.0, 0.05, 0.01]
+      far_range: [-5, -0.5, 0.1]
       display_fars: [0.03, 0.05]
 
 verification_methods:

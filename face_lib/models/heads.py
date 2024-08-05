@@ -41,7 +41,8 @@ class SCFHead(nn.Module):
 
         return log_kappa
 
-class EmbedHead(nn.Module): # 25088 -> 512
+
+class EmbedHead(nn.Module):  # 25088 -> 512
     def __init__(self, convf_dim, latent_vector_size):
         super().__init__()
 
@@ -64,10 +65,11 @@ class EmbedHead(nn.Module): # 25088 -> 512
 
     def forward(self, convf):
         new_embed = self.embed_layers(convf)
-        #self.features.eval()
+        # self.features.eval()
         new_embed = self.features(new_embed)
         new_embed = F.normalize(new_embed, p=2.0, dim=1)
         return new_embed
+
 
 class PFEHead(FaceModule):
     def __init__(self, in_feat=512, **kwargs):

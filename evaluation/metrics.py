@@ -267,7 +267,7 @@ class CMC:
 class TarFar:
     def __init__(self, far_range: List[int], display_fars: List[float]) -> None:
         self.fars = [
-            10**ii for ii in np.arange(far_range[0], far_range[1], 4.0 / far_range[2])
+            10**ii for ii in np.arange(far_range[0], far_range[1], far_range[2])
         ] + [1]
         self.display_fars = display_fars
 

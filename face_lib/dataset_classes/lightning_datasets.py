@@ -72,22 +72,19 @@ class MXFaceDataset(Dataset):
             # )
 
             self.alb_transform = A.Compose(
-                [A.GridDistortion(num_steps = 5, distort_limit = 0.3, p = 0.5),
-                 A.GridDistortion(num_steps = 10, distort_limit = 0.5, p = 0.5),
-                 A.GridDistortion(num_steps = 50, distort_limit = 1.0, p = 0.5)
-                  ],
-                p = 0.75
+                [
+                    A.GridDistortion(num_steps=5, distort_limit=0.3, p=0.5),
+                    A.GridDistortion(num_steps=10, distort_limit=0.5, p=0.5),
+                    A.GridDistortion(num_steps=50, distort_limit=1.0, p=0.5),
+                ],
+                p=0.75,
             )
 
             self.transform = v2.Compose(
                 [
-
-
                     v2.ToPILImage(),
-
                     # Old with default training
-                    #v2.RandomHorizontalFlip(),
-
+                    # v2.RandomHorizontalFlip(),
                     # Not working due to the argem
                     # v2.RandomApply([
                     #     v2.RandomChoice(
@@ -102,11 +99,8 @@ class MXFaceDataset(Dataset):
                     #                 ],
                     #                p = 0.5
                     # ),
-
-
                     v2.ToTensor(),
                     v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-
                     # Old version for bach thesis
                     # v2.RandomApply(
                     #     [v2.RandomChoice(
@@ -286,7 +280,7 @@ class MXFaceDataset(Dataset):
         label = torch.tensor(label, dtype=torch.long)
         sample = mx.image.imdecode(img).asnumpy()
         if self.transform is not None:
-            sample = self.alb_transform(image = sample)
+            sample = self.alb_transform(image=sample)
             sample = sample["image"]
             sample = self.transform(sample)
         if self.test:
