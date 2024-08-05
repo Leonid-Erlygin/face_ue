@@ -191,6 +191,7 @@ def _reliability_diagram_combined(
     draw_ece,
     draw_bin_importance,
     draw_averages,
+    draw_confidence,
     title,
     figsize,
     dpi,
@@ -198,33 +199,44 @@ def _reliability_diagram_combined(
 ):
     """Draws a reliability diagram and confidence histogram using the output
     from compute_calibration()."""
-    figsize = (figsize[0], figsize[0] * 1.4)
+    if draw_confidence:
+        figsize = (figsize[0], figsize[0] * 1.4)
 
-    fig, ax = plt.subplots(
-        nrows=2,
-        ncols=1,
-        sharex=True,
-        figsize=figsize,
-        dpi=dpi,
-        gridspec_kw={"height_ratios": [4, 1]},
-    )
+        fig, ax = plt.subplots(
+            nrows=2,
+            ncols=1,
+            sharex=True,
+            figsize=figsize,
+            dpi=dpi,
+            gridspec_kw={"height_ratios": [4, 1]},
+        )
 
-    plt.tight_layout()
-    plt.subplots_adjust(hspace=-0.1)
+        plt.tight_layout()
+        plt.subplots_adjust(hspace=-0.1)
 
-    _reliability_diagram_subplot(
-        ax[0], bin_data, draw_ece, draw_bin_importance, title=title, xlabel=""
-    )
+        _reliability_diagram_subplot(
+            ax[0], bin_data, draw_ece, draw_bin_importance, title=title, xlabel=""
+        )
 
-    # Draw the confidence histogram upside down.
-    orig_counts = bin_data["counts"]
-    bin_data["counts"] = -bin_data["counts"]
-    _confidence_histogram_subplot(ax[1], bin_data, draw_averages, title="")
-    bin_data["counts"] = orig_counts
+        # Draw the confidence histogram upside down.
+        orig_counts = bin_data["counts"]
+        bin_data["counts"] = -bin_data["counts"]
+        _confidence_histogram_subplot(ax[1], bin_data, draw_averages, title="")
+        bin_data["counts"] = orig_counts
 
-    # Also negate the ticks for the upside-down histogram.
-    new_ticks = np.abs(ax[1].get_yticks()).astype(np.int)
-    ax[1].set_yticklabels(new_ticks)
+        # Also negate the ticks for the upside-down histogram.
+        new_ticks = np.abs(ax[1].get_yticks()).astype(np.int)
+        ax[1].set_yticklabels(new_ticks)
+    else:
+        figsize = (figsize[0], figsize[0])
+        fig, ax = plt.subplots(
+            sharex=True, figsize=figsize, dpi=dpi, constrained_layout=True
+        )
+        # plt.tight_layout()
+        # plt.subplots_adjust(hspace=-0.1)
+        _reliability_diagram_subplot(
+            ax, bin_data, draw_ece, draw_bin_importance, title=title, xlabel=""
+        )
 
     plt.show()
 

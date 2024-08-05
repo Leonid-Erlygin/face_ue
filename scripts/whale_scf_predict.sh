@@ -11,5 +11,5 @@ docker run \
  face-eval \
  python trainers/train.py predict \
  --config configs/train/train_whale_scf.yaml \
- --ckpt_path=/app/outputs/scf_train/weights/epoch=5-step=19000.ckpt \
+ --ckpt_path=/app/outputs/scf_train/weights_whale_v2/epoch=5-step=19000.ckpt \
  --trainer.devices=1

@@ -4,14 +4,14 @@ trainer:
 #     class_path: pytorch_lightning.loggers.WandbLogger
 #     init_args:
 #       project: "whale_scf_uncertainty_train"
-#   log_every_n_steps: 3
+  log_every_n_steps: 3
   default_root_dir: outputs/scf_train
   enable_checkpointing: true
   callbacks:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args: 
       every_n_train_steps: 1000
-      dirpath: outputs/scf_train/weights
+      dirpath: outputs/scf_train/weights_whale_v2
   - class_path: pytorch_lightning.callbacks.LearningRateMonitor
     init_args: 
       logging_interval: "step"
@@ -72,7 +72,7 @@ data:
                 config_path: /app/sandbox/happy_whale/kaggle-happywhale-1st-place/config/efficientnet_b6_new.yaml
                 image_dir: /app/sandbox/happy_whale/kaggle-happywhale-1st-place/input
                 test: True
-        batch_size:  50 #16
+        batch_size:  16
         num_workers: 10
 
         # train_dataset:

@@ -71,8 +71,10 @@ class SphereConfidenceFace(LightningModule):
         self.permute_batch = permute_batch
 
     def forward(self, x):
+        self.backbone.backbone.eval()
         backbone_outputs = self.backbone(x)
         log_kappa = self.head(backbone_outputs["bottleneck_feature"])
+
         return backbone_outputs["feature"], log_kappa
 
     def training_step(self, batch):

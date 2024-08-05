@@ -22,6 +22,10 @@ test_datasets:
     dataset_path: /app/datasets/arcface_ijb/IJBC
 
   # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
+  #   dataset_name: whale
+  #   dataset_path: /app/datasets/whale
+
+  # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
   #   dataset_name: lfw
   #   dataset_path: /app/datasets/lfw_ident
 
@@ -57,7 +61,7 @@ open_set_identification_uncertainty_metrics:
       _target_: evaluation.metrics.F1_classic
 
 default_beta: 0.5
-far_list: 0.05 # for now
+far_list: [0.05] #
 
 # far_range: [0.01, 0.05, 0.1]
 # display_fars: [0.01, 0.05, 0.1]
