@@ -13,27 +13,27 @@ class SCFHead(nn.Module):
 
         self.convf_dim = convf_dim
         self.latent_vector_size = latent_vector_size
-
-        self._log_kappa = nn.Sequential(
-            nn.Linear(self.convf_dim, self.latent_vector_size // 2),
-            nn.BatchNorm1d(self.latent_vector_size // 2, affine=True),
-            nn.ReLU(inplace=True),
-            nn.Linear(self.latent_vector_size // 2, self.latent_vector_size // 4),
-            nn.BatchNorm1d(self.latent_vector_size // 4, affine=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(self.latent_vector_size // 4, 1),
-        )
+        # Было
+        # self._log_kappa = nn.Sequential(
+        #     nn.Linear(self.convf_dim, self.latent_vector_size),
+        #     nn.BatchNorm1d(self.latent_vector_size, affine=True),
+        #     nn.ReLU(inplace=True),
+        #     nn.Linear(self.latent_vector_size, self.latent_vector_size),
+        #     nn.BatchNorm1d(self.latent_vector_size, affine=False),
+        #     nn.ReLU(inplace=True),
+        #     nn.Linear(self.latent_vector_size, 1),
+        # )
 
         # Trying to increase number of parameters
-        # self._log_kappa = nn.Sequential(
-        #     nn.Linear(self.convf_dim, self.convf_dim // 2),
-        #     nn.BatchNorm1d(self.convf_dim // 2, affine=True),
-        #     nn.ReLU(inplace=True),
-        #     nn.Linear(self.convf_dim // 2, self.convf_dim // 4),
-        #     nn.BatchNorm1d(self.convf_dim // 4, affine=False),
-        #     nn.ReLU(inplace=True),
-        #     nn.Linear(self.convf_dim // 4, 1),
-        # )
+        self._log_kappa = nn.Sequential(
+            nn.Linear(self.convf_dim, self.convf_dim // 2),
+            nn.BatchNorm1d(self.convf_dim // 2, affine=True),
+            nn.ReLU(inplace=True),
+            nn.Linear(self.convf_dim // 2, self.convf_dim // 4),
+            nn.BatchNorm1d(self.convf_dim // 4, affine=True),
+            nn.ReLU(inplace=True),
+            nn.Linear(self.convf_dim // 4, 1),
+        )
 
     def forward(self, convf):
         log_kappa = self._log_kappa(convf)
@@ -41,6 +41,33 @@ class SCFHead(nn.Module):
 
         return log_kappa
 
+class EmbedHead(nn.Module): # 25088 -> 512
+    def __init__(self, convf_dim, latent_vector_size):
+        super().__init__()
+
+        self.convf_dim = convf_dim
+        self.latent_vector_size = latent_vector_size
+
+        self.embed_layers = nn.Sequential(
+            nn.Linear(self.convf_dim, self.latent_vector_size),
+            nn.BatchNorm1d(self.latent_vector_size, affine=True),
+            nn.ReLU(inplace=True),
+            nn.Linear(self.latent_vector_size, self.latent_vector_size),
+            nn.BatchNorm1d(self.latent_vector_size, affine=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(self.latent_vector_size, 512),
+        )
+        # !!! Так было в резнете, проблемы с этой вонючей нормализацией, непонятно насколько нужно учить один байес
+        self.features = nn.BatchNorm1d(512, eps=1e-05)
+        nn.init.constant_(self.features.weight, 1.0)
+        self.features.weight.requires_grad = False
+
+    def forward(self, convf):
+        new_embed = self.embed_layers(convf)
+        #self.features.eval()
+        new_embed = self.features(new_embed)
+        new_embed = F.normalize(new_embed, p=2.0, dim=1)
+        return new_embed
 
 class PFEHead(FaceModule):
     def __init__(self, in_feat=512, **kwargs):

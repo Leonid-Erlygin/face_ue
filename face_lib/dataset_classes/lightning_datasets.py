@@ -4,7 +4,7 @@ import torch
 # from albumentations.pytorch import ToTensorV2
 import cv2
 
-# import albumentations as A
+import albumentations as A
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import v2
@@ -42,12 +42,72 @@ class MXFaceDataset(Dataset):
                 ]
             )
         else:
+            # №1
+            # self.alb_transform = A.Compose(
+            #     [A.Blur(blur_limit=4, p = 0.5),
+            #      A.Blur(blur_limit=7, p = 0.5),
+            #      A.Blur(blur_limit=13, p = 0.5)],
+            #     p = 0.25
+            # )
+
+            # №2
+            # self.alb_transform = A.Compose(
+            #     [A.RandomFog(p = 0.5),
+            #      A.RandomGravel(p = 0.5),
+            #      A.RandomRain(p = 0.5),
+            #      A.RandomSnow(p = 0.5),
+            #      #A.Superpixels(p = 0.5)
+            #       ],
+            #     p = 0.25
+            # )
+
+            # №3
+            # self.alb_transform = A.Compose(
+            #     [A.MedianBlur(blur_limit = 11, p = 0.5),
+            #      A.MotionBlur(blur_limit = 13, p = 0.5),
+            #      A.GlassBlur(p = 0.5),
+            #      A.ZoomBlur(p = 0.5)
+            #       ],
+            #     p = 0.75
+            # )
+
+            self.alb_transform = A.Compose(
+                [A.GridDistortion(num_steps = 5, distort_limit = 0.3, p = 0.5),
+                 A.GridDistortion(num_steps = 10, distort_limit = 0.5, p = 0.5),
+                 A.GridDistortion(num_steps = 50, distort_limit = 1.0, p = 0.5)
+                  ],
+                p = 0.75
+            )
+
             self.transform = v2.Compose(
                 [
+
+
                     v2.ToPILImage(),
-                    v2.RandomHorizontalFlip(),
+
+                    # Old with default training
+                    #v2.RandomHorizontalFlip(),
+
+                    # Not working due to the argem
+                    # v2.RandomApply([
+                    #     v2.RandomChoice(
+                    #     transforms = [
+                    #         A.Blur(blur_limit=4, p = 1.0),
+                    #         A.Blur(blur_limit=7, p = 1.0),
+                    #         A.Blur(blur_limit=9, p = 1.0),
+                    #         A.Blur(blur_limit=11, p = 1.0),
+                    #         A.Blur(blur_limit=13, p = 1.0)
+                    #                 ],
+                    #                 p = [1/5 for i in range(5)])
+                    #                 ],
+                    #                p = 0.5
+                    # ),
+
+
                     v2.ToTensor(),
                     v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+
+                    # Old version for bach thesis
                     # v2.RandomApply(
                     #     [v2.RandomChoice(
                     #         transforms = [
@@ -226,6 +286,8 @@ class MXFaceDataset(Dataset):
         label = torch.tensor(label, dtype=torch.long)
         sample = mx.image.imdecode(img).asnumpy()
         if self.transform is not None:
+            sample = self.alb_transform(image = sample)
+            sample = sample["image"]
             sample = self.transform(sample)
         if self.test:
             return sample

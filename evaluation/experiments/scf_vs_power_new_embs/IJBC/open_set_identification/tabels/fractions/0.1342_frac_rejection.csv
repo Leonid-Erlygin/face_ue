@@ -1,0 +1,3 @@
+,models,true_accept_false_ident,false_reject_false_ident,false_reject_true_ident,false_ident,false_reject,false_accept,error_sum,dir,far,f1_class
+0,$u_{SCF}$,9,91,78,100,169,364,542,0.9793933780967816,0.043723723723723726,0.968961172832436
+1,$u_{new embed}$,11,95,82,106,177,418,606,0.9781369926735667,0.049976087996174076,0.9652283681432179

@@ -2,7 +2,7 @@ hydra:
   run:
     dir: ${exp_dir}
 
-exp_dir: outputs/experiments/paper_v1_pooling
+exp_dir: experiments/verification_scf_test
 use_two_galleries: False
 recompute_template_pooling: True
 metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
@@ -35,10 +35,10 @@ test_datasets:
 open_set_identification_metrics:
   - _target_: evaluation.metrics.ErrorDistribution
     plot_save_dir: ${exp_dir}
-    value_types: [0, 1, 2, 3, 4, 5]
+    value_types: [0,1, 2, 3, 4, 5]
   - _target_: evaluation.metrics.DirFar
 
-fractions: [0, 0.05, 20]
+fractions: [0, 0.5, 20]
 
 open_set_identification_uncertainty_metrics:
   - _target_: evaluation.uncertainty_metrics.DisposeBasedOnUnc
@@ -59,97 +59,29 @@ open_set_identification_uncertainty_metrics:
 default_beta: 0.5
 far_list: 0.05 # for now
 
+# far_range: [0.01, 0.05, 0.1]
+# display_fars: [0.01, 0.05, 0.1]
 
-open_set_identification_methods:
+verification_metrics:
+  - _target_: evaluation.metrics.TarFar
+    far_range: [0.0, 0.05, 0.01]
+    display_fars: [0.03, 0.05]
+verification_uncertainty_metrics:
+  - _target_: evaluation.uncertainty_metrics.DisposeBasedOnUnc
+    fractions: ${fractions}
+    metric_to_monitor:
+      _target_: evaluation.metrics.TarFar
+      far_range: [0.0, 0.05, 0.01]
+      display_fars: [0.03, 0.05]
 
+verification_methods:
 
-  # - embeddings: scf
-  #   gallery_template_pooling_strategy:
-  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
-  #   probe_template_pooling_strategy:
-  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
-  #   use_detector_score: False
-  #   recognition_method:
-  #     _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
-  #     distance_function: 
-  #       _target_: evaluation.distance_functions.open_set_identification.CosineSim
-  #     class_model: power
-  #     far: ${far_list}
-  #     beta: ${default_beta}
-  #     gallery_kappa: 654.0741
-  #     uncertainty_type: maxprob
-  #     alpha: 0 # when 1, only scf unc is used
-  #     aggregation: sum
-  #     T: 3
-  #     T_data_unc: 1
-  #   pretty_name: "$Average$"
-
-
-  - embeddings: scf
+  - embeddings: scf_vanilla
     gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    probe_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
     use_detector_score: False
     recognition_method:
-      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
-      distance_function: 
-        _target_: evaluation.distance_functions.open_set_identification.CosineSim
-      class_model: power
-      far: ${far_list}
-      beta: ${default_beta}
-      #gallery_kappa: 637.6794
-      uncertainty_type: maxprob
-      alpha: 1 # when 1, only scf unc is used
-      aggregation: sum
-      T: 3
-      T_data_unc: 1
-    pretty_name: "$u_{SCF}$"
-
-
-  - embeddings: power_noise_v3_new
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    use_detector_score: False
-    recognition_method:
-      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
-      distance_function: 
-        _target_: evaluation.distance_functions.open_set_identification.CosineSim
-      class_model: power
-      far: ${far_list}
-      beta: ${default_beta}
-      #gallery_kappa: 619.1514
-      uncertainty_type: maxprob
-      alpha: 1 # when 1, only scf unc is used
-      aggregation: sum
-      T: 3
-      T_data_unc: 1
-    pretty_name: "$u_{power}$ nose"
-
-
-  # - embeddings: scf
-  #   gallery_template_pooling_strategy:
-  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
-  #   probe_template_pooling_strategy:
-  #     _target_: evaluation.template_pooling_strategies.PoolingProb
-  #   use_detector_score: False
-  #   recognition_method:
-  #     _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
-  #     distance_function: 
-  #       _target_: evaluation.distance_functions.open_set_identification.CosineSim
-  #     class_model: power
-  #     far: ${far_list}
-  #     beta: ${default_beta}
-  #     gallery_kappa: 637.6794
-  #     uncertainty_type: maxprob
-  #     alpha: 0.2
-  #     aggregation: sum
-  #     T: 3
-  #     T_data_unc: 1
-  #     norm_data_unc: True
-  #   pretty_name: "$u_{SCF}$ test1"
-
-
-
+      _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+      distance_function:
+        _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+    pretty_name: "scf verif"

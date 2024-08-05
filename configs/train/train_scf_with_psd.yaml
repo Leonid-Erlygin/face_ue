@@ -1,26 +1,27 @@
-seed_everything: 7
+seed_everything: 777
 trainer:
-#   logger:
-#     class_path: pytorch_lightning.loggers.WandbLogger
-#     init_args:
-#       project: "face-ue"
+  logger:
+    class_path: pytorch_lightning.loggers.WandbLogger
+    init_args:
+      project: "face-ue"
   log_every_n_steps: 3
   default_root_dir: outputs/scf_train
   enable_checkpointing: true
   callbacks:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args: 
-      every_n_train_steps: 1000
-      dirpath: outputs/scf_train/weights_power_dul_rgs
+      every_n_epochs: 1
+      dirpath: outputs/scf_new_data/grid_distortion/weights_scf_grid_distort_album_75%
+      save_last: True
   - class_path: pytorch_lightning.callbacks.LearningRateMonitor
     init_args: 
       logging_interval: "step"
   - class_path: face_lib.models.scf.Prediction_writer
     init_args: 
       output_dir: /app/cache/features
-      file_name: power_dul_rgs_embs_IJBC # scf_embs_inter  #scf_embs_lfw #scf_embs_ms1m_3531-classes_0-seed_30-min-class-size
+      file_name: scf_rand_effects_album_75%_embs_IJBC # scf_embs_inter  #scf_embs_lfw #scf_embs_ms1m_3531-classes_0-seed_30-min-class-size
       write_interval: epoch
-  max_epochs: 5
+  max_epochs: 16
   accelerator: gpu
   devices: 1
 model:
@@ -31,14 +32,14 @@ model:
             init_args:
                 resnet_name: iresnet50_normalized
                 weights: /app/model_weights/backbone/ms1mv3_arcface_r50/backbone.pth
-                learnable: True #False
+                learnable: False #False
         head:
             class_path: face_lib.models.heads.SCFHead
             init_args:
                 convf_dim: 25088
-                latent_vector_size: 8192 #2048
+                latent_vector_size: 2048 #8096
         scf_loss:
-            class_path: face_lib.models.losses.KLDiracPS
+            class_path: face_lib.models.losses.KLDiracVMF
             init_args:
                 z_dim: 512
                 radius: 64
@@ -67,7 +68,7 @@ model:
         scheduler_params:
             scheduler: StepLR
             params:
-                step_size: 15000
+                step_size: 2
                 gamma: 0.5
             interval: "step"
             frequency: 1
@@ -106,23 +107,23 @@ data:
         #     init_args:
         #         dataset_path: /app/datasets/lfw/data_aligned_112_112
                 #norm_image: True
+        # predict_dataset:
+        #     class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+        #     init_args:
+        #         dataset_path: /app/datasets/arcface_ijb/IJBB
+        #         dataset_name: IJBB
+        #         norm_image: True
+
         predict_dataset:
             class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
             init_args:
                 dataset_path: /app/datasets/arcface_ijb/IJBC
                 dataset_name: IJBC
                 norm_image: True
-
-        # predict_dataset:
-        #     class_path: face_lib.datasets.arcface_ijb.IJB_aligned_images
-        #     init_args:
-        #         dataset_path: /app/datasets/arcface_ijb/IJBC
-        #         dataset_name: IJBC
-        #         norm_image: True
         # predict_dataset:
         #     class_path: face_lib.datasets.qmul.SurvFace
         #     init_args:
         #         data_dir: /app/datasets/QMUL-SurvFace/Face_Identification_Test_Set
 
-        batch_size: 256
+        batch_size: 400
         num_workers: 36

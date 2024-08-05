@@ -89,6 +89,7 @@ class Face_Fecognition_test:
                 data["template_pooled_features"],
                 data["template_pooled_data_unc"],
             )
+            template_idss = data["template_ids"]
         else:
             pooled_data = self.gallery_template_pooling_strategy(
                 self.image_input_feats,
@@ -96,16 +97,19 @@ class Face_Fecognition_test:
                 self.test_dataset.templates,
                 self.test_dataset.medias,
             )
-            print(len(pooled_data))
+            
+            template_idss = np.unique(self.test_dataset.templates)
+
             np.savez(
                 template_pool_path / f"pool.npz",
                 template_pooled_features=pooled_data[0],
                 template_pooled_data_unc=pooled_data[1],
+                template_ids = template_idss
             )
 
         self.template_pooled_emb = pooled_data[0]
         self.template_pooled_unc = pooled_data[1]
-        # self.template_ids = pooled_data["template_ids"]
+        self.template_ids = template_idss
 
     def pool_templates_osfr(self, cache_dir: str):
         cache_dir = Path(cache_dir)
@@ -468,7 +472,8 @@ class Face_Fecognition_test:
         )
 
         metrics = {}
-        for metric in self.recognition_metrics:
+        for metric in self.recognition_metrics["verification"]:
+            print(metric)
             metrics.update(
                 metric(
                     scores=scores,

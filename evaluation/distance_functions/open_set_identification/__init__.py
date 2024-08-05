@@ -8,4 +8,4 @@ from .evm import EVM
 from .pfe import PFE
 from .scf import SCF
 from .tcmnn import TcmNN
-from .svm import SVM
+#from .svm import SVM
