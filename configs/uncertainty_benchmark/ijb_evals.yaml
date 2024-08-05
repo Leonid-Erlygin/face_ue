@@ -2,7 +2,7 @@ hydra:
   run:
     dir: ${exp_dir}
 
-exp_dir: outputs/experiments/paper_v1_tables_power_vmf
+exp_dir: outputs/experiments/paper_v1_pooling
 use_two_galleries: False
 recompute_template_pooling: True
 metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
@@ -70,7 +70,7 @@ open_set_identification_uncertainty_metrics:
       _target_: evaluation.metrics.F1_classic
 
 default_beta: 0.5
-far_list: [0.01, 0.05, 0.1] #
+far_list: [0.05] #
 
 
 # calibration_set:
@@ -78,20 +78,20 @@ far_list: [0.01, 0.05, 0.1] #
   # dataset_name: whale_val
   # dataset_path: /app/datasets/whale_val
 
-calibration_set:
-  _target_: evaluation.test_datasets.FaceRecogntioniDataset
-  dataset_name: ms1m
-  dataset_path: /app/datasets/ms1m_ident
+# calibration_set:
+#   _target_: evaluation.test_datasets.FaceRecogntioniDataset
+#   dataset_name: ms1m
+#   dataset_path: /app/datasets/ms1m_ident
 
 # calibration_set:
 #   _target_: evaluation.test_datasets.FaceRecogntioniDataset
 #   dataset_name: IJBB
 #   dataset_path: /app/datasets/arcface_ijb/IJBB
 
-# calibration_set:
-#   _target_: evaluation.test_datasets.FaceRecogntioniDataset
-#   dataset_name: IJBC
-#   dataset_path: /app/datasets/arcface_ijb/IJBC
+calibration_set:
+  _target_: evaluation.test_datasets.FaceRecogntioniDataset
+  dataset_name: IJBC
+  dataset_path: /app/datasets/arcface_ijb/IJBC
 
 display_oracle_curve: False
 open_set_identification_methods:
@@ -110,37 +110,95 @@ open_set_identification_methods:
       far: ${far_list}
       beta: ${default_beta}
       uncertainty_type: maxprob
-      alpha: 0 # when 1, only scf unc is used
+      alpha: 1 # when 1, only scf unc is used
       aggregation: sum
       T: 3
       T_data_unc: 1
-    pretty_name: "$u_{power}$"
+    pretty_name: "$Average$"
+
 
   - embeddings: scf
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
     probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
+      _target_: evaluation.template_pooling_strategies.PoolingProb
     use_detector_score: False
     recognition_method:
-      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
+      _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
       distance_function: 
         _target_: evaluation.distance_functions.open_set_identification.CosineSim
-      class_model: vMF
-      far: ${far_list}
-      beta: ${default_beta}
-      uncertainty_type: maxprob
-      alpha: 0 # when 1, only scf unc is used
-      aggregation: sum
-      T: 3
-      T_data_unc: 1
-    pretty_name: "$u_{vMF}$"
+      acceptance_score: 
+        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+      uncertainty_function:
+        _target_: evaluation.open_set_methods.uncertainty_functions.BernoulliVariance
+      alpha: 1
+    pretty_name: "$u_{SCF}$"
 
   - embeddings: scf
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
     probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingProb
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
+      distance_function: 
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
+      acceptance_score: 
+        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+      uncertainty_function:
+        _target_: evaluation.open_set_methods.uncertainty_functions.BernoulliVariance
+      alpha: 1
+      calibration_set: ${calibration_set}
+    pretty_name: "$u_{SCF}$ calib"
+
+
+  # - embeddings: scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   use_detector_score: False
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
+  #     distance_function: 
+  #       _target_: evaluation.distance_functions.open_set_identification.CosineSim
+  #     class_model: power
+  #     far: ${far_list}
+  #     beta: ${default_beta}
+  #     uncertainty_type: maxprob
+  #     alpha: 0 # when 1, only scf unc is used
+  #     aggregation: sum
+  #     T: 3
+  #     T_data_unc: 1
+  #   pretty_name: "$u_{power}$"
+
+
+  # - embeddings: scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   use_detector_score: False
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
+  #     distance_function: 
+  #       _target_: evaluation.distance_functions.open_set_identification.CosineSim
+  #     class_model: vMF
+  #     far: ${far_list}
+  #     beta: ${default_beta}
+  #     uncertainty_type: maxprob
+  #     alpha: 0 # when 1, only scf unc is used
+  #     aggregation: sum
+  #     T: 3
+  #     T_data_unc: 1
+  #   pretty_name: "$u_{vMF}$"
+
+  - embeddings: scf
+    gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingProb
     use_detector_score: False
     recognition_method:
       _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
@@ -159,28 +217,28 @@ open_set_identification_methods:
       calibration_set: ${calibration_set}
     pretty_name: "$u_{power} + u_{SCF}$"
 
-  - embeddings: scf
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    use_detector_score: False
-    recognition_method:
-      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
-      distance_function: 
-        _target_: evaluation.distance_functions.open_set_identification.CosineSim
-      class_model: vMF
-      far: ${far_list}
-      beta: ${default_beta}
-      uncertainty_type: maxprob
-      alpha: 0.5
-      aggregation: sum
-      T: 3
-      T_data_unc: 1
-      calibrate_unc: True
-      calibrate_gallery_unc: True
-      calibration_set: ${calibration_set}
-    pretty_name: "$u_{vMF} + u_{SCF}$"
+  # - embeddings: scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   use_detector_score: False
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
+  #     distance_function: 
+  #       _target_: evaluation.distance_functions.open_set_identification.CosineSim
+  #     class_model: vMF
+  #     far: ${far_list}
+  #     beta: ${default_beta}
+  #     uncertainty_type: maxprob
+  #     alpha: 0.5
+  #     aggregation: sum
+  #     T: 3
+  #     T_data_unc: 1
+  #     calibrate_unc: True
+  #     calibrate_gallery_unc: True
+  #     calibration_set: ${calibration_set}
+  #   pretty_name: "$u_{vMF} + u_{SCF}$"
 
 
 
