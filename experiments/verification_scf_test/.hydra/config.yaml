@@ -36,7 +36,8 @@ open_set_identification_uncertainty_metrics:
   metric_to_monitor:
     _target_: evaluation.metrics.F1_classic
 default_beta: 0.5
-far_list: 0.05
+far_list:
+- 0.05
 verification_metrics:
 - _target_: evaluation.metrics.TarFar
   far_range:
@@ -59,7 +60,7 @@ verification_uncertainty_metrics:
     - 0.03
     - 0.05
 verification_methods:
-- embeddings: scf_vanilla
+- embeddings: scf
   gallery_template_pooling_strategy:
     _target_: evaluation.template_pooling_strategies.PoolingDefault
   use_detector_score: false

@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 from evaluation.visualize import (
     plot_dir_far_scores,
     plot_cmc_scores,
+    plot_tar_far_scores,
     plot_rejection_scores,
 )
 
@@ -201,13 +202,18 @@ def main(cfg):
             uncertainty_metric_values,
             predicted_unc,
         ) = tt.predict_and_compute_metrics()
-        metric_values[(task_type, dataset_name)]["recognition"][
-            (method_name, far)
-        ] = recognition_metric_values
-        metric_values[(task_type, dataset_name)]["uncertainty"][
-            (method_name, far)
-        ] = uncertainty_metric_values
-        unc_values[dataset_name][(method_name, far)] = predicted_unc
+        if task_type == "verification":
+            metric_values[(task_type, dataset_name)]["recognition"][
+                method_name
+            ] = recognition_metric_values
+        else:
+            metric_values[(task_type, dataset_name)]["recognition"][
+                (method_name, far)
+            ] = recognition_metric_values
+            metric_values[(task_type, dataset_name)]["uncertainty"][
+                (method_name, far)
+            ] = uncertainty_metric_values
+            unc_values[dataset_name][(method_name, far)] = predicted_unc
 
     # 2. Create plots and tables
 
@@ -217,9 +223,22 @@ def main(cfg):
     for task_type, dataset_name in metric_values:
         # create output dir
         out_dir = Path(cfg.exp_dir) / str(task_type) / str(dataset_name)
-        # out_table_dir = out_dir / "tabels"
-        # out_table_fractions_dir = out_table_dir / "fractions"
-        # out_table_fractions_dir.mkdir(exist_ok=True, parents=True)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        if task_type == "verification":
+            names = []
+            scores = []
+            for model_name, metric in metric_values[(task_type, dataset_name)][
+                "recognition"
+            ].items():
+                names.append(pretty_names[task_type][model_name])
+                scores.append([metric["fars"], metric["recalls"]])
+            fig = plot_tar_far_scores(scores, names)
+            fig.savefig(
+                out_dir / f"tar_far.png",
+                dpi=300,
+            )
+            plt.close(fig)
+            continue
 
         # create rejection plots
         metric_names = []
