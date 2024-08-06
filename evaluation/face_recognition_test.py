@@ -76,7 +76,7 @@ class Face_Fecognition_test:
         template_pool_path = (
             cache_dir
             / Path(self.embedding_type)
-            / f"template_pool-{self.gallery_template_pooling_strategy.__class__.__name__}_probe-{self.probe_template_pooling_strategy.__class__.__name__}_{self.test_dataset.dataset_name}"
+            / f"template_pool-{self.gallery_template_pooling_strategy.__class__.__name__}_{self.test_dataset.dataset_name}"
         )
         # print(template_pool_path)
         template_pool_path.mkdir(parents=True, exist_ok=True)

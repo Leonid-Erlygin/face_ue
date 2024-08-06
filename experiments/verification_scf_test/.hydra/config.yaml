@@ -68,4 +68,13 @@ verification_methods:
     _target_: evaluation.verification_methods.distance_based_verification.VerifEval
     distance_function:
       _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
-  pretty_name: scf verif
+  pretty_name: Default Pooling
+- embeddings: scf
+  gallery_template_pooling_strategy:
+    _target_: evaluation.template_pooling_strategies.PoolingConcentration
+  use_detector_score: false
+  recognition_method:
+    _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+    distance_function:
+      _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+  pretty_name: Concentration Pooling
