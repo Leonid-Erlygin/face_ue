@@ -79,7 +79,6 @@ verification_uncertainty_metrics:
       display_fars: [0.03, 0.05]
 
 verification_methods:
-
   - embeddings: scf
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
