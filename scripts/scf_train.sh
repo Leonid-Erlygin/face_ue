@@ -13,4 +13,4 @@ docker run \
  face-eval \
  python trainers/train.py fit \
  --config configs/train/train_scf.yaml \
-# --ckpt_path=/app/outputs/scf_new_data/grid_distortion/weights_scf_grid_distort_album_75%/epoch=11-step=174672_pretrained.ckpt 
+ --ckpt_path=/app/model_weights/scf_base.ckpt

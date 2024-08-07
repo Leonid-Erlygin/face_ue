@@ -62,6 +62,18 @@ model:
             interval: "step"
             frequency: 1
         permute_batch: False
+        template_pooling_strategy:
+            class_path: evaluation.template_pooling_strategies.PoolingConcentration
+        recognition_method:
+            class_path: evaluation.verification_methods.distance_based_verification.VerifEval
+            init_args:
+                distance_function:
+                    class_path: evaluation.distance_functions.distance_functions.CosineSimPairwise
+        verification_metrics:
+            - class_path: evaluation.metrics.TarFar
+              init_args:
+                far_range: [-5, -0.5, 0.1]
+                display_fars: [1e-5, 1e-4]
 
 data:
     class_path: face_lib.dataset_classes.lightning_datasets.UncertaintyDataModule
@@ -70,7 +82,12 @@ data:
             class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
             init_args:
                 root_dir: /app/datasets/ms1m/
-
+        validation_dataset:
+            class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+            init_args:
+                dataset_path: /app/datasets/arcface_ijb/IJBC
+                dataset_name: IJBC
+                norm_image: True
         predict_dataset:
             class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
             init_args:

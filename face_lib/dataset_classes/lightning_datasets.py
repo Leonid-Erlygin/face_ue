@@ -1,7 +1,5 @@
 import torch
 
-# import albumentations as A
-# from albumentations.pytorch import ToTensorV2
 import cv2
 
 import albumentations as A
@@ -15,9 +13,8 @@ from tqdm import tqdm
 import numpy as np
 import os
 import pandas as pd
-
-
 import sys
+
 
 # sys.path.append("/app/sandbox/happy_whale/kaggle-happywhale-1st-place")
 # from config.config import load_config
@@ -395,12 +392,14 @@ class UncertaintyDataModule(pl.LightningDataModule):
     def __init__(
         self,
         train_dataset: Dataset,
+        validation_dataset: Dataset,
         predict_dataset: Dataset,
         batch_size: int,
         num_workers: int,
     ):
         super().__init__()
         self.train_dataset = train_dataset
+        self.validation_dataset = validation_dataset
         self.predict_dataset = predict_dataset
         self.batch_size = batch_size
         self.num_workers = num_workers
@@ -413,7 +412,10 @@ class UncertaintyDataModule(pl.LightningDataModule):
         if stage == "fit":
             pass
             # self.ms1m_dataset = MXFaceDataset(self.data_train_dir)
-            # self.ms1m_dataset = torch.utils.data.Subset(self.ms1m_dataset, np.random.choice(len(self.ms1m_dataset), 5000, replace=False))
+            self.train_dataset = torch.utils.data.Subset(
+                self.train_dataset,
+                np.random.choice(len(self.train_dataset), 5000, replace=False),
+            )
 
         if stage == "predict":
             pass
@@ -426,6 +428,15 @@ class UncertaintyDataModule(pl.LightningDataModule):
             batch_size=self.batch_size,
             shuffle=True,
             drop_last=True,
+            num_workers=self.num_workers,
+        )
+
+    def val_dataloader(self):
+        return DataLoader(
+            self.validation_dataset,
+            batch_size=self.batch_size,
+            drop_last=False,
+            shuffle=False,
             num_workers=self.num_workers,
         )
 

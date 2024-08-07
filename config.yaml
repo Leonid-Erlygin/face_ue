@@ -98,7 +98,7 @@ trainer:
   sync_batchnorm: false
   reload_dataloaders_every_n_epochs: 0
   default_root_dir: outputs/scf_train
-ckpt_path: null
+ckpt_path: /app/model_weights/scf_base.ckpt
 model:
   class_path: face_lib.models.SphereConfidenceFace
   init_args:
