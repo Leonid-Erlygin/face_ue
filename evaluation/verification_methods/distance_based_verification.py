@@ -17,7 +17,7 @@ class VerifEval:
     ) -> Any:
         template2id = np.zeros(max(unique_templates) + 1, dtype=int)
         template2id[unique_templates] = np.arange(len(unique_templates))
-        batch_size = 10000
+        batch_size = 50000
         steps = int(np.ceil(len(p1) / batch_size))
         scores = []
         for id in tqdm(range(steps), "Verification"):

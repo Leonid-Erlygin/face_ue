@@ -3,9 +3,11 @@ from pytorch_lightning import LightningModule
 from pytorch_lightning.callbacks import BasePredictionWriter, Callback
 import importlib
 import pickle
+from decimal import Decimal
 from pathlib import Path
 import numpy as np
 from evaluation.ijb_evals import instantiate_list
+
 
 class Prediction_writer(BasePredictionWriter):
     def __init__(self, output_dir: str, file_name: str, write_interval: str):
@@ -129,12 +131,16 @@ class SphereConfidenceFace(LightningModule):
         return pred
 
     def on_validation_epoch_end(self):
-        image_input_feats = torch.cat(
-            [batch[0] for batch in self.validation_step_outputs], axis=0
-        ).cpu().numpy()
-        unc = torch.cat(
-            [batch[1] for batch in self.validation_step_outputs], axis=0
-        ).cpu().numpy()
+        image_input_feats = (
+            torch.cat([batch[0] for batch in self.validation_step_outputs], axis=0)
+            .cpu()
+            .numpy()
+        )
+        unc = (
+            torch.cat([batch[1] for batch in self.validation_step_outputs], axis=0)
+            .cpu()
+            .numpy()
+        )
         unc = np.exp(unc)
         self.validation_step_outputs.clear()
 
@@ -166,6 +172,9 @@ class SphereConfidenceFace(LightningModule):
                 )
             )
         print(metrics)
+        for metric_name, value in metrics.items():
+            if "TAR" in metric_name:
+                self.log(metric_name, value)
 
 
 class SphereConfidenceFaceV2(LightningModule):

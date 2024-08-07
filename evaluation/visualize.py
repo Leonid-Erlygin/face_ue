@@ -228,7 +228,7 @@ def plot_tar_far_scores(scores, names=None):
         plt.plot(fars, tpirs, lw=1, label=label)
 
     plt.xlabel("False Acceptance Rate")
-    plt.xlim([0.00001, 1])
+    plt.xlim([fars[0], 1])
     plt.xscale("log")
     plt.ylabel("True Acceptance Rate (%)")
     plt.ylim([0, 1])

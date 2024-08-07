@@ -153,12 +153,14 @@ model:
     verification_metrics:
     - _target_: evaluation.metrics.TarFar
       far_range:
-      - -5
+      - -6
       - -0.5
       - 0.1
       display_fars:
+      - 1.0e-06
       - 1.0e-05
       - 0.0001
+      - 0.001
 data:
   class_path: face_lib.dataset_classes.lightning_datasets.UncertaintyDataModule
   init_args:
