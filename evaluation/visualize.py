@@ -213,7 +213,7 @@ def plot_tar_far_scores(scores, names=None):
         name = name if name is not None else str(id)
 
         auc_value = auc(fars, tpirs)
-        label = "[%s (AUC = %0.4f%%), tar %0.4f%% at far %.1E]" % (
+        label = "%s (AUC = %0.4f%%), tar %0.4f%% at far %.1E" % (
             name,
             auc_value * 100,
             tpirs[0],

@@ -40,24 +40,24 @@ far_list: 0.05
 verification_metrics:
 - _target_: evaluation.metrics.TarFar
   far_range:
-  - 0.0
-  - 0.05
-  - 0.01
+  - 1.0e-05
+  - 0.0001
+  - 1.0e-05
   display_fars:
-  - 0.03
-  - 0.05
+  - 1.0e-05
+  - 0.0001
 verification_uncertainty_metrics:
 - _target_: evaluation.uncertainty_metrics.DisposeBasedOnUnc
   fractions: ${fractions}
   metric_to_monitor:
     _target_: evaluation.metrics.TarFar
     far_range:
-    - 0.0
-    - 0.05
-    - 0.01
+    - 1.0e-05
+    - 0.0001
+    - 1.0e-05
     display_fars:
-    - 0.03
-    - 0.05
+    - 1.0e-05
+    - 0.0001
 verification_methods:
 - embeddings: scf_vanilla
   gallery_template_pooling_strategy:
@@ -67,4 +67,31 @@ verification_methods:
     _target_: evaluation.verification_methods.distance_based_verification.VerifEval
     distance_function:
       _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
-  pretty_name: scf verif
+  pretty_name: Default pooling
+- embeddings: scf_vanilla
+  gallery_template_pooling_strategy:
+    _target_: evaluation.template_pooling_strategies.PoolingConcentration
+  use_detector_score: false
+  recognition_method:
+    _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+    distance_function:
+      _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+  pretty_name: Concentration pooling
+- embeddings: scf_blur_only_album_75%
+  gallery_template_pooling_strategy:
+    _target_: evaluation.template_pooling_strategies.PoolingConcentration
+  use_detector_score: false
+  recognition_method:
+    _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+    distance_function:
+      _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+  pretty_name: Blur
+- embeddings: scf_rand_effects_album_75%
+  gallery_template_pooling_strategy:
+    _target_: evaluation.template_pooling_strategies.PoolingConcentration
+  use_detector_score: false
+  recognition_method:
+    _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+    distance_function:
+      _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+  pretty_name: Effects

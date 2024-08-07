@@ -11,7 +11,7 @@ trainer:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args: 
       every_n_epochs: 1
-      dirpath: outputs/scf_new_data/grid_distortion/weights_scf_grid_distort_album_75%
+      dirpath: outputs/scf_new_data/pixel_dropout/weights_pixel_drop_album_50%
       save_last: True
   - class_path: pytorch_lightning.callbacks.LearningRateMonitor
     init_args: 
