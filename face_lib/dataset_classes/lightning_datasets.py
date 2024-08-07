@@ -414,7 +414,7 @@ class UncertaintyDataModule(pl.LightningDataModule):
             # self.ms1m_dataset = MXFaceDataset(self.data_train_dir)
             self.train_dataset = torch.utils.data.Subset(
                 self.train_dataset,
-                np.random.choice(len(self.train_dataset), 5000, replace=False),
+                np.random.choice(len(self.train_dataset), 1000, replace=False),
             )
 
         if stage == "predict":

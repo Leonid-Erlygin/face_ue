@@ -24,6 +24,7 @@ trainer:
   max_epochs: 16
   accelerator: gpu
   devices: 1
+  num_sanity_val_steps: 0
 model:
     class_path: face_lib.models.scf.SphereConfidenceFace
     init_args:
@@ -62,6 +63,12 @@ model:
             interval: "step"
             frequency: 1
         permute_batch: False
+        validation_dataset:
+            class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+            init_args:
+                dataset_path: /app/datasets/arcface_ijb/IJBC
+                dataset_name: IJBC
+                norm_image: True
         template_pooling_strategy:
             class_path: evaluation.template_pooling_strategies.PoolingConcentration
         recognition_method:
@@ -70,10 +77,9 @@ model:
                 distance_function:
                     class_path: evaluation.distance_functions.distance_functions.CosineSimPairwise
         verification_metrics:
-            - class_path: evaluation.metrics.TarFar
-              init_args:
-                far_range: [-5, -0.5, 0.1]
-                display_fars: [1e-5, 1e-4]
+            - _target_: evaluation.metrics.TarFar
+              far_range: [-5, -0.5, 0.1]
+              display_fars: [1e-5, 1e-4]
 
 data:
     class_path: face_lib.dataset_classes.lightning_datasets.UncertaintyDataModule

@@ -91,9 +91,10 @@ class Face_Fecognition_test:
             )
             template_ids = data["template_ids"]
         else:
+            unc = np.exp(self.unc)
             pooled_data = self.gallery_template_pooling_strategy(
                 self.image_input_feats,
-                self.unc,
+                unc,
                 self.test_dataset.templates,
                 self.test_dataset.medias,
             )

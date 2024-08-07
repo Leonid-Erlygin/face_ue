@@ -30,11 +30,11 @@ class IJB_aligned_images(Dataset):
             ]
         )
         (
-            templates,
-            medias,
-            p1,
-            p2,
-            label,
+            self.templates,
+            self.medias,
+            self.p1,
+            self.p2,
+            self.label,
             self.img_names,
             self.landmarks,
             face_scores,

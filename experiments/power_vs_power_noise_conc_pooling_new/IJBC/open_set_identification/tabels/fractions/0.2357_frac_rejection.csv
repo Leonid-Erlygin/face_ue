@@ -1,3 +1,0 @@
-,models,false_accept_num,false_reject_num,false_ident_num,false_ident-reject_num,error_sum,dir,far,f1_class
-0,$u_{noise}$,737,27,15,70,849,0.9857124633244037,0.10329362298528381,0.9479236950254555
-1,$u_{Power}$,716,28,11,74,829,0.9855572597137015,0.10013986013986013,0.948987754599717

@@ -5,7 +5,7 @@ import importlib
 import pickle
 from pathlib import Path
 import numpy as np
-
+from evaluation.ijb_evals import instantiate_list
 
 class Prediction_writer(BasePredictionWriter):
     def __init__(self, output_dir: str, file_name: str, write_interval: str):
@@ -46,6 +46,7 @@ class SphereConfidenceFace(LightningModule):
         scheduler_params,
         permute_batch: bool,
         softmax_weights: torch.nn.Module,
+        validation_dataset,
         template_pooling_strategy,
         recognition_method,
         verification_metrics,
@@ -59,9 +60,11 @@ class SphereConfidenceFace(LightningModule):
         self.scheduler_params = scheduler_params
         self.permute_batch = permute_batch
         self.validation_step_outputs = []
+        self.validation_dataset = validation_dataset
         self.template_pooling_strategy = template_pooling_strategy
         self.recognition_method = recognition_method
-        self.verification_metrics = verification_metrics
+        self.verification_metrics = instantiate_list(verification_metrics)
+        print(self.verification_metrics)
 
     def forward(self, x):
         self.backbone.backbone.eval()
@@ -128,13 +131,14 @@ class SphereConfidenceFace(LightningModule):
     def on_validation_epoch_end(self):
         image_input_feats = torch.cat(
             [batch[0] for batch in self.validation_step_outputs], axis=0
-        ).numpy()
+        ).cpu().numpy()
         unc = torch.cat(
             [batch[1] for batch in self.validation_step_outputs], axis=0
-        ).numpy()
+        ).cpu().numpy()
+        unc = np.exp(unc)
         self.validation_step_outputs.clear()
 
-        test_dataset = self.val_dataloader().dataset
+        test_dataset = self.validation_dataset
         pooled_data = self.template_pooling_strategy(
             image_input_feats,
             unc,
@@ -151,8 +155,9 @@ class SphereConfidenceFace(LightningModule):
             test_dataset.p1,
             test_dataset.p2,
         )
+        print(scores.shape)
         metrics = {}
-        for metric in self.recognition_metrics["verification"]:
+        for metric in self.verification_metrics:
             print(metric)
             metrics.update(
                 metric(
@@ -160,7 +165,6 @@ class SphereConfidenceFace(LightningModule):
                     labels=test_dataset.label,
                 )
             )
-        print(scores.shape)
         print(metrics)
 
 

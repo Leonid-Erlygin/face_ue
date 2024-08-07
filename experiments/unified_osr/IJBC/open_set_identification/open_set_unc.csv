@@ -1,3 +1,0 @@
-pretty_name,model_name
-Косинусный MaxProb,pooling-with-PoolingSCF_use-det-score-True_eval-with-CosineSim_conf-func-MaxSimilarity_confidence
-Uniform prob conf kappa=200,pooling-with-PoolingSCF_use-det-score-True_eval-with-CosineSim_conf-func-MisesProb_conf-args-kappa:200-beta:0.5-n:256.0-alpha:7588210719622621.0-log_iv:49.17166852527441-log_c:831.4027309436825

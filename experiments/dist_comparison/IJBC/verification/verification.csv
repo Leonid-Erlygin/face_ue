@@ -1,4 +1,0 @@
-pretty_name,model_name,final_auc,final_recall_at_far_1e-06,final_recall_at_far_1e-05,final_recall_at_far_0.0001,final_recall_at_far_0.001,final_recall_at_far_0.01,final_recall_at_far_0.1,final_recall_at_far_1
-CosineSim,pooling-with-PoolingSCF_use-det-score-True_eval-with-VerifEval_conf-func-CosineSimPairwise,0.9950081974259688,0.8806565424144808,0.9395612824052769,0.9586848698675666,0.971365751393363,0.9815922687528762,0.9893132893593087,1.0
-SCF_dist,pooling-with-PoolingSCF_use-det-score-True_eval-with-VerifEval_conf-func-ScfSimPairwise_dist-args-k_shift:0,0.99725988977724,0.8768215984046633,0.9422713095055479,0.9611392340338498,0.9749961650559902,0.984097765505957,0.9933527637163164,1.0
-PFE_dist,pooling-with-PoolingPFEHarmonicMean_use-det-score-True_eval-with-VerifEval_conf-func-PfeSimPairwise_dist-args-variance_scale:1,0.9933774531281843,0.8671064069131257,0.9062739684000614,0.9300506212609296,0.9446745410850335,0.9583780743467812,0.9809786777113052,1.0

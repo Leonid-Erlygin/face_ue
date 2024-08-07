@@ -79,7 +79,7 @@ trainer:
   overfit_batches: 0.0
   val_check_interval: null
   check_val_every_n_epoch: 1
-  num_sanity_val_steps: null
+  num_sanity_val_steps: 0
   log_every_n_steps: 3
   enable_checkpointing: true
   enable_progress_bar: null
@@ -137,6 +137,28 @@ model:
       init_args:
         softmax_weights_path: /app/model_weights/backbone/ms1mv3_arcface_r50/softmax_weight.pt
         radius: 64
+    validation_dataset:
+      class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+      init_args:
+        dataset_path: /app/datasets/arcface_ijb/IJBC
+        dataset_name: IJBC
+        norm_image: true
+    template_pooling_strategy:
+      class_path: evaluation.template_pooling_strategies.PoolingConcentration
+    recognition_method:
+      class_path: evaluation.verification_methods.distance_based_verification.VerifEval
+      init_args:
+        distance_function:
+          class_path: evaluation.distance_functions.distance_functions.CosineSimPairwise
+    verification_metrics:
+    - _target_: evaluation.metrics.TarFar
+      far_range:
+      - -5
+      - -0.5
+      - 0.1
+      display_fars:
+      - 1.0e-05
+      - 0.0001
 data:
   class_path: face_lib.dataset_classes.lightning_datasets.UncertaintyDataModule
   init_args:
@@ -146,6 +168,12 @@ data:
         root_dir: /app/datasets/ms1m/
         test: false
         num_classes: 0
+    validation_dataset:
+      class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+      init_args:
+        dataset_path: /app/datasets/arcface_ijb/IJBC
+        dataset_name: IJBC
+        norm_image: true
     predict_dataset:
       class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
       init_args:

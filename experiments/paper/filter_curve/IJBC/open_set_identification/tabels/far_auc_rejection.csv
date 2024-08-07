@@ -1,6 +1,0 @@
-,models,auc,far
-0,$u_{SCF}$,0.0306,0.1
-1,$u_{power}$,0.0142,0.1
-2,$u_{baseline}$,0.0152,0.1
-3,$u_{power} + u_{SCF}$,0.0144,0.1
-4,$u_{baseline} + u_{SCF}$,0.0152,0.1

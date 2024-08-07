@@ -1,4 +1,0 @@
-pretty_name,model_name,final_cmc_at_rank_1,final_cmc_at_rank_5,final_cmc_at_rank_10,final_cmc_at_rank_50,final_cmc_at_rank_100,final_cmc_at_rank_500,final_cmc_at_rank_1000
-CosineSim,pooling-with-PoolingSCF_use-det-score-True_eval-with-CosineSim_conf-func-MaxSimilarity_confidence,0.9527731662183108,0.9684838361172683,0.9731014541059018,0.9814621380596177,0.9851326155996282,0.995826601923711,1.0
-SCF_dist,pooling-with-PoolingSCF_use-det-score-True_eval-with-SCF_eval-args-k_shift:0-cosine_pred:False_conf-func-MaxSimilarity_confidence,0.9540193497291347,0.9672331371738341,0.9722449638127919,0.9810995374375656,0.9850690580397771,0.9952556083949708,1.0
-PFE_dist,pooling-with-PoolingPFEHarmonicMean_use-det-score-True_eval-with-PFE_eval-args-variance_scale:1-cosine_pred:False_conf-func-MaxSimilarity_confidence,0.9148850818606193,0.9305141324692845,0.9371753821346112,0.9534344683992572,0.9653569180070292,0.9951559273742372,1.0
