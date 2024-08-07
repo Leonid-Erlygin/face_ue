@@ -15,6 +15,7 @@ from tqdm import tqdm
 import numpy as np
 import os
 import pandas as pd
+import importlib
 
 
 import sys
@@ -25,7 +26,7 @@ import sys
 
 
 class MXFaceDataset(Dataset):
-    def __init__(self, root_dir, test=False, num_classes=0):
+    def __init__(self, root_dir, test=False, num_classes=0, album_augments = None, album_probability = 0.0):
         """
         ArcFace loader
         https://github.com/deepinsight/insightface/blob/master/recognition/arcface_torch/dataset.py
@@ -42,51 +43,17 @@ class MXFaceDataset(Dataset):
                 ]
             )
         else:
-            # №1
-            # self.alb_transform = A.Compose(
-            #     [A.Blur(blur_limit=4, p = 0.5),
-            #      A.Blur(blur_limit=7, p = 0.5),
-            #      A.Blur(blur_limit=13, p = 0.5)],
-            #     p = 0.25
-            # )
+            print(album_augments)
+            if album_augments is not None:
 
-            # №2
-            # self.alb_transform = A.Compose(
-            #     [A.RandomFog(p = 0.5),
-            #      A.RandomGravel(p = 0.5),
-            #      A.RandomRain(p = 0.5),
-            #      A.RandomSnow(p = 0.5),
-            #      #A.Superpixels(p = 0.5)
-            #       ],
-            #     p = 0.25
-            # )
+                albument_transforms = [getattr(importlib.import_module(augmentation['class_path']), augmentation["aug_name"])(**augmentation["init_args"])  for augmentation in album_augments]
 
-            # №3
-            # self.alb_transform = A.Compose(
-            #     [A.MedianBlur(blur_limit = 11, p = 0.5),
-            #      A.MotionBlur(blur_limit = 13, p = 0.5),
-            #      A.GlassBlur(p = 0.5),
-            #      A.ZoomBlur(p = 0.5)
-            #       ],
-            #     p = 0.75
-            # )
-
-            # №4
-            # self.alb_transform = A.Compose(
-            #     [A.GridDistortion(num_steps = 5, distort_limit = 0.3, p = 0.5),
-            #      A.GridDistortion(num_steps = 10, distort_limit = 0.5, p = 0.5),
-            #      A.GridDistortion(num_steps = 50, distort_limit = 1.0, p = 0.5)
-            #       ],
-            #     p = 0.75
-            # )
-
-            self.alb_transform = A.Compose(
-                [A.PixelDropout(dropout_prob=0.2, p = 0.5),
-                 A.PixelDropout(dropout_prob=0.4, p = 0.5),
-                 A.PixelDropout(dropout_prob=0.7, p = 0.5)
-                  ],
-                p = 0.5
-            )
+                self.alb_transform = A.Compose(
+                    albument_transforms,
+                    p = album_probability
+                )
+            else:
+                self.alb_transform = A.NoOp() #identity transform
 
             self.transform = v2.Compose(
                 [

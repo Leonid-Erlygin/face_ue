@@ -41,9 +41,9 @@ far_list:
 verification_metrics:
 - _target_: evaluation.metrics.TarFar
   far_range:
-  - 1.0e-05
-  - 0.0001
-  - 1.0e-05
+  - -5
+  - -0.5
+  - 0.1
   display_fars:
   - 1.0e-05
   - 0.0001
@@ -53,9 +53,9 @@ verification_uncertainty_metrics:
   metric_to_monitor:
     _target_: evaluation.metrics.TarFar
     far_range:
-    - 1.0e-05
-    - 0.0001
-    - 1.0e-05
+    - -5
+    - -0.5
+    - 0.1
     display_fars:
     - 1.0e-05
     - 0.0001
