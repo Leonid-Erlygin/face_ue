@@ -6,7 +6,6 @@ from omegaconf import OmegaConf
 
 
 def compute_best_values(table, metric_order):
-    # assume that high values are the best
     numerics = ["int16", "int32", "int64", "float16", "float32", "float64"]
 
     newdf = table.select_dtypes(include=numerics)
@@ -30,7 +29,7 @@ def create_table_head(result_latex_code, caption, table_lable, cfg):
     else:
         result_latex_code += "\\begin{table}\n"
     if cfg.use_scriptsize:
-        result_latex_code += "\\footnotesize\n"
+        result_latex_code += "\\scriptsize\n"
     # result_latex_code += "\\caption{" + caption + "}\n"
     # result_latex_code += "\\label{" + table_lable + "}\n"
     if cfg.use_adjustbox:
@@ -122,6 +121,8 @@ def run(cfg):
         )
     else:
         caption = cfg.caption
+    if "{dataset}" in cfg.metric_table_path:
+        cfg.metric_table_path = cfg.metric_table_path.format(dataset=cfg.dataset)
     cfg.used_columns = OmegaConf.to_container(cfg.used_columns_dict)[cfg.task][
         cfg.dataset
     ]

@@ -5,5 +5,4 @@
 # from distance_functions.open_set_identification.tcmnn import TcmNN
 
 
-
-#from distance_functions.open_set_identification.svm import SVM
+# from distance_functions.open_set_identification.svm import SVM

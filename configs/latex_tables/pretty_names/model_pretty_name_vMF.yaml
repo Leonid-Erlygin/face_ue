@@ -7,8 +7,8 @@
 
 $u_{SCF}$: "$u_{\\text{SCF}}$"
 $u_{vMF}$: "$u_{\\text{vMF}}$"
-$u_{power}$: "$u_{\\text{power}}$"
+$u_{power}$: "$u_{\\text{power}}$ (our)"
 $u_{baseline}$: "$u_{\\text{baseline}}$"
 $u_{vMF} + u_{SCF}$: "$u_{\\text{vMF}}+u_{\\text{SCF}}$"
-$u_{power} + u_{SCF}$: "$u_{\\text{power}}+u_{\\text{SCF}}$"
+$u_{power} + u_{SCF}$: "$u_{\\text{power}}+u_{\\text{SCF}}$ (our)"
 $u_{baseline} + u_{SCF}$: "$u_{\\text{baseline}}+u_{\\text{SCF}}$"

@@ -13,56 +13,53 @@ defaults:
 
 # dataset: survFace
 dataset: IJBC
+# dataset: IJBB
+# dataset: whale
 #task: open_set_identification
 task: filter
 #task: verification
 #task: closed_set_identification
 # CHANGE
-metric_table_path: /app/experiments/paper/filter_table/${dataset}/open_set_identification/tabels/f1_class_aucs_pretty.csv
+metric_table_path: outputs/experiments/paper_v1_tables_power_vmf/open_set_identification/{dataset}/filter_tabels/f1_class_prr_filtering.csv
 
 caption: >
-  Area under $F_1$ filtering curve on {dataset_name}.
+  Prediction Rejection Ration (PRR) of $F_1$ filtering curve on {dataset_name} dataset.
   
 fix_table: False
 table_lable: "tab:${task}_${dataset}"
-round_num: 4
+round_num: 3
 use_scriptsize: True
 use_adjustbox: False
 
 used_columns: []
 used_columns_dict:
   filter:
-    lfw:
+    whale:
       [
         "models",
-        #"FAR=0.005",
-        "FAR=0.01",
-        "FAR=0.05",
+        #"FAR=0.01",
+        #"FAR=0.05",
         "FAR=0.1",
+        "FAR=0.2",
+        #"FAR=0.25",
+        "FAR=0.3",
       ]
     IJBB:
       [
         "models",
-        #"FAR=0.005",
-        "FAR=0.01",
-        "FAR=0.05",
+        #"FAR=0.01",
+        #"FAR=0.05",
         "FAR=0.1",
+        "FAR=0.2",
+        #"FAR=0.25",
+        "FAR=0.3",
       ]
     IJBC:
       [
         "models",
-        #"FAR=0.005",
         "FAR=0.01",
         "FAR=0.05",
         "FAR=0.1",
-      ]
-    survFace:
-      [
-        "models",
-        "false_ident_num",
-        "dir",
-        "far",
-        "f1",
       ]
   open_set_identification:
     survFace:

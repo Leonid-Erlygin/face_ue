@@ -2,7 +2,7 @@ hydra:
   run:
     dir: ${exp_dir}
 
-exp_dir: outputs/experiments/simple_mc_probe_scale_change_T_new_mentrics_0.05_far
+exp_dir: outputs/experiments/paper_v1_tables
 use_two_galleries: False
 recompute_template_pooling: True
 metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
@@ -17,12 +17,14 @@ test_datasets:
   #   dataset_name: IJBB
   #   dataset_path: /app/datasets/arcface_ijb/IJBB
 
-  - _target_: evaluation.test_datasets.FaceRecogntioniDataset
-    dataset_name: IJBC
-    dataset_path: /app/datasets/arcface_ijb/IJBC
   # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
-  #   dataset_name: whale
-  #   dataset_path: /app/datasets/whale
+  #   dataset_name: IJBC
+  #   dataset_path: /app/datasets/arcface_ijb/IJBC
+
+  - _target_: evaluation.test_datasets.FaceRecogntioniDataset
+    dataset_name: whale
+    dataset_path: /app/datasets/whale
+
   # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
   #   dataset_name: lfw
   #   dataset_path: /app/datasets/lfw_ident
@@ -48,7 +50,7 @@ open_set_identification_metrics:
   - _target_: evaluation.metrics.DirFar
 
 
-fractions: [0, 0.1, 20]
+fractions: [0, 0.05, 20]
 
 open_set_identification_uncertainty_metrics:
   - _target_: evaluation.uncertainty_metrics.DisposeBasedOnUnc
@@ -67,25 +69,30 @@ open_set_identification_uncertainty_metrics:
       _target_: evaluation.metrics.F1_classic
 
 default_beta: 0.5
-far_list: [0.05] #
+far_list: [0.01, 0.05, 0.1, 0.2, 0.25, 0.3] #
 
-
-# calibration_set:
-#   _target_: evaluation.test_datasets.FaceRecogntioniDataset
-#   dataset_name: whale_val
-#   dataset_path: /app/datasets/whale_val
 
 calibration_set:
   _target_: evaluation.test_datasets.FaceRecogntioniDataset
-  dataset_name: ms1m
-  dataset_path: /app/datasets/ms1m_ident
+  dataset_name: whale_val
+  dataset_path: /app/datasets/whale_val
+
+# calibration_set:
+#   _target_: evaluation.test_datasets.FaceRecogntioniDataset
+#   dataset_name: ms1m
+#   dataset_path: /app/datasets/ms1m_ident
+
+# calibration_set:
+#   _target_: evaluation.test_datasets.FaceRecogntioniDataset
+#   dataset_name: IJBB
+#   dataset_path: /app/datasets/arcface_ijb/IJBB
 
 # calibration_set:
 #   _target_: evaluation.test_datasets.FaceRecogntioniDataset
 #   dataset_name: IJBC
 #   dataset_path: /app/datasets/arcface_ijb/IJBC
 
-display_oracle_curve: True
+display_oracle_curve: False
 open_set_identification_methods:
 
   - embeddings: scf
@@ -143,13 +150,13 @@ open_set_identification_methods:
       aggregation: sum
       T: 3
       T_data_unc: 1
-    pretty_name: "$u_{power}$ (our)"
+    pretty_name: "$u_{power}$"
 
   - embeddings: scf
     gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault  #PoolingConcentration, PoolingDefault
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
     probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
     use_detector_score: False
     recognition_method:
       _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
@@ -161,22 +168,20 @@ open_set_identification_methods:
         _target_: evaluation.open_set_methods.uncertainty_functions.BernoulliVariance
       alpha: 0.5
       calibration_set: ${calibration_set}
-    pretty_name: "$u_{baseline}$ + $u_{SCF}$"
+    pretty_name: "$u_{baseline} + u_{SCF}$"
 
 
   - embeddings: scf
     gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault  #PoolingConcentration, PoolingDefault
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
     probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault #PoolingProb
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
     use_detector_score: False
     recognition_method:
-      _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
-      M: 0
-      gallery_prior: power
-      emb_unc_model: vMF
-      beta: 0.5
-      gallery_kappa: 654
+      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
+      distance_function: 
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
+      class_model: power
       far: ${far_list}
       beta: ${default_beta}
       uncertainty_type: maxprob
@@ -187,7 +192,7 @@ open_set_identification_methods:
       calibrate_unc: True
       calibrate_gallery_unc: True
       calibration_set: ${calibration_set}
-    pretty_name: "$u_{power} + u_{SCF}$ (our)"
+    pretty_name: "$u_{power} + u_{SCF}$"
 
 
   # - embeddings: scf

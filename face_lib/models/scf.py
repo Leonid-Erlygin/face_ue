@@ -71,8 +71,10 @@ class SphereConfidenceFace(LightningModule):
         self.permute_batch = permute_batch
 
     def forward(self, x):
+        self.backbone.backbone.eval()
         backbone_outputs = self.backbone(x)
         log_kappa = self.head(backbone_outputs["bottleneck_feature"])
+
         return backbone_outputs["feature"], log_kappa
 
     def training_step(self, batch):
@@ -184,7 +186,7 @@ class SphereConfidenceFaceV2(LightningModule):
         self.backbone.backbone.eval()
 
         feature, log_kappa = self(images)
-    
+
         kappa = torch.exp(log_kappa)
         wc = self.softmax_weights[labels, :]
         losses, l1, l2, l3, cos = self.scf_loss(feature, kappa, wc)
@@ -220,7 +222,6 @@ class SphereConfidenceFaceV2(LightningModule):
             },
         }
 
-    
     # Trying 2 optimizers - need to rewrite training step
     # def configure_optimizers(self):
     #     optimizer_kappa = getattr(
@@ -260,7 +261,6 @@ class SphereConfidenceFaceV2(LightningModule):
     #         },
     #     }
     #     )
-    
 
     def predict_step(self, batch, batch_idx):
         images_batch = batch
