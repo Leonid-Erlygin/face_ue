@@ -7,7 +7,7 @@ docker run \
  --env WANDB_API_KEY=fc366b0c6dc3150de383b028451e1cfa35009932 \
  --rm \
  --init \
- -v /home/i.kolesnikov/face_ue:/app \
+ -v /home/l.erlygin/face-evaluation:/app \
  --gpus '"device=1"' \
  -w="/app" \
  kolesnikov-face \

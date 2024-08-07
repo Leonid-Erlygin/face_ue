@@ -16,7 +16,7 @@ trainer:
       dir: null
       id: null
       anonymous: null
-      project: face-ue
+      project: scf-uniform-batch
       log_model: false
       experiment: null
       prefix: ''
@@ -40,7 +40,6 @@ trainer:
       monitor_gym: null
       save_code: null
       fork_from: null
-      resume_from: null
       settings: null
   callbacks:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
