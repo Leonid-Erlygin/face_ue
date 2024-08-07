@@ -68,13 +68,21 @@ class MXFaceDataset(Dataset):
             #     p = 0.75
             # )
 
+            # №4
+            # self.alb_transform = A.Compose(
+            #     [A.GridDistortion(num_steps = 5, distort_limit = 0.3, p = 0.5),
+            #      A.GridDistortion(num_steps = 10, distort_limit = 0.5, p = 0.5),
+            #      A.GridDistortion(num_steps = 50, distort_limit = 1.0, p = 0.5)
+            #       ],
+            #     p = 0.75
+            # )
+
             self.alb_transform = A.Compose(
-                [
-                    A.GridDistortion(num_steps=5, distort_limit=0.3, p=0.5),
-                    A.GridDistortion(num_steps=10, distort_limit=0.5, p=0.5),
-                    A.GridDistortion(num_steps=50, distort_limit=1.0, p=0.5),
-                ],
-                p=0.75,
+                [A.PixelDropout(dropout_prob=0.2, p = 0.5),
+                 A.PixelDropout(dropout_prob=0.4, p = 0.5),
+                 A.PixelDropout(dropout_prob=0.7, p = 0.5)
+                  ],
+                p = 0.5
             )
 
             self.transform = v2.Compose(
