@@ -116,10 +116,14 @@ class SphereConfidenceFace(LightningModule):
         }
 
     def predict_step(self, batch, batch_idx):
-        images_batch = batch
+        if len(batch) == 2:
+            # ms1m pred
+            images_batch, labels = batch
+            return self(images_batch)
+        else:
+            images_batch = batch
         if self.permute_batch:
             images_batch = images_batch.permute(0, 3, 1, 2)
-
         return self(images_batch)
 
     def validation_step(self, batch, batch_idx):

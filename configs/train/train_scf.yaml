@@ -1,9 +1,9 @@
 seed_everything: 777
 trainer:
-  logger:
-    class_path: pytorch_lightning.loggers.WandbLogger
-    init_args:
-      project: "scf-uniform-batch"
+#   logger:
+#     class_path: pytorch_lightning.loggers.WandbLogger
+#     init_args:
+#       project: "scf-uniform-batch"
   log_every_n_steps: 3
   default_root_dir: outputs/scf_train
   enable_checkpointing: true
@@ -19,7 +19,7 @@ trainer:
   - class_path: face_lib.models.scf.Prediction_writer
     init_args: 
       output_dir: /app/cache/features
-      file_name: scf_rand_effects_album_75%_embs_IJBC # scf_embs_inter  #scf_embs_lfw #scf_embs_ms1m_3531-classes_0-seed_30-min-class-size
+      file_name: ms1m_emb
       write_interval: epoch
   max_epochs: 16
   accelerator: gpu
@@ -95,11 +95,15 @@ data:
                 dataset_name: IJBC
                 norm_image: True
         predict_dataset:
-            class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+            class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
             init_args:
-                dataset_path: /app/datasets/arcface_ijb/IJBC
-                dataset_name: IJBC
-                norm_image: True
+                root_dir: /app/datasets/ms1m/
+        # predict_dataset:
+        #     class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+        #     init_args:
+        #         dataset_path: /app/datasets/arcface_ijb/IJBC
+        #         dataset_name: IJBC
+        #         norm_image: True
         batch_size: 400
         num_workers: 36
 

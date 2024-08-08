@@ -25,7 +25,14 @@ import sys
 
 
 class MXFaceDataset(Dataset):
-    def __init__(self, root_dir, test=False, num_classes=0, album_augments = None, album_probability = 0.0):
+    def __init__(
+        self,
+        root_dir,
+        test=False,
+        num_classes=0,
+        album_augments=None,
+        album_probability=0.0,
+    ):
         """
         ArcFace loader
         https://github.com/deepinsight/insightface/blob/master/recognition/arcface_torch/dataset.py
@@ -42,59 +49,25 @@ class MXFaceDataset(Dataset):
                 ]
             )
         else:
-            print(album_augments)
             if album_augments is not None:
 
-                albument_transforms = [getattr(importlib.import_module(augmentation['class_path']), augmentation["aug_name"])(**augmentation["init_args"])  for augmentation in album_augments]
+                albument_transforms = [
+                    getattr(
+                        importlib.import_module(augmentation["class_path"]),
+                        augmentation["aug_name"],
+                    )(**augmentation["init_args"])
+                    for augmentation in album_augments
+                ]
 
-                self.alb_transform = A.Compose(
-                    albument_transforms,
-                    p = album_probability
-                )
+                self.alb_transform = A.Compose(albument_transforms, p=album_probability)
             else:
-                self.alb_transform = A.NoOp() #identity transform
+                self.alb_transform = A.NoOp()  # identity transform
 
             self.transform = v2.Compose(
                 [
                     v2.ToPILImage(),
-                    # Old with default training
-                    # v2.RandomHorizontalFlip(),
-                    # Not working due to the argem
-                    # v2.RandomApply([
-                    #     v2.RandomChoice(
-                    #     transforms = [
-                    #         A.Blur(blur_limit=4, p = 1.0),
-                    #         A.Blur(blur_limit=7, p = 1.0),
-                    #         A.Blur(blur_limit=9, p = 1.0),
-                    #         A.Blur(blur_limit=11, p = 1.0),
-                    #         A.Blur(blur_limit=13, p = 1.0)
-                    #                 ],
-                    #                 p = [1/5 for i in range(5)])
-                    #                 ],
-                    #                p = 0.5
-                    # ),
                     v2.ToTensor(),
                     v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-                    # Old version for bach thesis
-                    # v2.RandomApply(
-                    #     [v2.RandomChoice(
-                    #         transforms = [
-                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(1.5, 1.5)),
-                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(2.3, 2.3)),
-                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(3.0, 3.0)),
-                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(4.0, 4.0)),
-                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(6.0, 6.0)),
-                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(10.0, 10.0)),
-                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(15.0, 15.0)),
-                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(20.0, 20.0))],
-                    #         p = [1/8 for _ in range(0, 8)]
-                    #     )],
-                    #     p=0.3,
-                    # ),
-                    # v2.RandomApply(
-                    #     torch.nn.ModuleList([v2.ElasticTransform(alpha=250.0)]), p=0.05
-                    # ),
-                    # v2.RandomApply(torch.nn.ModuleList([v2.AugMix()]), p=0.05),
                 ]
             )
 
