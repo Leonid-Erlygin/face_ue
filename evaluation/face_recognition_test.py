@@ -466,7 +466,7 @@ class Face_Fecognition_test:
     def run_model_test_verification(
         self,
     ):
-        scores = self.recognition_method(
+        scores, predicted_unc = self.recognition_method(
             self.template_pooled_emb,
             self.template_pooled_unc,
             self.template_ids,
@@ -475,7 +475,7 @@ class Face_Fecognition_test:
         )
 
         metrics = {}
-        for metric in self.recognition_metrics["verification"]:
+        for metric in self.recognition_metrics[self.task_type]:
             print(metric)
             metrics.update(
                 metric(
@@ -483,7 +483,17 @@ class Face_Fecognition_test:
                     labels=self.test_dataset.label,
                 )
             )
-        return metrics, 1, 1
+        unc_metrics = {}
+        # compute uncertainty metrics
+        for unc_metric in self.uncertainty_metrics[self.task_type]:
+            unc_metrics.update(
+                unc_metric(
+                    scores=scores,
+                    labels=self.test_dataset.label,
+                    predicted_unc=predicted_unc,
+                )
+            )
+        return metrics, unc_metrics, predicted_unc
 
     def run_model_test_closed_set_identification(self):
         (

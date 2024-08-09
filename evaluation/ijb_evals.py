@@ -206,6 +206,9 @@ def main(cfg):
             metric_values[(task_type, dataset_name)]["recognition"][
                 method_name
             ] = recognition_metric_values
+            metric_values[(task_type, dataset_name)]["uncertainty"][
+                method_name
+            ] = uncertainty_metric_values
         else:
             metric_values[(task_type, dataset_name)]["recognition"][
                 (method_name, far)
@@ -224,6 +227,22 @@ def main(cfg):
         # create output dir
         out_dir = Path(cfg.exp_dir) / str(task_type) / str(dataset_name)
         out_dir.mkdir(parents=True, exist_ok=True)
+
+        metric_names = []
+        model_names = []
+
+        for model_name, metric in metric_values[(task_type, dataset_name)][
+            "uncertainty"
+        ].items():
+            for key in metric:
+                if "unc_metric" in key:
+                    metric_names.append(key)
+                    model_names.append(model_name)
+            break
+        fractions = next(
+            iter(metric_values[(task_type, dataset_name)]["uncertainty"].items())
+        )[1]["fractions"]
+
         if task_type == "verification":
             names = []
             scores = []
@@ -238,27 +257,86 @@ def main(cfg):
                 dpi=300,
             )
             plt.close(fig)
+            # create rejection plots
+
+            for metric_name in metric_names:
+                scores = []
+                model_names = []
+                data_rows = []
+                for method_name, metrics in metric_values[(task_type, dataset_name)][
+                    "uncertainty"
+                ].items():
+                    if "random" in pretty_names[task_type][method_name]:
+                        random_area = metrics["fractions"][-1] * np.mean(
+                            metrics[metric_name]
+                        )
+                        far_to_random_oracle_areas[far][0] = random_area
+                        if cfg.display_oracle_curve is False:
+                            continue
+                    elif "oracle" in pretty_names[task_type][method_name]:
+                        oracle_area = metrics["fractions"][-1] * np.mean(
+                            metrics[metric_name]
+                        )
+                        far_to_random_oracle_areas[far][1] = oracle_area
+                        if cfg.display_oracle_curve is False:
+                            continue
+                    model_names.append(pretty_names[task_type][method_name])
+                    scores.append((metrics["fractions"], metrics[metric_name]))
+                    data_rows.append(
+                        [pretty_names[task_type][method_name], *metrics[metric_name]]
+                    )
+
+                metric_pretty_name = metric_pretty_names[metric_name.split(":")[-1]]
+                if isinstance(metric_pretty_name, str):
+                    metric_pretty_name = [metric_pretty_name]
+                metric_pretty_name = " ".join(metric_pretty_name)
+
+                auc_at_far_data_frames = []
+                aggr_filter_tables_dir = out_dir / "filter_tabels"
+                aggr_filter_tables_dir.mkdir(parents=True, exist_ok=True)
+
+                filter_plots_dir = out_dir / "filter_plots"
+                filter_tables_dir = out_dir / "filter_tabels"
+                filter_plots_dir.mkdir(parents=True, exist_ok=True)
+                filter_tables_dir.mkdir(parents=True, exist_ok=True)
+
+                fig, rejection_metric_values = plot_rejection_scores(
+                    scores=scores,
+                    names=model_names,
+                    y_label=f"{metric_pretty_name}",
+                    # random_area=far_to_random_oracle_areas[far][0],
+                    # oracle_area=far_to_random_oracle_areas[far][1],
+                )
+                fig.savefig(
+                    filter_plots_dir / f"{metric_name.split(':')[-1]}_filtering.png",
+                    dpi=300,
+                )
+                plt.close(fig)
+
+                # # save filter table
+                # rejection_df = pd.DataFrame(data_rows, columns=column_names)
+                # rejection_df.to_csv(
+                #     filter_tables_dir / f'{metric_name.split(":")[-1]}_filtering.csv'
+                # )
+                # # save auc table
+
+                # auc_at_far_data_frames.append(
+                #     pd.DataFrame(
+                #         {
+                #             "models": model_names,
+                #             f"AUCS": rejection_metric_values,
+                #         }
+                #     )
+                # )
+
             continue
 
         # create rejection plots
-        metric_names = []
-        model_names = []
 
-        for (model_name, far), metric in metric_values[(task_type, dataset_name)][
-            "uncertainty"
-        ].items():
-            for key in metric:
-                if "osr_unc_metric" in key:
-                    metric_names.append(key)
-                    model_names.append(model_name)
-            break
-        fractions = next(
-            iter(metric_values[(task_type, dataset_name)]["uncertainty"].items())
-        )[1]["fractions"]
-        fraction_data_rows = {frac: [] for frac in fractions}
-        fraction_column_names = ["models"] + [
-            metric_name.split(":")[-1] for metric_name in metric_names
-        ]
+        # fraction_data_rows = {frac: [] for frac in fractions}
+        # fraction_column_names = ["models"] + [
+        #     metric_name.split(":")[-1] for metric_name in metric_names
+        # ]
         column_names = ["models", *[str(np.round(frac, 4)) for frac in fractions]]
 
         for metric_name in metric_names:

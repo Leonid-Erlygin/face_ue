@@ -160,7 +160,7 @@ class SphereConfidenceFace(LightningModule):
         template_pooled_emb = pooled_data[0]
         template_pooled_unc = pooled_data[1]
         template_ids = np.unique(test_dataset.templates)
-        scores = self.recognition_method(
+        scores, unc = self.recognition_method(
             template_pooled_emb,
             template_pooled_unc,
             template_ids,
