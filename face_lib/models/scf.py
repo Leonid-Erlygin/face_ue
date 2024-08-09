@@ -1,4 +1,5 @@
 import torch
+
 from pytorch_lightning import LightningModule
 from pytorch_lightning.callbacks import BasePredictionWriter, Callback
 import importlib
@@ -58,6 +59,7 @@ class SphereConfidenceFace(LightningModule):
         self.head = head
         self.scf_loss = scf_loss
         self.softmax_weights = softmax_weights.softmax_weights
+
         self.optimizer_params = optimizer_params
         self.scheduler_params = scheduler_params
         self.permute_batch = permute_batch
@@ -179,6 +181,9 @@ class SphereConfidenceFace(LightningModule):
         for metric_name, value in metrics.items():
             if "TAR" in metric_name:
                 self.log(metric_name, value)
+
+
+###################
 
 
 class SphereConfidenceFaceV2(LightningModule):

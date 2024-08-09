@@ -1,9 +1,9 @@
 seed_everything: 777
 trainer:
-#   logger:
-#     class_path: pytorch_lightning.loggers.WandbLogger
-#     init_args:
-#       project: "scf-uniform-batch"
+  logger:
+    class_path: pytorch_lightning.loggers.WandbLogger
+    init_args:
+      project: "scf-uniform-batch"
   log_every_n_steps: 3
   default_root_dir: outputs/scf_train
   enable_checkpointing: true
@@ -33,7 +33,7 @@ model:
             init_args:
                 resnet_name: iresnet50_normalized
                 weights: /app/model_weights/backbone/ms1mv3_arcface_r50/backbone.pth
-                learnable: False #False
+                learnable: False
         head:
             class_path: face_lib.models.heads.SCFHead
             init_args:
@@ -98,18 +98,22 @@ data:
             class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
             init_args:
                 root_dir: /app/datasets/ms1m/
-        # predict_dataset:
-        #     class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+        # train_batch_sampler:
+        #     class_path: face_lib.dataset_classes.samplers.UniformBatchSampler
         #     init_args:
-        #         dataset_path: /app/datasets/arcface_ijb/IJBC
-        #         dataset_name: IJBC
-        #         norm_image: True
+        #         cosine_sim_path: /app/model_weights/ms1m_cache/cosine_sim.npy
+        #         batch_size: 400
         batch_size: 400
         num_workers: 36
 
 
 
-
+    # predict_dataset:
+    #     class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+    #     init_args:
+    #         dataset_path: /app/datasets/arcface_ijb/IJBC
+    #         dataset_name: IJBC
+    #         norm_image: True
 # predict_dataset:
 #     class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
 #     init_args: 

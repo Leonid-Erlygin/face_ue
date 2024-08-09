@@ -16,7 +16,7 @@ trainer:
       dir: null
       id: null
       anonymous: null
-      project: face-ue
+      project: scf-uniform-batch
       log_model: false
       experiment: null
       prefix: ''
@@ -40,12 +40,11 @@ trainer:
       monitor_gym: null
       save_code: null
       fork_from: null
-      resume_from: null
       settings: null
   callbacks:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args:
-      dirpath: outputs/scf_new_data/pixel_dropout/weights_pixel_drop_album_75%
+      dirpath: outputs/scf_uniform_batch/default_scf
       filename: null
       monitor: null
       verbose: false
@@ -65,7 +64,7 @@ trainer:
   - class_path: face_lib.models.scf.Prediction_writer
     init_args:
       output_dir: /app/cache/features
-      file_name: scf_rand_effects_album_75%_embs_IJBC
+      file_name: ms1m_emb
       write_interval: epoch
   fast_dev_run: false
   max_epochs: 16
@@ -99,7 +98,7 @@ trainer:
   sync_batchnorm: false
   reload_dataloaders_every_n_epochs: 0
   default_root_dir: outputs/scf_train
-ckpt_path: /app/outputs/scf_new_data/pixel_dropout/weights_pixel_drop_album_75%/epoch=11-step=174672_pretrained.ckpt
+ckpt_path: /app/model_weights/scf_base.ckpt
 model:
   class_path: face_lib.models.SphereConfidenceFace
   init_args:
@@ -171,28 +170,26 @@ data:
         root_dir: /app/datasets/ms1m/
         test: false
         num_classes: 0
-        album_augments:
-        - class_path: albumentations
-          aug_name: PixelDropout
-          init_args:
-            dropout_prob: 0.2
-            p: 0.5
-        - class_path: albumentations
-          aug_name: PixelDropout
-          init_args:
-            dropout_prob: 0.4
-            p: 0.5
-        - class_path: albumentations
-          aug_name: PixelDropout
-          init_args:
-            dropout_prob: 0.7
-            p: 0.5
-        album_probability: 0.75
-    predict_dataset:
+        album_augments: null
+        album_probability: 0.0
+    validation_dataset:
       class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
       init_args:
         dataset_path: /app/datasets/arcface_ijb/IJBC
         dataset_name: IJBC
         norm_image: true
+    predict_dataset:
+      class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
+      init_args:
+        root_dir: /app/datasets/ms1m/
+        test: false
+        num_classes: 0
+        album_augments: null
+        album_probability: 0.0
     batch_size: 400
     num_workers: 36
+    train_batch_sampler:
+      class_path: face_lib.dataset_classes.samplers.UniformBatchSampler
+      init_args:
+        cosine_sim_path: /app/model_weights/ms1m_cache/cosine_sim.npy
+        batch_size: 400

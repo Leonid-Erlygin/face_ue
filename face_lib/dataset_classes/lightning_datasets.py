@@ -1,4 +1,5 @@
 import torch
+from torch.utils.data.sampler import Sampler
 
 import cv2
 
@@ -14,14 +15,6 @@ import numpy as np
 import os
 import pandas as pd
 import importlib
-
-
-import sys
-
-
-# sys.path.append("/app/sandbox/happy_whale/kaggle-happywhale-1st-place")
-# from config.config import load_config
-# from src.dataset import load_df
 
 
 class MXFaceDataset(Dataset):
@@ -239,6 +232,77 @@ class MXFaceDataset(Dataset):
         return len(self.imgidx)
 
 
+class UncertaintyDataModule(pl.LightningDataModule):
+    def __init__(
+        self,
+        train_dataset: Dataset,
+        validation_dataset: Dataset,
+        predict_dataset: Dataset,
+        batch_size: int,
+        num_workers: int,
+        train_batch_sampler: Sampler = None,
+    ):
+        super().__init__()
+        self.train_dataset = train_dataset
+        self.validation_dataset = validation_dataset
+        self.predict_dataset = predict_dataset
+        self.train_batch_sampler = train_batch_sampler
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+
+    def prepare_data(self):
+        pass
+
+    def setup(self, stage: str):
+        # Assign train/predict datasets for use in dataloaders
+        if stage == "fit":
+            pass
+            # self.ms1m_dataset = MXFaceDataset(self.data_train_dir)
+            self.train_dataset = torch.utils.data.Subset(
+                self.train_dataset,
+                np.random.choice(len(self.train_dataset), 1000, replace=False),
+            )
+
+        if stage == "predict":
+            pass
+            # self.ijb_dataset = IJB_aligned_images(self.data_predict_dir, self.data_predict_subset)
+            # self.predict_dataset = torch.utils.data.Subset(self.predict_dataset, np.random.choice(len(self.predict_dataset), 5000, replace=False))
+
+    def train_dataloader(self):
+        if self.train_batch_sampler is not None:
+            return DataLoader(
+                self.train_dataset,
+                batch_sampler=self.train_batch_sampler,
+                num_workers=self.num_workers,
+            )
+        else:
+            return DataLoader(
+                self.train_dataset,
+                batch_size=self.batch_size,
+                shuffle=True,
+                drop_last=True,
+                num_workers=self.num_workers,
+            )
+
+    def val_dataloader(self):
+        return DataLoader(
+            self.validation_dataset,
+            batch_size=self.batch_size,
+            drop_last=False,
+            shuffle=False,
+            num_workers=self.num_workers,
+        )
+
+    def predict_dataloader(self):
+        return DataLoader(
+            self.predict_dataset,
+            batch_size=self.batch_size,
+            drop_last=False,
+            shuffle=False,
+            num_workers=self.num_workers,
+        )
+
+
 class WhaleDataset(Dataset):
     def __init__(self, config_path: str, image_dir: str, test: bool = False):
         super().__init__()
@@ -329,75 +393,6 @@ class WhaleDataset(Dataset):
             return augmented
         else:
             return augmented, self.ids[i]
-
-    # {
-    #         "original_index": self.index[i],
-    #         "image": augmented,
-    #         "label": self.ids[i],
-    #         "label_species": self.species[i],
-    #     }
-
-
-class UncertaintyDataModule(pl.LightningDataModule):
-    def __init__(
-        self,
-        train_dataset: Dataset,
-        validation_dataset: Dataset,
-        predict_dataset: Dataset,
-        batch_size: int,
-        num_workers: int,
-    ):
-        super().__init__()
-        self.train_dataset = train_dataset
-        self.validation_dataset = validation_dataset
-        self.predict_dataset = predict_dataset
-        self.batch_size = batch_size
-        self.num_workers = num_workers
-
-    def prepare_data(self):
-        pass
-
-    def setup(self, stage: str):
-        # Assign train/predict datasets for use in dataloaders
-        if stage == "fit":
-            pass
-            # self.ms1m_dataset = MXFaceDataset(self.data_train_dir)
-            self.train_dataset = torch.utils.data.Subset(
-                self.train_dataset,
-                np.random.choice(len(self.train_dataset), 1000, replace=False),
-            )
-
-        if stage == "predict":
-            pass
-            # self.ijb_dataset = IJB_aligned_images(self.data_predict_dir, self.data_predict_subset)
-            # self.predict_dataset = torch.utils.data.Subset(self.predict_dataset, np.random.choice(len(self.predict_dataset), 5000, replace=False))
-
-    def train_dataloader(self):
-        return DataLoader(
-            self.train_dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            drop_last=True,
-            num_workers=self.num_workers,
-        )
-
-    def val_dataloader(self):
-        return DataLoader(
-            self.validation_dataset,
-            batch_size=self.batch_size,
-            drop_last=False,
-            shuffle=False,
-            num_workers=self.num_workers,
-        )
-
-    def predict_dataloader(self):
-        return DataLoader(
-            self.predict_dataset,
-            batch_size=self.batch_size,
-            drop_last=False,
-            shuffle=False,
-            num_workers=self.num_workers,
-        )
 
 
 if __name__ == "__main__":

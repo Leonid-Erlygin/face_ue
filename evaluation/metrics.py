@@ -390,7 +390,7 @@ class TarFar:
         new_metrics = {}
         f = interpolate.interp1d(metrics["fars"], metrics["recalls"])
         for far in self.display_fars:
-            new_metrics[f"TAR@FAR={Decimal(far)}"] = f([far])[0]
+            new_metrics[f"TAR@FAR={Decimal(str(far))}"] = f([far])[0]
         metrics.update(new_metrics)
         return metrics
 

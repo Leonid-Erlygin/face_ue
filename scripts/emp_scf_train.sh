@@ -8,7 +8,7 @@ docker run \
  --rm \
  --init \
  -v /home/l.erlygin/face_ue:/app \
- --gpus '"device=1"' \
+ --gpus '"device=0"' \
  -w="/app" \
  face-eval \
  python trainers/train.py fit \
