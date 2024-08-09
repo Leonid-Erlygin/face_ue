@@ -188,4 +188,8 @@ data:
         album_probability: 0.0
     batch_size: 400
     num_workers: 36
-    train_batch_sampler: null
+    train_batch_sampler:
+      class_path: face_lib.dataset_classes.samplers.UniformBatchSampler
+      init_args:
+        cosine_sim_path: /app/model_weights/ms1m_cache/cosine_sim.npy
+        batch_size: 400
