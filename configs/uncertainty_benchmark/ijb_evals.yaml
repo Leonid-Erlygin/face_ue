@@ -91,7 +91,7 @@ verification_methods:
 
   - embeddings: scf_vanilla
     gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingConcentration
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
     use_detector_score: False
     recognition_method:
       _target_: evaluation.verification_methods.distance_based_verification.VerifEval
@@ -101,7 +101,7 @@ verification_methods:
 
   - embeddings: scf_blur_only_album_75%
     gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingConcentration
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
     use_detector_score: False
     recognition_method:
       _target_: evaluation.verification_methods.distance_based_verification.VerifEval
@@ -111,7 +111,7 @@ verification_methods:
 
   - embeddings: scf_rand_effects_album_75%
     gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingConcentration
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
     use_detector_score: False
     recognition_method:
       _target_: evaluation.verification_methods.distance_based_verification.VerifEval

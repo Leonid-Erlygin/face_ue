@@ -29,21 +29,18 @@ class UniformBatchSampler(Sampler):
 
     def __iter__(self):
         # implement logic of sampling here
-        sorted_batch_ids = self.rng.choice(
-            self.ids,
-            self.batch_size,
-            p=self.sorted_id_scores,
-        )
-        uniform_batch_ids = self.sorted_id_map[sorted_batch_ids]
-        yield uniform_batch_ids
+        for _ in range(int(len(self.sorted_id_scores) // self.batch_size)):
+            sorted_batch_ids = self.rng.choice(
+                self.ids,
+                self.batch_size,
+                p=self.sorted_id_scores,
+            )
+            uniform_batch_ids = self.sorted_id_map[sorted_batch_ids]
+            yield uniform_batch_ids
         # uniform_batch_cosine = cosine_sim[uniform_batch_ids]
         # batch = []
         # for i, item in enumerate(self.data):
         #     batch.append(i)
 
-        #     if len(batch) == self.batch_size:
-        #         yield batch
-        #         batch = []
-
     def __len__(self):
-        return len(self.sorted_id_scores)
+        return int(len(self.sorted_id_scores) // self.batch_size)
