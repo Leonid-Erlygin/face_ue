@@ -43,7 +43,7 @@ class MXFaceDataset(Dataset):
                 ]
             )
         else:
-            print(album_augments)
+            
             if album_augments is not None:
 
                 albument_transforms = [getattr(importlib.import_module(augmentation['class_path']), augmentation["aug_name"])(**augmentation["init_args"])  for augmentation in album_augments]
@@ -53,7 +53,7 @@ class MXFaceDataset(Dataset):
                     p = album_probability
                 )
             else:
-                self.alb_transform = A.NoOp() #identity transform
+                self.alb_transform = A.NoOp(p = album_probability) #identity transform
 
             self.transform = v2.Compose(
                 [

@@ -45,7 +45,7 @@ trainer:
   callbacks:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args:
-      dirpath: outputs/scf_new_data/pixel_dropout/weights_pixel_drop_album_75%
+      dirpath: outputs/scf_new_data/focal_loss/weights_scf_focal_minmax_gamma2
       filename: null
       monitor: null
       verbose: false
@@ -99,7 +99,7 @@ trainer:
   sync_batchnorm: false
   reload_dataloaders_every_n_epochs: 0
   default_root_dir: outputs/scf_train
-ckpt_path: /app/outputs/scf_new_data/pixel_dropout/weights_pixel_drop_album_75%/epoch=11-step=174672_pretrained.ckpt
+ckpt_path: /app/outputs/scf_new_data/focal_loss/weights_scf_focal_minmax_gamma2/epoch=11-step=174672_pretrained.ckpt
 model:
   class_path: face_lib.models.SphereConfidenceFace
   init_args:
@@ -115,10 +115,11 @@ model:
         convf_dim: 25088
         latent_vector_size: 2048
     scf_loss:
-      class_path: face_lib.models.losses.KLDiracVMF
+      class_path: face_lib.models.losses.KLDiracVMF_Focal
       init_args:
         z_dim: 512
         radius: 64
+        gamma: 2
     optimizer_params:
       optimizer_path: torch.optim
       optimizer_name: AdamW
@@ -147,23 +148,8 @@ data:
         root_dir: /app/datasets/ms1m/
         test: false
         num_classes: 0
-        album_augments:
-        - class_path: albumentations
-          aug_name: PixelDropout
-          init_args:
-            dropout_prob: 0.2
-            p: 0.5
-        - class_path: albumentations
-          aug_name: PixelDropout
-          init_args:
-            dropout_prob: 0.4
-            p: 0.5
-        - class_path: albumentations
-          aug_name: PixelDropout
-          init_args:
-            dropout_prob: 0.7
-            p: 0.5
-        album_probability: 0.75
+        album_augments: null
+        album_probability: 0.0
     predict_dataset:
       class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
       init_args:
