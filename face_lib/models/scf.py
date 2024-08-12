@@ -1,10 +1,13 @@
 import torch
+
 from pytorch_lightning import LightningModule
-from pytorch_lightning.callbacks import BasePredictionWriter
+from pytorch_lightning.callbacks import BasePredictionWriter, Callback
 import importlib
 import pickle
+from decimal import Decimal
 from pathlib import Path
 import numpy as np
+from evaluation.ijb_evals import instantiate_list
 
 
 class Prediction_writer(BasePredictionWriter):
@@ -45,30 +48,27 @@ class SphereConfidenceFace(LightningModule):
         optimizer_params,
         scheduler_params,
         permute_batch: bool,
-        softmax_weights: torch.nn.Module = None,
+        softmax_weights: torch.nn.Module,
+        validation_dataset,
+        template_pooling_strategy,
+        recognition_method,
+        verification_metrics,
     ):
         super().__init__()
         self.backbone = backbone
         self.head = head
         self.scf_loss = scf_loss
-        if softmax_weights is None:
-            # assume that weights are stored in the backbone
-            self.softmax_weights = self.backbone.backbone.head_id.weight.data
-            delattr(self.backbone.backbone, "head_id")
-            softmax_weights_norm = torch.norm(
-                self.softmax_weights, dim=1, keepdim=True
-            )  # [N, 1]
-            self.softmax_weights = (
-                self.softmax_weights / softmax_weights_norm * scf_loss.radius
-            )  # $ w_c \in rS^{d-1} $
-            self.softmax_weights = torch.nn.Parameter(
-                self.softmax_weights, requires_grad=False
-            )
-        else:
-            self.softmax_weights = softmax_weights.softmax_weights
+        self.softmax_weights = softmax_weights.softmax_weights
+
         self.optimizer_params = optimizer_params
         self.scheduler_params = scheduler_params
         self.permute_batch = permute_batch
+        self.validation_step_outputs = []
+        self.validation_dataset = validation_dataset
+        self.template_pooling_strategy = template_pooling_strategy
+        self.recognition_method = recognition_method
+        self.verification_metrics = instantiate_list(verification_metrics)
+        print(self.verification_metrics)
 
     def forward(self, x):
         self.backbone.backbone.eval()
@@ -105,7 +105,7 @@ class SphereConfidenceFace(LightningModule):
         )(
             [*self.head.parameters()],
             **self.optimizer_params["params"],
-        )  #!!! добавил бэкбон
+        )
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
@@ -118,23 +118,72 @@ class SphereConfidenceFace(LightningModule):
         }
 
     def predict_step(self, batch, batch_idx):
+        if len(batch) == 2:
+            # ms1m pred
+            images_batch, labels = batch
+            return self(images_batch)
+        else:
+            images_batch = batch
+        if self.permute_batch:
+            images_batch = images_batch.permute(0, 3, 1, 2)
+        return self(images_batch)
+
+    def validation_step(self, batch, batch_idx):
         images_batch = batch
         if self.permute_batch:
             images_batch = images_batch.permute(0, 3, 1, 2)
+        pred = self(images_batch)
+        self.validation_step_outputs.append(pred)
+        return pred
 
-        return self(images_batch)
+    def on_validation_epoch_end(self):
+        image_input_feats = (
+            torch.cat([batch[0] for batch in self.validation_step_outputs], axis=0)
+            .cpu()
+            .numpy()
+        )
+        unc = (
+            torch.cat([batch[1] for batch in self.validation_step_outputs], axis=0)
+            .cpu()
+            .numpy()
+        )
+        unc = np.exp(unc)
+        self.validation_step_outputs.clear()
 
-    # def validation_step(self, batch, batch_idx):
-    #     self._shared_eval(batch, batch_idx, "val")
+        test_dataset = self.validation_dataset
+        pooled_data = self.template_pooling_strategy(
+            image_input_feats,
+            unc,
+            test_dataset.templates,
+            test_dataset.medias,
+        )
+        template_pooled_emb = pooled_data[0]
+        template_pooled_unc = pooled_data[1]
+        template_ids = np.unique(test_dataset.templates)
+        scores, unc = self.recognition_method(
+            template_pooled_emb,
+            template_pooled_unc,
+            template_ids,
+            test_dataset.p1,
+            test_dataset.p2,
+        )
+        print(scores.shape)
+        metrics = {}
+        for metric in self.verification_metrics:
+            print(metric)
+            metrics.update(
+                metric(
+                    scores=scores,
+                    labels=test_dataset.label,
+                )
+            )
+        print(metrics)
+        for metric_name, value in metrics.items():
+            if "TAR" in metric_name:
+                self.log(metric_name, value)
 
-    # def test_step(self, batch, batch_idx):
-    #     self._shared_eval(batch, batch_idx, "test")
 
-    # def _shared_eval(self, batch, batch_idx, prefix):
-    #     x, _ = batch
-    #     x_hat = self.auto_encoder(x)
-    #     loss = self.metric(x, x_hat)
-    #     self.log(f"{prefix}_loss", loss)
+###################
 
 
 class SphereConfidenceFaceV2(LightningModule):

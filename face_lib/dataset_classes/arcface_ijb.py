@@ -29,16 +29,16 @@ class IJB_aligned_images(Dataset):
                 transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
             ]
         )
-        # (
-        #     templates,
-        #     medias,
-        #     p1,
-        #     p2,
-        #     label,
-        #     self.img_names,
-        #     self.landmarks,
-        #     face_scores,
-        # ) = extract_meta_data(dataset_path, dataset_name)
+        (
+            self.templates,
+            self.medias,
+            self.p1,
+            self.p2,
+            self.label,
+            self.img_names,
+            self.landmarks,
+            face_scores,
+        ) = extract_meta_data(dataset_path, dataset_name)
 
     def __getitem__(self, index):
         img = self.img_names[index]
@@ -46,13 +46,7 @@ class IJB_aligned_images(Dataset):
         img = face_align_landmark(cv2.imread(str(img)), landmark)
         if self.norm_image:
             sample = self.transform(img)
-        # img = (img - 127.5) * 0.0078125
-        # if self.norm_image:
-        #     img = (
-        #         img - np.array([0.5, 0.5, 0.5])[np.newaxis, np.newaxis, :]
-        #     ) / np.array([0.5, 0.5, 0.5])[np.newaxis, np.newaxis, :]
-
-        return sample  # img.astype("float32")
+        return sample
 
     def __len__(self):
         return len(self.img_names)

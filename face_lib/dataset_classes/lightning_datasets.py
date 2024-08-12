@@ -1,7 +1,6 @@
 import torch
+from torch.utils.data.sampler import Sampler
 
-# import albumentations as A
-# from albumentations.pytorch import ToTensorV2
 import cv2
 
 import albumentations as A
@@ -18,15 +17,15 @@ import pandas as pd
 import importlib
 
 
-import sys
-
-# sys.path.append("/app/sandbox/happy_whale/kaggle-happywhale-1st-place")
-# from config.config import load_config
-# from src.dataset import load_df
-
-
 class MXFaceDataset(Dataset):
-    def __init__(self, root_dir, test=False, num_classes=0, album_augments = None, album_probability = 0.0):
+    def __init__(
+        self,
+        root_dir,
+        test=False,
+        num_classes=0,
+        album_augments=None,
+        album_probability=0.0,
+    ):
         """
         ArcFace loader
         https://github.com/deepinsight/insightface/blob/master/recognition/arcface_torch/dataset.py
@@ -43,59 +42,25 @@ class MXFaceDataset(Dataset):
                 ]
             )
         else:
-            
             if album_augments is not None:
 
-                albument_transforms = [getattr(importlib.import_module(augmentation['class_path']), augmentation["aug_name"])(**augmentation["init_args"])  for augmentation in album_augments]
+                albument_transforms = [
+                    getattr(
+                        importlib.import_module(augmentation["class_path"]),
+                        augmentation["aug_name"],
+                    )(**augmentation["init_args"])
+                    for augmentation in album_augments
+                ]
 
-                self.alb_transform = A.Compose(
-                    albument_transforms,
-                    p = album_probability
-                )
+                self.alb_transform = A.Compose(albument_transforms, p=album_probability)
             else:
                 self.alb_transform = A.NoOp(p = album_probability) #identity transform
 
             self.transform = v2.Compose(
                 [
                     v2.ToPILImage(),
-                    # Old with default training
-                    # v2.RandomHorizontalFlip(),
-                    # Not working due to the argem
-                    # v2.RandomApply([
-                    #     v2.RandomChoice(
-                    #     transforms = [
-                    #         A.Blur(blur_limit=4, p = 1.0),
-                    #         A.Blur(blur_limit=7, p = 1.0),
-                    #         A.Blur(blur_limit=9, p = 1.0),
-                    #         A.Blur(blur_limit=11, p = 1.0),
-                    #         A.Blur(blur_limit=13, p = 1.0)
-                    #                 ],
-                    #                 p = [1/5 for i in range(5)])
-                    #                 ],
-                    #                p = 0.5
-                    # ),
                     v2.ToTensor(),
                     v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-                    # Old version for bach thesis
-                    # v2.RandomApply(
-                    #     [v2.RandomChoice(
-                    #         transforms = [
-                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(1.5, 1.5)),
-                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(2.3, 2.3)),
-                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(3.0, 3.0)),
-                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(4.0, 4.0)),
-                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(6.0, 6.0)),
-                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(10.0, 10.0)),
-                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(15.0, 15.0)),
-                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(20.0, 20.0))],
-                    #         p = [1/8 for _ in range(0, 8)]
-                    #     )],
-                    #     p=0.3,
-                    # ),
-                    # v2.RandomApply(
-                    #     torch.nn.ModuleList([v2.ElasticTransform(alpha=250.0)]), p=0.05
-                    # ),
-                    # v2.RandomApply(torch.nn.ModuleList([v2.AugMix()]), p=0.05),
                 ]
             )
 
@@ -267,6 +232,77 @@ class MXFaceDataset(Dataset):
         return len(self.imgidx)
 
 
+class UncertaintyDataModule(pl.LightningDataModule):
+    def __init__(
+        self,
+        train_dataset: Dataset,
+        validation_dataset: Dataset,
+        predict_dataset: Dataset,
+        batch_size: int,
+        num_workers: int,
+        train_batch_sampler: Sampler = None,
+    ):
+        super().__init__()
+        self.train_dataset = train_dataset
+        self.validation_dataset = validation_dataset
+        self.predict_dataset = predict_dataset
+        self.train_batch_sampler = train_batch_sampler
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+
+    def prepare_data(self):
+        pass
+
+    def setup(self, stage: str):
+        # Assign train/predict datasets for use in dataloaders
+        if stage == "fit":
+            pass
+            # self.ms1m_dataset = MXFaceDataset(self.data_train_dir)
+            # self.train_dataset = torch.utils.data.Subset(
+            #     self.train_dataset,
+            #     np.random.choice(len(self.train_dataset), 1000, replace=False),
+            # )
+
+        if stage == "predict":
+            pass
+            # self.ijb_dataset = IJB_aligned_images(self.data_predict_dir, self.data_predict_subset)
+            # self.predict_dataset = torch.utils.data.Subset(self.predict_dataset, np.random.choice(len(self.predict_dataset), 5000, replace=False))
+
+    def train_dataloader(self):
+        if self.train_batch_sampler is not None:
+            return DataLoader(
+                self.train_dataset,
+                batch_sampler=self.train_batch_sampler,
+                num_workers=self.num_workers,
+            )
+        else:
+            return DataLoader(
+                self.train_dataset,
+                batch_size=self.batch_size,
+                shuffle=True,
+                drop_last=True,
+                num_workers=self.num_workers,
+            )
+
+    def val_dataloader(self):
+        return DataLoader(
+            self.validation_dataset,
+            batch_size=self.batch_size,
+            drop_last=False,
+            shuffle=False,
+            num_workers=self.num_workers,
+        )
+
+    def predict_dataloader(self):
+        return DataLoader(
+            self.predict_dataset,
+            batch_size=self.batch_size,
+            drop_last=False,
+            shuffle=False,
+            num_workers=self.num_workers,
+        )
+
+
 class WhaleDataset(Dataset):
     def __init__(self, config_path: str, image_dir: str, test: bool = False):
         super().__init__()
@@ -357,61 +393,6 @@ class WhaleDataset(Dataset):
             return augmented
         else:
             return augmented, self.ids[i]
-
-    # {
-    #         "original_index": self.index[i],
-    #         "image": augmented,
-    #         "label": self.ids[i],
-    #         "label_species": self.species[i],
-    #     }
-
-
-class UncertaintyDataModule(pl.LightningDataModule):
-    def __init__(
-        self,
-        train_dataset: Dataset,
-        predict_dataset: Dataset,
-        batch_size: int,
-        num_workers: int,
-    ):
-        super().__init__()
-        self.train_dataset = train_dataset
-        self.predict_dataset = predict_dataset
-        self.batch_size = batch_size
-        self.num_workers = num_workers
-
-    def prepare_data(self):
-        pass
-
-    def setup(self, stage: str):
-        # Assign train/predict datasets for use in dataloaders
-        if stage == "fit":
-            pass
-            # self.ms1m_dataset = MXFaceDataset(self.data_train_dir)
-            # self.ms1m_dataset = torch.utils.data.Subset(self.ms1m_dataset, np.random.choice(len(self.ms1m_dataset), 5000, replace=False))
-
-        if stage == "predict":
-            pass
-            # self.ijb_dataset = IJB_aligned_images(self.data_predict_dir, self.data_predict_subset)
-            # self.predict_dataset = torch.utils.data.Subset(self.predict_dataset, np.random.choice(len(self.predict_dataset), 5000, replace=False))
-
-    def train_dataloader(self):
-        return DataLoader(
-            self.train_dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            drop_last=True,
-            num_workers=self.num_workers,
-        )
-
-    def predict_dataloader(self):
-        return DataLoader(
-            self.predict_dataset,
-            batch_size=self.batch_size,
-            drop_last=False,
-            shuffle=False,
-            num_workers=self.num_workers,
-        )
 
 
 if __name__ == "__main__":

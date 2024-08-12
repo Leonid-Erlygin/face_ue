@@ -7,6 +7,7 @@ from scipy import interpolate
 from pathlib import Path
 import seaborn as sns
 import pandas as pd
+from decimal import Decimal
 import matplotlib.pyplot as plt
 from utils.reliability_diagrams import _reliability_diagram_combined
 
@@ -389,7 +390,7 @@ class TarFar:
         new_metrics = {}
         f = interpolate.interp1d(metrics["fars"], metrics["recalls"])
         for far in self.display_fars:
-            new_metrics[f"final_recall_at_far_{far}"] = f([far])[0]
+            new_metrics[f"TAR@FAR={Decimal(str(far))}"] = f([far])[0]
         metrics.update(new_metrics)
         return metrics
 

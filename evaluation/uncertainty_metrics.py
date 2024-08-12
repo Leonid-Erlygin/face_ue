@@ -9,6 +9,38 @@ import scipy
 EvalMetricsT = Tuple[int, int, int, List[float], List[float], List[Tuple[float, float]]]
 
 
+class DisposeBasedOnUncVerif:
+    def __init__(self, fractions: List[int], metric_to_monitor) -> None:
+        self.fractions = np.linspace(fractions[0], fractions[1], fractions[2])
+        self.metric_to_monitor = metric_to_monitor
+
+    def __call__(
+        self, scores: np.ndarray, labels: np.ndarray, predicted_unc: np.ndarray
+    ) -> Any:
+        predicted_unc = predicted_unc[:, 0]
+        unc_indexes = np.argsort(predicted_unc)
+        unc_metrics = {"fractions": self.fractions}
+        for fraction in self.fractions:
+            # drop worst fraction
+            good_idx = unc_indexes[: int((1 - fraction) * scores.shape[0])]
+            print(fraction)
+            metric = self.metric_to_monitor(
+                scores=scores[good_idx],
+                labels=labels[good_idx],
+            )
+            for key, value in metric.items():
+                if "TAR@FAR" not in key:
+                    continue
+                metric_name = f"verif_unc_metric:{key}"
+                if metric_name in unc_metrics:
+                    unc_metrics[metric_name].append(metric[key])
+                else:
+                    unc_metrics[metric_name] = [metric[key]]
+        for metric_name in unc_metrics:
+            unc_metrics[metric_name] = np.array(unc_metrics[metric_name])
+        return unc_metrics
+
+
 class DisposeBasedOnUnc:
     def __init__(self, fractions: List[int], metric_to_monitor) -> None:
         self.fractions = np.linspace(fractions[0], fractions[1], fractions[2])

@@ -19,11 +19,12 @@ trainer:
   - class_path: face_lib.models.scf.Prediction_writer
     init_args: 
       output_dir: /app/cache/features
-      file_name: scf_rand_effects_album_75%_embs_IJBC # scf_embs_inter  #scf_embs_lfw #scf_embs_ms1m_3531-classes_0-seed_30-min-class-size
+      file_name: ms1m_emb
       write_interval: epoch
   max_epochs: 16
   accelerator: gpu
   devices: 1
+  num_sanity_val_steps: 0
 model:
     class_path: face_lib.models.scf.SphereConfidenceFace
     init_args:
@@ -32,7 +33,7 @@ model:
             init_args:
                 resnet_name: iresnet50_normalized
                 weights: /app/model_weights/backbone/ms1mv3_arcface_r50/backbone.pth
-                learnable: False #False
+                learnable: False
         head:
             class_path: face_lib.models.heads.SCFHead
             init_args:
@@ -62,6 +63,23 @@ model:
             interval: "step"
             frequency: 1
         permute_batch: False
+        validation_dataset:
+            class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+            init_args:
+                dataset_path: /app/datasets/arcface_ijb/IJBC
+                dataset_name: IJBC
+                norm_image: True
+        template_pooling_strategy:
+            class_path: evaluation.template_pooling_strategies.PoolingConcentration
+        recognition_method:
+            class_path: evaluation.verification_methods.distance_based_verification.VerifEval
+            init_args:
+                distance_function:
+                    class_path: evaluation.distance_functions.distance_functions.CosineSimPairwise
+        verification_metrics:
+            - _target_: evaluation.metrics.TarFar
+              far_range: [-6, -0.5, 0.1]
+              display_fars: [1e-6, 1e-5, 1e-4, 1e-3]
 
 data:
     class_path: face_lib.dataset_classes.lightning_datasets.UncertaintyDataModule
@@ -70,19 +88,32 @@ data:
             class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
             init_args:
                 root_dir: /app/datasets/ms1m/
-
-        predict_dataset:
+        validation_dataset:
             class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
             init_args:
                 dataset_path: /app/datasets/arcface_ijb/IJBC
                 dataset_name: IJBC
                 norm_image: True
+        predict_dataset:
+            class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
+            init_args:
+                root_dir: /app/datasets/ms1m/
+        train_batch_sampler:
+            class_path: face_lib.dataset_classes.samplers.UniformBatchSampler
+            init_args:
+                cosine_sim_path: /app/model_weights/ms1m_cache/cosine_sim.npy
+                batch_size: 400
         batch_size: 400
         num_workers: 36
 
 
 
-
+    # predict_dataset:
+    #     class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+    #     init_args:
+    #         dataset_path: /app/datasets/arcface_ijb/IJBC
+    #         dataset_name: IJBC
+    #         norm_image: True
 # predict_dataset:
 #     class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
 #     init_args: 

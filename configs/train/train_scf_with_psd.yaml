@@ -130,3 +130,48 @@ data:
 #         dataset_path: /app/datasets/arcface_ijb/IJBB
 #         dataset_name: IJBB
 #         norm_image: True
+
+
+
+
+
+
+
+ # Old with default training
+                    # v2.RandomHorizontalFlip(),
+                    # Not working due to the argem
+                    # v2.RandomApply([
+                    #     v2.RandomChoice(
+                    #     transforms = [
+                    #         A.Blur(blur_limit=4, p = 1.0),
+                    #         A.Blur(blur_limit=7, p = 1.0),
+                    #         A.Blur(blur_limit=9, p = 1.0),
+                    #         A.Blur(blur_limit=11, p = 1.0),
+                    #         A.Blur(blur_limit=13, p = 1.0)
+                    #                 ],
+                    #                 p = [1/5 for i in range(5)])
+                    #                 ],
+                    #                p = 0.5
+                    # ),
+
+
+  # Old version for bach thesis
+                    # v2.RandomApply(
+                    #     [v2.RandomChoice(
+                    #         transforms = [
+                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(1.5, 1.5)),
+                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(2.3, 2.3)),
+                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(3.0, 3.0)),
+                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(4.0, 4.0)),
+                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(6.0, 6.0)),
+                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(10.0, 10.0)),
+                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(15.0, 15.0)),
+                    #                       v2.GaussianBlur(kernel_size=(21, 21), sigma=(20.0, 20.0))],
+                    #         p = [1/8 for _ in range(0, 8)]
+                    #     )],
+                    #     p=0.3,
+                    # ),
+                    # v2.RandomApply(
+                    #     torch.nn.ModuleList([v2.ElasticTransform(alpha=250.0)]), p=0.05
+                    # ),
+                    # v2.RandomApply(torch.nn.ModuleList([v2.AugMix()]), p=0.05),

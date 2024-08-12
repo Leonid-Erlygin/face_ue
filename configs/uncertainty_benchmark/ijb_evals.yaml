@@ -2,7 +2,7 @@ hydra:
   run:
     dir: ${exp_dir}
 
-exp_dir: experiments/verification_scf_test
+exp_dir: outputs/experiments/verification_scf_test
 use_two_galleries: False
 recompute_template_pooling: True
 metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
@@ -42,7 +42,7 @@ open_set_identification_metrics:
     value_types: [0,1, 2, 3, 4, 5]
   - _target_: evaluation.metrics.DirFar
 
-fractions: [0, 0.5, 20]
+fractions: [0, 0.5, 10]
 
 open_set_identification_uncertainty_metrics:
   - _target_: evaluation.uncertainty_metrics.DisposeBasedOnUnc
@@ -71,7 +71,7 @@ verification_metrics:
     far_range: [-5, -0.5, 0.1]
     display_fars: [0.00001, 0.0001]
 verification_uncertainty_metrics:
-  - _target_: evaluation.uncertainty_metrics.DisposeBasedOnUnc
+  - _target_: evaluation.uncertainty_metrics.DisposeBasedOnUncVerif
     fractions: ${fractions}
     metric_to_monitor:
       _target_: evaluation.metrics.TarFar
@@ -91,7 +91,7 @@ verification_methods:
 
   - embeddings: scf_vanilla
     gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingConcentration
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
     use_detector_score: False
     recognition_method:
       _target_: evaluation.verification_methods.distance_based_verification.VerifEval
@@ -101,7 +101,7 @@ verification_methods:
 
   - embeddings: scf_blur_only_album_75%
     gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingConcentration
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
     use_detector_score: False
     recognition_method:
       _target_: evaluation.verification_methods.distance_based_verification.VerifEval
@@ -111,7 +111,7 @@ verification_methods:
 
   - embeddings: scf_rand_effects_album_75%
     gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingConcentration
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
     use_detector_score: False
     recognition_method:
       _target_: evaluation.verification_methods.distance_based_verification.VerifEval

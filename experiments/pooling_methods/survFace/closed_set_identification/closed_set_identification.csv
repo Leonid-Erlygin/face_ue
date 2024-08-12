@@ -1,4 +1,0 @@
-pretty_name,model_name,final_cmc_at_rank_1,final_cmc_at_rank_5,final_cmc_at_rank_10,final_cmc_at_rank_50,final_cmc_at_rank_100,final_cmc_at_rank_500,final_cmc_at_rank_1000
-CosineSim_MeanPool,pooling-with-PoolingDefault_use-det-score-False_eval-with-CosineSim_conf-func-MaxSimilarity_confidence,0.04833333333333333,0.084,0.108,0.187,0.24466666666666667,0.4736666666666667,0.6183333333333333
-CosineSim_SCF-Pool,pooling-with-PoolingSCF_use-det-score-False_eval-with-CosineSim_conf-func-MaxSimilarity_confidence,0.048666666666666664,0.08733333333333333,0.10666666666666667,0.18633333333333332,0.24633333333333332,0.473,0.6203333333333333
-CosineSim_PFEHarmonicMean-Pool,pooling-with-PoolingPFEHarmonicMean_use-det-score-False_eval-with-CosineSim_conf-func-MaxSimilarity_confidence,0.04666666666666667,0.08233333333333333,0.10666666666666667,0.19,0.24366666666666667,0.46066666666666667,0.6136666666666667
