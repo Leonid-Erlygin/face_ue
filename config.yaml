@@ -16,7 +16,7 @@ trainer:
       dir: null
       id: null
       anonymous: null
-      project: scf-uniform-batch
+      project: scf-uniform-batch_from_start
       log_model: false
       experiment: null
       prefix: ''
@@ -64,7 +64,7 @@ trainer:
   - class_path: face_lib.models.scf.Prediction_writer
     init_args:
       output_dir: /app/cache/features
-      file_name: ms1m_emb
+      file_name: uniform_scf_embs_IJBC
       write_interval: epoch
   fast_dev_run: false
   max_epochs: 16
@@ -98,7 +98,7 @@ trainer:
   sync_batchnorm: false
   reload_dataloaders_every_n_epochs: 0
   default_root_dir: outputs/scf_train
-ckpt_path: /app/model_weights/scf_base.ckpt
+ckpt_path: null
 model:
   class_path: face_lib.models.SphereConfidenceFace
   init_args:
@@ -179,17 +179,21 @@ data:
         dataset_name: IJBC
         norm_image: true
     predict_dataset:
-      class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
+      class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
       init_args:
-        root_dir: /app/datasets/ms1m/
-        test: false
-        num_classes: 0
-        album_augments: null
-        album_probability: 0.0
+        dataset_path: /app/datasets/arcface_ijb/IJBC
+        dataset_name: IJBC
+        norm_image: true
     batch_size: 400
-    num_workers: 36
+    num_workers: 40
     train_batch_sampler:
-      class_path: face_lib.dataset_classes.samplers.UniformBatchSampler
+      class_path: face_lib.dataset_classes.samplers.UniformBatchSamplerWithBins
       init_args:
         cosine_sim_path: /app/model_weights/ms1m_cache/cosine_sim.npy
         batch_size: 400
+        cosine_border_values:
+        - 0.5
+        - 0.6
+        - 0.7
+        - 0.8
+        - 1
