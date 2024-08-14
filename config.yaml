@@ -44,7 +44,7 @@ trainer:
   callbacks:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args:
-      dirpath: outputs/scf_uniform_batch/default_scf
+      dirpath: outputs/scf_new_data/focal_loss/weights_scf_focal_minmax_gamma2
       filename: null
       monitor: null
       verbose: false
@@ -98,7 +98,11 @@ trainer:
   sync_batchnorm: false
   reload_dataloaders_every_n_epochs: 0
   default_root_dir: outputs/scf_train
+<<<<<<< HEAD
 ckpt_path: null
+=======
+ckpt_path: /app/outputs/scf_new_data/focal_loss/weights_scf_focal_minmax_gamma2/epoch=11-step=174672_pretrained.ckpt
+>>>>>>> 4f76186a8437062b74a872303912e09a00405f2c
 model:
   class_path: face_lib.models.SphereConfidenceFace
   init_args:
@@ -114,10 +118,11 @@ model:
         convf_dim: 25088
         latent_vector_size: 2048
     scf_loss:
-      class_path: face_lib.models.losses.KLDiracVMF
+      class_path: face_lib.models.losses.KLDiracVMF_Focal
       init_args:
         z_dim: 512
         radius: 64
+        gamma: 2
     optimizer_params:
       optimizer_path: torch.optim
       optimizer_name: AdamW
@@ -172,7 +177,7 @@ data:
         num_classes: 0
         album_augments: null
         album_probability: 0.0
-    validation_dataset:
+    predict_dataset:
       class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
       init_args:
         dataset_path: /app/datasets/arcface_ijb/IJBC

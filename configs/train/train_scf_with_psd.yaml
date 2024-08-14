@@ -11,7 +11,7 @@ trainer:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args: 
       every_n_epochs: 1
-      dirpath: outputs/scf_new_data/pixel_dropout/weights_pixel_drop_album_75%
+      dirpath: outputs/scf_new_data/focal_loss/weights_scf_focal_minmax_gamma2
       save_last: True
   - class_path: pytorch_lightning.callbacks.LearningRateMonitor
     init_args: 
@@ -39,10 +39,11 @@ model:
                 convf_dim: 25088
                 latent_vector_size: 2048 #8096
         scf_loss:
-            class_path: face_lib.models.losses.KLDiracVMF
+            class_path: face_lib.models.losses.KLDiracVMF_Focal
             init_args:
                 z_dim: 512
                 radius: 64
+                gamma: 2
         softmax_weights:
             class_path: face_lib.models.scf.SoftmaxWeights
             init_args:
@@ -70,23 +71,23 @@ data:
             class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
             init_args:
                 root_dir: /app/datasets/ms1m/
-                album_augments: 
-                - class_path: albumentations
-                  aug_name: PixelDropout
-                  init_args: 
-                    dropout_prob: 0.2
-                    p: 0.5
-                - class_path: albumentations
-                  aug_name: PixelDropout
-                  init_args: 
-                    dropout_prob: 0.4
-                    p: 0.5
-                - class_path: albumentations
-                  aug_name: PixelDropout
-                  init_args: 
-                    dropout_prob: 0.7
-                    p: 0.5
-                album_probability: 0.75
+                # album_augments: 
+                # - class_path: albumentations
+                #   aug_name: PixelDropout
+                #   init_args: 
+                #     dropout_prob: 0.2
+                #     p: 0.5
+                # - class_path: albumentations
+                #   aug_name: PixelDropout
+                #   init_args: 
+                #     dropout_prob: 0.4
+                #     p: 0.5
+                # - class_path: albumentations
+                #   aug_name: PixelDropout
+                #   init_args: 
+                #     dropout_prob: 0.7
+                #     p: 0.5
+                # album_probability: 0.75
 
         predict_dataset:
             class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
