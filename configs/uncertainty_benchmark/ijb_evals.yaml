@@ -95,16 +95,6 @@ verification_methods:
         _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
     pretty_name: "Default pooling"
 
-  - embeddings: uniform_scf
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.${pooling_method}
-    use_detector_score: False
-    recognition_method:
-      _target_: evaluation.verification_methods.distance_based_verification.VerifEval
-      distance_function:
-        _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
-    pretty_name: "Uniform batch"
-    
   - embeddings: scf_vanilla
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.${pooling_method}
@@ -115,22 +105,34 @@ verification_methods:
         _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
     pretty_name: "Concentration pooling"
 
-  - embeddings: scf_blur_only_album_75%
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.${pooling_method}
-    use_detector_score: False
-    recognition_method:
-      _target_: evaluation.verification_methods.distance_based_verification.VerifEval
-      distance_function:
-        _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
-    pretty_name: "Blur"
+  # - embeddings: uniform_scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.${pooling_method}
+  #   use_detector_score: False
+  #   recognition_method:
+  #     _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+  #     distance_function:
+  #       _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+  #   pretty_name: "Uniform batch"
+    
 
-  - embeddings: scf_rand_effects_album_75%
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.${pooling_method}
-    use_detector_score: False
-    recognition_method:
-      _target_: evaluation.verification_methods.distance_based_verification.VerifEval
-      distance_function:
-        _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
-    pretty_name: "Effects"
+
+  # - embeddings: scf_blur_only_album_75%
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.${pooling_method}
+  #   use_detector_score: False
+  #   recognition_method:
+  #     _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+  #     distance_function:
+  #       _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+  #   pretty_name: "Blur"
+
+  # - embeddings: scf_rand_effects_album_75%
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.${pooling_method}
+  #   use_detector_score: False
+  #   recognition_method:
+  #     _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+  #     distance_function:
+  #       _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+  #   pretty_name: "Effects"
