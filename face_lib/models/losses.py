@@ -44,6 +44,7 @@ class KLDiracVMF(nn.Module):
             cos_theta,
         )
 
+
 class KLDiracVMF_Focal(nn.Module):
     def __init__(self, z_dim: int, radius: int, gamma: int):
         super().__init__()
@@ -71,9 +72,11 @@ class KLDiracVMF_Focal(nn.Module):
 
         kappa_min = kappa.min(0)[0].detach()
         kappa_max = kappa.max(0)[0].detach()
-        kappa_normalised = (kappa - kappa_min)/(kappa_max - kappa_min)
+        kappa_normalised = (kappa - kappa_min) / (kappa_max - kappa_min)
 
-        losses = ((1 - kappa_normalised)**self.gamma)*(l1 + l2 + l3 + (d / 2) * math.log(2 * math.pi) + d * math.log(r))
+        losses = ((1 - kappa_normalised) ** self.gamma) * (
+            l1 + l2 + l3 + (d / 2) * math.log(2 * math.pi) + d * math.log(r)
+        )
 
         return (
             losses,
@@ -82,6 +85,7 @@ class KLDiracVMF_Focal(nn.Module):
             l3,
             cos_theta,
         )
+
 
 class KLDiracPS(nn.Module):
     def __init__(self, z_dim: int, radius: int):

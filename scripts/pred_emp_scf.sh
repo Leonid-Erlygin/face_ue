@@ -12,5 +12,5 @@ docker run \
  face-eval \
  python trainers/train.py predict \
  --config configs/train/train_scf.yaml \
- --ckpt_path=/app/model_weights/scf_base.ckpt \
- --trainer.devices=1
+ --ckpt_path=/app/outputs/scf_uniform_batch/default_scf/epoch=0-step=14556.ckpt \
+# --ckpt_path=/app/model_weights/scf_base.ckpt \

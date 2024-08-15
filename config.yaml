@@ -99,7 +99,15 @@ trainer:
   sync_batchnorm: false
   reload_dataloaders_every_n_epochs: 0
   default_root_dir: outputs/scf_train
+<<<<<<< HEAD
 ckpt_path: null
+=======
+<<<<<<< HEAD
+ckpt_path: null
+=======
+ckpt_path: /app/outputs/scf_new_data/focal_loss/weights_scf_focal_minmax_gamma2/epoch=11-step=174672_pretrained.ckpt
+>>>>>>> 4f76186a8437062b74a872303912e09a00405f2c
+>>>>>>> 3c0cb5a272c364057e433ad385bed16d72ab07e1
 model:
   class_path: face_lib.models.SphereConfidenceFace
   init_args:
@@ -186,5 +194,20 @@ data:
         dataset_name: IJBC
         norm_image: true
     batch_size: 400
+<<<<<<< HEAD
     num_workers: 36
     train_batch_sampler: null
+=======
+    num_workers: 40
+    train_batch_sampler:
+      class_path: face_lib.dataset_classes.samplers.UniformBatchSamplerWithBins
+      init_args:
+        cosine_sim_path: /app/model_weights/ms1m_cache/cosine_sim.npy
+        batch_size: 400
+        cosine_border_values:
+        - 0.5
+        - 0.6
+        - 0.7
+        - 0.8
+        - 1
+>>>>>>> 3c0cb5a272c364057e433ad385bed16d72ab07e1

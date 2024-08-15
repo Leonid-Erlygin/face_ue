@@ -13,4 +13,4 @@ docker run \
  face-eval \
  python trainers/train.py fit \
  --config configs/train/train_scf.yaml \
- --ckpt_path=/app/model_weights/scf_base.ckpt
+# --ckpt_path=/app/model_weights/scf_base.ckpt

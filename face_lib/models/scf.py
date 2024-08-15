@@ -56,6 +56,7 @@ class SphereConfidenceFace(LightningModule):
     ):
         super().__init__()
         self.backbone = backbone
+        self.backbone.backbone.eval()
         self.head = head
         self.scf_loss = scf_loss
         self.softmax_weights = softmax_weights.softmax_weights
@@ -71,16 +72,13 @@ class SphereConfidenceFace(LightningModule):
         print(self.verification_metrics)
 
     def forward(self, x):
-        self.backbone.backbone.eval()
         backbone_outputs = self.backbone(x)
         log_kappa = self.head(backbone_outputs["bottleneck_feature"])
-
         return backbone_outputs["feature"], log_kappa
 
     def training_step(self, batch):
         images, labels = batch
         # freezing bn layers
-        self.backbone.backbone.eval()
         feature, log_kappa = self(images)
         kappa = torch.exp(log_kappa)
         wc = self.softmax_weights[labels, :]
