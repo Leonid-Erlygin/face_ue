@@ -230,7 +230,7 @@ def main(cfg):
 
         metric_names = []
         model_names = []
-
+        recognition_metric_names = []
         for model_name, metric in metric_values[(task_type, dataset_name)][
             "uncertainty"
         ].items():
@@ -238,6 +238,13 @@ def main(cfg):
                 if "unc_metric" in key:
                     metric_names.append(key)
                     model_names.append(model_name)
+            break
+        for model_name, metric in metric_values[(task_type, dataset_name)][
+            "recognition"
+        ].items():
+            for key in metric:
+                if "TAR@FAR" in key:
+                    recognition_metric_names.append(key)
             break
         fractions = next(
             iter(metric_values[(task_type, dataset_name)]["uncertainty"].items())
@@ -329,10 +336,29 @@ def main(cfg):
                 #     )
                 # )
 
+            # create recognition tables
+            data_rows = []
+            column_names = []
+            for method_name, metrics in metric_values[(task_type, dataset_name)][
+                "recognition"
+            ].items():
+
+                data_rows.append(
+                    [
+                        pretty_names[task_type][method_name],
+                        *[
+                            metrics[metric_name]
+                            for metric_name in recognition_metric_names
+                        ],
+                    ]
+                )
+            recognition_df = pd.DataFrame(
+                data_rows, columns=["models"] + recognition_metric_names
+            )
+            recognition_df.to_csv(out_dir / f"tar@fars.csv")
             continue
 
         # create rejection plots
-
         # fraction_data_rows = {frac: [] for frac in fractions}
         # fraction_column_names = ["models"] + [
         #     metric_name.split(":")[-1] for metric_name in metric_names

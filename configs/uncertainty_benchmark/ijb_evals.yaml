@@ -83,16 +83,18 @@ pooling_method: PoolingConcentration
 
 verification_methods:
 
-  - embeddings: uniform_scf
+
+
+  - embeddings: scf
     gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.${pooling_method}
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
     use_detector_score: False
     recognition_method:
       _target_: evaluation.verification_methods.distance_based_verification.VerifEval
       distance_function:
         _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
-    pretty_name: "Uniform batch"
-    
+    pretty_name: "Default pooling"
+
   - embeddings: scf_vanilla
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.${pooling_method}
