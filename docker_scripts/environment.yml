@@ -25,6 +25,7 @@ dependencies:
     - scikit-learn-intelex
     - numexpr
     - wandb
+    - onnx
     - albumentations
     - tabulate
     - onnxruntime-gpu

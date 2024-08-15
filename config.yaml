@@ -16,7 +16,7 @@ trainer:
       dir: null
       id: null
       anonymous: null
-      project: scf-uniform-batch
+      project: face-ue
       log_model: false
       experiment: null
       prefix: ''
@@ -40,11 +40,12 @@ trainer:
       monitor_gym: null
       save_code: null
       fork_from: null
+      resume_from: null
       settings: null
   callbacks:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args:
-      dirpath: outputs/scf_new_data/focal_loss/weights_scf_focal_minmax_gamma2
+      dirpath: outputs/scf_new_data/vgg_test
       filename: null
       monitor: null
       verbose: false
@@ -64,7 +65,7 @@ trainer:
   - class_path: face_lib.models.scf.Prediction_writer
     init_args:
       output_dir: /app/cache/features
-      file_name: ms1m_emb
+      file_name: scf_pixel_drop_album_75%_embs_IJBC
       write_interval: epoch
   fast_dev_run: false
   max_epochs: 16
@@ -98,7 +99,7 @@ trainer:
   sync_batchnorm: false
   reload_dataloaders_every_n_epochs: 0
   default_root_dir: outputs/scf_train
-ckpt_path: /app/outputs/scf_new_data/focal_loss/weights_scf_focal_minmax_gamma2/epoch=11-step=174672_pretrained.ckpt
+ckpt_path: null
 model:
   class_path: face_lib.models.SphereConfidenceFace
   init_args:
@@ -114,11 +115,10 @@ model:
         convf_dim: 25088
         latent_vector_size: 2048
     scf_loss:
-      class_path: face_lib.models.losses.KLDiracVMF_Focal
+      class_path: face_lib.models.losses.KLDiracVMF
       init_args:
         z_dim: 512
         radius: 64
-        gamma: 2
     optimizer_params:
       optimizer_path: torch.optim
       optimizer_name: AdamW
@@ -136,7 +136,7 @@ model:
     softmax_weights:
       class_path: face_lib.models.scf.SoftmaxWeights
       init_args:
-        softmax_weights_path: /app/model_weights/backbone/ms1mv3_arcface_r50/softmax_weight.pt
+        softmax_weights_path: /app/model_weights/backbone/vgg_iresnet50/softmax_weight.pt
         radius: 64
     validation_dataset:
       class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
@@ -166,31 +166,25 @@ data:
   class_path: face_lib.dataset_classes.lightning_datasets.UncertaintyDataModule
   init_args:
     train_dataset:
-      class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
+      class_path: face_lib.dataset_classes.lightning_datasets.VGGFaceDataset
       init_args:
-        root_dir: /app/datasets/ms1m/
+        root_dir: /app/datasets/faces_vgg_112x112/
         test: false
         num_classes: 0
         album_augments: null
         album_probability: 0.0
-    predict_dataset:
+    validation_dataset:
       class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
       init_args:
         dataset_path: /app/datasets/arcface_ijb/IJBC
         dataset_name: IJBC
         norm_image: true
     predict_dataset:
-      class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
+      class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
       init_args:
-        root_dir: /app/datasets/ms1m/
-        test: false
-        num_classes: 0
-        album_augments: null
-        album_probability: 0.0
+        dataset_path: /app/datasets/arcface_ijb/IJBC
+        dataset_name: IJBC
+        norm_image: true
     batch_size: 400
     num_workers: 36
-    train_batch_sampler:
-      class_path: face_lib.dataset_classes.samplers.UniformBatchSampler
-      init_args:
-        cosine_sim_path: /app/model_weights/ms1m_cache/cosine_sim.npy
-        batch_size: 400
+    train_batch_sampler: null

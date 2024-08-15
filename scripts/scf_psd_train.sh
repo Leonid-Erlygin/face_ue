@@ -13,4 +13,4 @@ docker run \
  kolesnikov-face \
  python trainers/train.py fit \
  --config configs/train/train_scf_with_psd.yaml \
- --ckpt_path=/app/outputs/scf_new_data/focal_loss/weights_scf_focal_minmax_gamma2/epoch=11-step=174672_pretrained.ckpt
+#  --ckpt_path=/app/outputs/scf_new_data/focal_loss/weights_scf_focal_minmax_gamma2/epoch=11-step=174672_pretrained.ckpt
