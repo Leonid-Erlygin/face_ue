@@ -3,8 +3,6 @@ import torch
 from pytorch_lightning import LightningModule
 from pytorch_lightning.callbacks import BasePredictionWriter, Callback
 import importlib
-import pickle
-from decimal import Decimal
 from pathlib import Path
 import numpy as np
 from evaluation.ijb_evals import instantiate_list
@@ -72,6 +70,7 @@ class SphereConfidenceFace(LightningModule):
         print(self.verification_metrics)
 
     def forward(self, x):
+        self.backbone.backbone.eval()
         backbone_outputs = self.backbone(x)
         log_kappa = self.head(backbone_outputs["bottleneck_feature"])
         return backbone_outputs["feature"], log_kappa

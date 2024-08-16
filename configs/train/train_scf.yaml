@@ -1,9 +1,9 @@
 seed_everything: 777
 trainer:
-#   logger:
-#     class_path: pytorch_lightning.loggers.WandbLogger
-#     init_args:
-#       project: "scf-uniform-batch_from_start"
+  logger:
+    class_path: pytorch_lightning.loggers.WandbLogger
+    init_args:
+      project: "scf-uniform-batch_from_start"
   log_every_n_steps: 3
   default_root_dir: outputs/scf_train
   enable_checkpointing: true
@@ -99,7 +99,7 @@ data:
             init_args:
                 cosine_sim_path: /app/model_weights/ms1m_cache/cosine_sim.npy
                 batch_size: 400
-                cosine_border_values: [0.5, 0.6, 0.7, 0.8, 1]
+                cosine_border_values: [0.7, 0.75, 0.8, 0.85, 1]
         # train_batch_sampler:
         #     class_path: face_lib.dataset_classes.samplers.UniformBatchSampler
         #     init_args:

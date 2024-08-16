@@ -44,7 +44,7 @@ trainer:
   callbacks:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args:
-      dirpath: outputs/scf_new_data/focal_loss/weights_scf_focal_minmax_gamma2
+      dirpath: outputs/scf_uniform_batch/default_scf
       filename: null
       monitor: null
       verbose: false
@@ -63,7 +63,7 @@ trainer:
       log_momentum: false
   - class_path: face_lib.models.scf.Prediction_writer
     init_args:
-      output_dir: /app/cache/features
+      output_dir: /app/datasets/arcface_ijb/IJBC/embeddings
       file_name: uniform_scf_embs_IJBC
       write_interval: epoch
   fast_dev_run: false
@@ -98,11 +98,7 @@ trainer:
   sync_batchnorm: false
   reload_dataloaders_every_n_epochs: 0
   default_root_dir: outputs/scf_train
-<<<<<<< HEAD
-ckpt_path: null
-=======
-ckpt_path: /app/outputs/scf_new_data/focal_loss/weights_scf_focal_minmax_gamma2/epoch=11-step=174672_pretrained.ckpt
->>>>>>> 4f76186a8437062b74a872303912e09a00405f2c
+ckpt_path: /app/model_weights/scf_base.ckpt
 model:
   class_path: face_lib.models.SphereConfidenceFace
   init_args:
@@ -118,11 +114,10 @@ model:
         convf_dim: 25088
         latent_vector_size: 2048
     scf_loss:
-      class_path: face_lib.models.losses.KLDiracVMF_Focal
+      class_path: face_lib.models.losses.KLDiracVMF
       init_args:
         z_dim: 512
         radius: 64
-        gamma: 2
     optimizer_params:
       optimizer_path: torch.optim
       optimizer_name: AdamW
@@ -177,7 +172,7 @@ data:
         num_classes: 0
         album_augments: null
         album_probability: 0.0
-    predict_dataset:
+    validation_dataset:
       class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
       init_args:
         dataset_path: /app/datasets/arcface_ijb/IJBC
@@ -197,8 +192,8 @@ data:
         cosine_sim_path: /app/model_weights/ms1m_cache/cosine_sim.npy
         batch_size: 400
         cosine_border_values:
-        - 0.5
-        - 0.6
         - 0.7
+        - 0.75
         - 0.8
+        - 0.85
         - 1
