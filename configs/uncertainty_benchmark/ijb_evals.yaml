@@ -2,7 +2,7 @@ hydra:
   run:
     dir: ${exp_dir}
 
-exp_dir: outputs/experiments/verification_scf_test_pool
+exp_dir: outputs/experiments/verification_scf_test_rejection
 use_two_galleries: False
 recompute_template_pooling: True
 metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
@@ -78,22 +78,22 @@ verification_uncertainty_metrics:
       far_range: [-5, -0.5, 0.1]
       display_fars: [0.00001, 0.0001]
 
-pooling_method: PoolingConcentration
-#pooling_method: PoolingDefault
+#pooling_method: PoolingConcentration
+pooling_method: PoolingDefault
 
 verification_methods:
 
 
 
-  - embeddings: scf
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    use_detector_score: False
-    recognition_method:
-      _target_: evaluation.verification_methods.distance_based_verification.VerifEval
-      distance_function:
-        _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
-    pretty_name: "Default pooling"
+  #- embeddings: scf
+    # gallery_template_pooling_strategy:
+    #   _target_: evaluation.template_pooling_strategies.PoolingDefault
+    # use_detector_score: False
+    # recognition_method:
+    #   _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+    #   distance_function:
+    #     _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+    # pretty_name: "Default pooling"
 
   - embeddings: scf_vanilla
     gallery_template_pooling_strategy:
@@ -103,36 +103,34 @@ verification_methods:
       _target_: evaluation.verification_methods.distance_based_verification.VerifEval
       distance_function:
         _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
-    pretty_name: "Concentration pooling"
+    pretty_name: "Default SCF"
 
-  # - embeddings: uniform_scf
-  #   gallery_template_pooling_strategy:
-  #     _target_: evaluation.template_pooling_strategies.${pooling_method}
-  #   use_detector_score: False
-  #   recognition_method:
-  #     _target_: evaluation.verification_methods.distance_based_verification.VerifEval
-  #     distance_function:
-  #       _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
-  #   pretty_name: "Uniform batch"
+  - embeddings: uniform_scf
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.${pooling_method}
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+      distance_function:
+        _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+    pretty_name: "Uniform batch"
     
+  - embeddings: scf_blur_only_album_75%
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.${pooling_method}
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+      distance_function:
+        _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+    pretty_name: "Blur"
 
-
-  # - embeddings: scf_blur_only_album_75%
-  #   gallery_template_pooling_strategy:
-  #     _target_: evaluation.template_pooling_strategies.${pooling_method}
-  #   use_detector_score: False
-  #   recognition_method:
-  #     _target_: evaluation.verification_methods.distance_based_verification.VerifEval
-  #     distance_function:
-  #       _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
-  #   pretty_name: "Blur"
-
-  # - embeddings: scf_rand_effects_album_75%
-  #   gallery_template_pooling_strategy:
-  #     _target_: evaluation.template_pooling_strategies.${pooling_method}
-  #   use_detector_score: False
-  #   recognition_method:
-  #     _target_: evaluation.verification_methods.distance_based_verification.VerifEval
-  #     distance_function:
-  #       _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
-  #   pretty_name: "Effects"
+  - embeddings: scf_rand_effects_album_75%
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.${pooling_method}
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+      distance_function:
+        _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+    pretty_name: "Effects"

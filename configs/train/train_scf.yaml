@@ -18,7 +18,7 @@ trainer:
       logging_interval: "step"
   - class_path: face_lib.models.scf.Prediction_writer
     init_args: 
-      output_dir: /app/cache/features
+      output_dir: /app/datasets/arcface_ijb/IJBC/embeddings
       file_name: uniform_scf_embs_IJBC
       write_interval: epoch
   max_epochs: 16
