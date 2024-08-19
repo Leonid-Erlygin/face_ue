@@ -325,16 +325,58 @@ class ProbLoss(FaceModule):
         return loss_mls + loss_c + triplet_loss
 
 
-class ArcFaceScale(nn.Module):
-    def __init__(self, m=0.5):
-        super(ArcFaceScale, self).__init__()
+EPS = 1e-6
+
+
+class ArcFaceLoss(torch.nn.Module):
+    def __init__(self, s: float = 5, m: float = 0.4) -> None:
+        """Initialize ArcFaceLoss.
+
+        :params s, m - scale and margin, respectively
+        """
+        super(ArcFaceLoss, self).__init__()
+
+        self.s = s
         self.m = m
 
-    def forward(self, cosine: torch.Tensor, label, scale: torch.Tensor):
-        index = torch.where(label != -1)[0]
-        m_hot = torch.zeros(index.size()[0], cosine.size()[1], device=cosine.device)
-        m_hot.scatter_(1, label[index, None], self.m)
-        cosine.acos_()
-        cosine[index] += m_hot
-        cosine.cos_().mul_(scale)
-        return cosine
+    def forward(
+        self, cosine_logits: torch.Tensor, labels: torch.Tensor
+    ) -> torch.Tensor:
+        """Compute loss function value.
+
+        :param cos_logits - normalized outputs of the model (cosine in formulas)
+        :param labels - true labels
+        :return value of the ArcFace loss function
+        """
+        # one-hot mask of classes
+        one_hot_mask = torch.zeros_like(cosine_logits)
+        one_hot_mask.scatter_(1, labels.unsqueeze(dim=-1), 1)
+        target_cosine = cosine_logits[one_hot_mask == 1]
+
+        # interpret logits as cos(theta) and get angles theta
+        # clamp cosines to avoid division-by-zero errors and NaN loss values
+        angle = torch.acos(torch.clamp(target_cosine, -1.0 + EPS, 1.0 - EPS))
+
+        # compute cos(theta + m)
+        target_cosine_sum = torch.cos(angle + self.m)
+
+        # compute new logits according to the formulas to use CrossEntropyLoss
+        diff = (target_cosine_sum - target_cosine).unsqueeze(dim=1)
+        logits = (cosine_logits + (one_hot_mask * diff)) * self.s
+
+        return torch.nn.CrossEntropyLoss()(logits, labels)
+
+
+# class ArcFaceScale(nn.Module):
+#     def __init__(self, m=0.5):
+#         super(ArcFaceScale, self).__init__()
+#         self.m = m
+
+#     def forward(self, cosine: torch.Tensor, label, scale: torch.Tensor):
+#         index = torch.where(label != -1)[0]
+#         m_hot = torch.zeros(index.size()[0], cosine.size()[1], device=cosine.device)
+#         m_hot.scatter_(1, label[index, None], self.m)
+#         cosine.acos_()
+#         cosine[index] += m_hot
+#         cosine.cos_().mul_(scale)
+#         return cosine, index

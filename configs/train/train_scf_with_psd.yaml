@@ -11,7 +11,7 @@ trainer:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args: 
       every_n_epochs: 1
-      dirpath: outputs/scf_new_data/focal_loss/weights_scf_focal_minmax_gamma2
+      dirpath: outputs/scf_new_data/vgg_test
       save_last: True
   - class_path: pytorch_lightning.callbacks.LearningRateMonitor
     init_args: 
@@ -19,11 +19,12 @@ trainer:
   - class_path: face_lib.models.scf.Prediction_writer
     init_args: 
       output_dir: /app/cache/features
-      file_name: scf_rand_effects_album_75%_embs_IJBC # scf_embs_inter  #scf_embs_lfw #scf_embs_ms1m_3531-classes_0-seed_30-min-class-size
+      file_name: scf_pixel_drop_album_75%_embs_IJBC # scf_embs_inter  #scf_embs_lfw #scf_embs_ms1m_3531-classes_0-seed_30-min-class-size
       write_interval: epoch
   max_epochs: 16
   accelerator: gpu
   devices: 1
+  num_sanity_val_steps: 0
 model:
     class_path: face_lib.models.scf.SphereConfidenceFace
     init_args:
@@ -39,15 +40,15 @@ model:
                 convf_dim: 25088
                 latent_vector_size: 2048 #8096
         scf_loss:
-            class_path: face_lib.models.losses.KLDiracVMF_Focal
+            class_path: face_lib.models.losses.KLDiracVMF
             init_args:
                 z_dim: 512
                 radius: 64
-                gamma: 2
+                #gamma: 2
         softmax_weights:
             class_path: face_lib.models.scf.SoftmaxWeights
             init_args:
-                softmax_weights_path: /app/model_weights/backbone/ms1mv3_arcface_r50/softmax_weight.pt
+                softmax_weights_path: /app/model_weights/backbone/vgg_iresnet50/softmax_weight.pt
                 radius: 64 #${model.scf_loss.init_args.radius}
         optimizer_params:
             optimizer_path: torch.optim
@@ -63,14 +64,34 @@ model:
             interval: "step"
             frequency: 1
         permute_batch: False
+        validation_dataset:
+            class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+            init_args:
+                dataset_path: /app/datasets/arcface_ijb/IJBC
+                dataset_name: IJBC
+                norm_image: True
+        template_pooling_strategy:
+            class_path: evaluation.template_pooling_strategies.PoolingConcentration
+        recognition_method:
+            class_path: evaluation.verification_methods.distance_based_verification.VerifEval
+            init_args:
+                distance_function:
+                    class_path: evaluation.distance_functions.distance_functions.CosineSimPairwise
+        verification_metrics:
+            - _target_: evaluation.metrics.TarFar
+              far_range: [-6, -0.5, 0.1]
+              display_fars: [1e-6, 1e-5, 1e-4, 1e-3]
 
 data:
     class_path: face_lib.dataset_classes.lightning_datasets.UncertaintyDataModule
     init_args:
         train_dataset:
-            class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
+            class_path: face_lib.dataset_classes.lightning_datasets.VGGFaceDataset
             init_args:
-                root_dir: /app/datasets/ms1m/
+                root_dir: /app/datasets/faces_vgg_112x112/
+            # class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
+            # init_args:
+            #     root_dir: /app/datasets/ms1m/
                 # album_augments: 
                 # - class_path: albumentations
                 #   aug_name: PixelDropout
@@ -88,6 +109,12 @@ data:
                 #     dropout_prob: 0.7
                 #     p: 0.5
                 # album_probability: 0.75
+        validation_dataset:
+            class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+            init_args:
+                dataset_path: /app/datasets/arcface_ijb/IJBC
+                dataset_name: IJBC
+                norm_image: True
 
         predict_dataset:
             class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images

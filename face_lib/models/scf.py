@@ -1,5 +1,5 @@
 import torch
-
+import math
 from pytorch_lightning import LightningModule
 from pytorch_lightning.callbacks import BasePredictionWriter, Callback
 import importlib
@@ -22,19 +22,26 @@ class Prediction_writer(BasePredictionWriter):
 
 
 class SoftmaxWeights(torch.nn.Module):
-    def __init__(self, softmax_weights_path: str, radius: int) -> None:
+    def __init__(self, softmax_weights_path: str, radius: int, requires_grad=False) -> None:
         super().__init__()
         self.softmax_weights = torch.load(softmax_weights_path)
         softmax_weights_norm = torch.norm(
             self.softmax_weights, dim=1, keepdim=True
         )  # [N, 512]
         self.softmax_weights = (
-            self.softmax_weights / softmax_weights_norm * radius
+            self.softmax_weights / softmax_weights_norm
         )  # $ w_c \in rS^{d-1} $
 
         self.softmax_weights = torch.nn.Parameter(
-            self.softmax_weights, requires_grad=False
+            self.softmax_weights, requires_grad=requires_grad
         )
+        # self.softmax_weights = torch.nn.Parameter(
+        #     torch.empty((8631, 512))
+        # )
+        # torch.nn.init.kaiming_uniform_(self.softmax_weights, a=math.sqrt(5))
+
+
+
 
 
 class SphereConfidenceFace(LightningModule):
