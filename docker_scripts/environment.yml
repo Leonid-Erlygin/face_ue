@@ -26,6 +26,7 @@ dependencies:
     - numexpr
     - wandb
     - onnx
+    - onnx2torch
     - albumentations
     - tabulate
     - onnxruntime-gpu

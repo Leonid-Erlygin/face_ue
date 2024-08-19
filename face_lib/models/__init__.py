@@ -1,5 +1,5 @@
 from .base import FaceModule
-from .losses import MLSLoss, AngleLoss, ArcFace, CosFace, MLS, ProbLoss, ArcFaceScale
+from .losses import MLSLoss, AngleLoss, ArcFace, CosFace, MLS, ProbLoss
 from .spherenet import SphereNet20
 from .heads import PFEHead, PFEHeadAdjustable, ProbHead, PFEHeadAdjustableSpectralSimple
 from .pair_classifiers import MLP, SmartCosine, Bilinear
@@ -34,7 +34,6 @@ criterions_dict = {
     "probloss": ProbLoss,
     "bce_loss": BCELoss,
     "cross_entropy_loss": CrossEntropyLoss,
-    "arcface_scale": ArcFaceScale,
 }
 
 heads = {

@@ -1,0 +1,102 @@
+seed_everything: 777
+trainer:
+#   logger:
+#     class_path: pytorch_lightning.loggers.WandbLogger
+#     init_args:
+#       project: "face-ue"
+#   log_every_n_steps: 3
+  default_root_dir: outputs/scf_train
+  enable_checkpointing: true
+  callbacks:
+  - class_path: pytorch_lightning.callbacks.ModelCheckpoint
+    init_args: 
+      every_n_epochs: 1
+      dirpath: outputs/scf_new_data/arcface_vgg2
+      save_last: True
+  - class_path: pytorch_lightning.callbacks.LearningRateMonitor
+    init_args: 
+      logging_interval: "step"
+  - class_path: face_lib.models.scf.Prediction_writer
+    init_args: 
+      output_dir: /app/cache/features
+      file_name: vgg2_arcface_sw_embs
+      write_interval: epoch
+  max_epochs: 20
+  accelerator: gpu
+  devices: 1
+  num_sanity_val_steps: 0
+model:
+    class_path: face_lib.models.arcface.ArcFace_SW
+    init_args:
+        backbone_path: /app/model_weights/backbone/vgg_iresnet50/backbone_vgg.pth
+        arcface_loss:
+            class_path: face_lib.models.losses.ArcFaceLoss
+            init_args:
+                m: 0.5
+                s: 64
+        softmax_weights:
+            class_path: face_lib.models.scf.SoftmaxWeights
+            init_args:
+                softmax_weights_path: /app/model_weights/backbone/vgg_iresnet50/softmax_weights_trained_correct.pt
+                radius: 64 #${model.scf_loss.init_args.radius}
+                requires_grad: True
+        optimizer_params:
+            optimizer_path: torch.optim
+            optimizer_name: AdamW # Adam
+            params:
+                lr: 1e-2
+                weight_decay: 5e-4
+        scheduler_params:
+            scheduler: StepLR
+            params:
+                step_size: 2
+                gamma: 0.5
+            interval: "step"
+            frequency: 1
+        permute_batch: False
+
+data:
+    class_path: face_lib.dataset_classes.lightning_datasets.UncertaintyDataModule
+    init_args:
+        train_dataset:
+            class_path: face_lib.dataset_classes.lightning_datasets.VGGFaceDataset
+            init_args:
+                root_dir: /app/datasets/faces_vgg_112x112/
+            # class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
+            # init_args:
+            #     root_dir: /app/datasets/ms1m/
+                # album_augments: 
+                # - class_path: albumentations
+                #   aug_name: PixelDropout
+                #   init_args: 
+                #     dropout_prob: 0.2
+                #     p: 0.5
+                # - class_path: albumentations
+                #   aug_name: PixelDropout
+                #   init_args: 
+                #     dropout_prob: 0.4
+                #     p: 0.5
+                # - class_path: albumentations
+                #   aug_name: PixelDropout
+                #   init_args: 
+                #     dropout_prob: 0.7
+                #     p: 0.5
+                # album_probability: 0.75
+        validation_dataset:
+            class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+            init_args:
+                dataset_path: /app/datasets/arcface_ijb/IJBC
+                dataset_name: IJBC
+                norm_image: True
+
+        predict_dataset:
+            class_path: face_lib.dataset_classes.lightning_datasets.VGGFaceDataset
+            init_args:
+                root_dir: /app/datasets/faces_vgg_112x112/
+            # class_path: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+            # init_args:
+            #     dataset_path: /app/datasets/arcface_ijb/IJBC
+            #     dataset_name: IJBC
+            #     norm_image: True
+        batch_size: 512
+        num_workers: 36
