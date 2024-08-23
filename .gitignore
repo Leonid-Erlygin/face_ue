@@ -7,6 +7,7 @@ wandb
 # happy_whale
 *.bin
 *.pkl
+*.csv
 sandbox/happy_whale/kaggle-happywhale-1st-place/input
 sandbox/happy_whale/kaggle-happywhale-1st-place/result
 *api.yaml
