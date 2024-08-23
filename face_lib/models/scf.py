@@ -51,16 +51,16 @@ class SphereConfidenceFace(LightningModule):
         scf_loss: torch.nn.Module,
         optimizer_params,
         scheduler_params,
-        permute_batch: bool,
         softmax_weights: torch.nn.Module,
-        validation_dataset,
-        template_pooling_strategy,
-        recognition_method,
-        verification_metrics,
+        permute_batch: bool,
+        validation_dataset = None,
+        template_pooling_strategy = None,
+        recognition_method = None,
+        verification_metrics = None,
     ):
         super().__init__()
         self.backbone = backbone
-        self.backbone.backbone.eval()
+        self.backbone.eval()
         self.head = head
         self.scf_loss = scf_loss
         self.softmax_weights = softmax_weights.softmax_weights
@@ -72,11 +72,12 @@ class SphereConfidenceFace(LightningModule):
         self.validation_dataset = validation_dataset
         self.template_pooling_strategy = template_pooling_strategy
         self.recognition_method = recognition_method
-        self.verification_metrics = instantiate_list(verification_metrics)
-        print(self.verification_metrics)
+        if verification_metrics is not None:
+            self.verification_metrics = instantiate_list(verification_metrics)
+            print(self.verification_metrics)
 
     def forward(self, x):
-        self.backbone.backbone.eval()
+        self.backbone.eval()
         backbone_outputs = self.backbone(x)
         log_kappa = self.head(backbone_outputs["bottleneck_feature"])
         return backbone_outputs["feature"], log_kappa
@@ -121,6 +122,7 @@ class SphereConfidenceFace(LightningModule):
         }
 
     def predict_step(self, batch, batch_idx):
+        print(len(batch))
         if len(batch) == 2:
             # ms1m pred
             images_batch, labels = batch

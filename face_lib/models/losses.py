@@ -28,7 +28,7 @@ class KLDiracVMF(nn.Module):
         log_ive_kappa = torch.log(1e-6 + self.ive(d / 2 - 1, kappa))
         log_iv_kappa = log_ive_kappa + kappa
 
-        cos_theta = torch.sum(mu * wc, dim=1, keepdim=True) / r
+        cos_theta = torch.sum(mu * wc, dim=1, keepdim=True)
 
         l1 = -kappa * cos_theta
         l2 = -(d / 2 - 1) * torch.log(1e-6 + kappa)

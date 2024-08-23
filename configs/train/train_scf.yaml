@@ -38,7 +38,7 @@ model:
             class_path: face_lib.models.heads.SCFHead
             init_args:
                 convf_dim: 25088
-                latent_vector_size: 2048 #8096
+                latent_vector_size: 12544
         scf_loss:
             class_path: face_lib.models.losses.KLDiracVMF
             init_args:
