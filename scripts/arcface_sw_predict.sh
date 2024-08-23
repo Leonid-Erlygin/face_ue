@@ -1,6 +1,6 @@
 docker run \
- --shm-size=8g \
- --memory=80g \
+ --shm-size=20g \
+ --memory=200g \
  --cpus=40 \
  --user 1012:1012 \
  --name arcface_predict \

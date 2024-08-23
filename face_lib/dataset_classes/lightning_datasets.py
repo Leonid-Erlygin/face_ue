@@ -440,7 +440,7 @@ class VGGFaceDataset(Dataset):
 
                 self.alb_transform = A.Compose(albument_transforms, p=album_probability)
             else:
-                self.alb_transform = A.NoOp(p = album_probability) #identity transform
+                self.alb_transform = A.NoOp(p=album_probability)  # identity transform
 
             self.transform = v2.Compose(
                 [
