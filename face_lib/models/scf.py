@@ -53,10 +53,10 @@ class SphereConfidenceFace(LightningModule):
         scheduler_params,
         softmax_weights: torch.nn.Module,
         permute_batch: bool,
-        validation_dataset = None,
-        template_pooling_strategy = None,
-        recognition_method = None,
-        verification_metrics = None,
+        validation_dataset=None,
+        template_pooling_strategy=None,
+        recognition_method=None,
+        verification_metrics=None,
     ):
         super().__init__()
         self.backbone = backbone
