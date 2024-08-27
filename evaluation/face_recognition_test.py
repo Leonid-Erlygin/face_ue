@@ -490,7 +490,7 @@ class Face_Fecognition_test:
                 unc_metric(
                     scores=scores,
                     labels=self.test_dataset.label,
-                    predicted_unc=predicted_unc,
+                    predicted_unc=predicted_unc[:, 0],
                 )
             )
         return metrics, unc_metrics, predicted_unc

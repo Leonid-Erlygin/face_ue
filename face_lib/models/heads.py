@@ -8,21 +8,34 @@ from face_lib import models as mlib
 
 
 class SCFHead(nn.Module):
-    def __init__(self, convf_dim, latent_vector_size):
+    def __init__(self, convf_dim, latent_vector_size, activation="relu"):
         super().__init__()
 
         self.convf_dim = convf_dim
         self.latent_vector_size = latent_vector_size
         # Trying to increase number of parameters
-        self._log_kappa = nn.Sequential(
-            nn.Linear(self.convf_dim, self.latent_vector_size),
-            nn.BatchNorm1d(self.latent_vector_size, affine=True),
-            nn.ReLU(inplace=True),
-            nn.Linear(self.latent_vector_size, self.latent_vector_size // 2),
-            nn.BatchNorm1d(self.latent_vector_size // 2, affine=True),
-            nn.ReLU(inplace=True),
-            nn.Linear(self.latent_vector_size // 2, 1),
-        )
+        if activation == "relu":
+            self._log_kappa = nn.Sequential(
+                nn.Linear(self.convf_dim, self.latent_vector_size),
+                nn.BatchNorm1d(self.latent_vector_size, affine=True),
+                nn.ReLU(inplace=True),
+                nn.Linear(self.latent_vector_size, self.latent_vector_size // 2),
+                nn.BatchNorm1d(self.latent_vector_size // 2, affine=True),
+                nn.ReLU(inplace=True),
+                nn.Linear(self.latent_vector_size // 2, 1),
+            )
+        elif activation == "sigmoid":
+            self._log_kappa = nn.Sequential(
+                nn.Linear(self.convf_dim, self.latent_vector_size),
+                nn.BatchNorm1d(self.latent_vector_size, affine=True),
+                nn.Sigmoid(),
+                nn.Linear(self.latent_vector_size, self.latent_vector_size // 2),
+                nn.BatchNorm1d(self.latent_vector_size // 2, affine=True),
+                nn.Sigmoid(),
+                nn.Linear(self.latent_vector_size // 2, 1),
+            )
+        else:
+            raise ValueError
 
     def forward(self, convf):
         log_kappa = self._log_kappa(convf)
