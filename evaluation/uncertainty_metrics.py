@@ -20,7 +20,8 @@ class DisposeBasedOnUncVerif:
         predicted_unc = predicted_unc
         unc_indexes = np.argsort(predicted_unc)
         unc_metrics = {"fractions": self.fractions}
-        for fraction in self.fractions:
+        assert len(scores) == len(predicted_unc)
+        for fraction in tqdm(self.fractions):
             # drop worst fraction
             good_idx = unc_indexes[: int((1 - fraction) * scores.shape[0])]
             metric = self.metric_to_monitor(
