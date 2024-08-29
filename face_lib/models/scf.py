@@ -31,7 +31,7 @@ class SoftmaxWeights(torch.nn.Module):
             self.softmax_weights, dim=1, keepdim=True
         )  # [N, 512]
         self.softmax_weights = (
-            self.softmax_weights / softmax_weights_norm
+            self.softmax_weights / softmax_weights_norm * radius
         )  # $ w_c \in rS^{d-1} $
 
         self.softmax_weights = torch.nn.Parameter(

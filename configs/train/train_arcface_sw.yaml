@@ -1,17 +1,17 @@
 seed_everything: 777
 trainer:
-#   logger:
-#     class_path: pytorch_lightning.loggers.WandbLogger
-#     init_args:
-#       project: "face-ue"
-#   log_every_n_steps: 3
+  logger:
+    class_path: pytorch_lightning.loggers.WandbLogger
+    init_args:
+      project: "face-ue"
+  log_every_n_steps: 3
   default_root_dir: outputs/scf_train
   enable_checkpointing: true
   callbacks:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args: 
       every_n_epochs: 1
-      dirpath: outputs/scf_new_data/arcface_vgg2
+      dirpath: outputs/scf_new_data/arcface_vgg2_version2
       save_last: True
   - class_path: pytorch_lightning.callbacks.LearningRateMonitor
     init_args: 
@@ -21,14 +21,14 @@ trainer:
       output_dir: /app/cache/features
       file_name: vgg2_arcface_sw_embs
       write_interval: epoch
-  max_epochs: 20
+  max_epochs: 30
   accelerator: gpu
   devices: 1
   num_sanity_val_steps: 0
 model:
     class_path: face_lib.models.arcface.ArcFace_SW
     init_args:
-        backbone_path: /app/model_weights/backbone/vgg_iresnet50/backbone_vgg.pth
+        backbone: /app/model_weights/backbone/vgg_iresnet50/backbone_vgg.pth
         arcface_loss:
             class_path: face_lib.models.losses.ArcFaceLoss
             init_args:
@@ -37,20 +37,20 @@ model:
         softmax_weights:
             class_path: face_lib.models.scf.SoftmaxWeights
             init_args:
-                softmax_weights_path: /app/model_weights/backbone/vgg_iresnet50/softmax_weights_trained_correct.pt
+                softmax_weights_path: /app/model_weights/backbone/vgg_iresnet50/softmax_weights_mean_vgg.pt
                 radius: 64 #${model.scf_loss.init_args.radius}
                 requires_grad: True
         optimizer_params:
             optimizer_path: torch.optim
             optimizer_name: AdamW # Adam
             params:
-                lr: 1e-2
+                lr: 1e-1
                 weight_decay: 5e-4
         scheduler_params:
             scheduler: StepLR
             params:
-                step_size: 2
-                gamma: 0.5
+                step_size: 4
+                gamma: 0.1
             interval: "step"
             frequency: 1
         permute_batch: False

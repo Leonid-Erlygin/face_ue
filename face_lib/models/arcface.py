@@ -12,7 +12,7 @@ from typing import Tuple, Dict
 class ArcFace_SW(LightningModule):
     def __init__(
         self,
-        backbone_path,
+        backbone,
         arcface_loss: torch.nn.Module,
         optimizer_params,
         scheduler_params,
@@ -20,7 +20,7 @@ class ArcFace_SW(LightningModule):
         softmax_weights: torch.nn.Module,
     ):
         super().__init__()
-        self.backbone = torch.load(backbone_path)
+        self.backbone = torch.load(backbone)
         self.backbone.eval()
 
         self.arcface_loss = arcface_loss
@@ -37,14 +37,12 @@ class ArcFace_SW(LightningModule):
             - features: outputs of the backbone model a.k.a. embeddings
             - logits: result of the last linear transformations
         """
-        self.backbone.eval()
         with torch.no_grad():
             backbone_outputs = self.backbone(x)
-            backbone_outputs_normalized = F.normalize(backbone_outputs, p = 2.0, dim = 1)
-            features = backbone_outputs_normalized.detach()
+            backbone_outputs = torch.nn.functional.normalize(backbone_outputs, p=2.0, dim=1)
 
         norm_weights = F.normalize(self.softmax_weights, dim=1)
-        logits = F.linear(features, norm_weights)
+        logits = F.linear(backbone_outputs, norm_weights)
 
         return logits
 
@@ -57,7 +55,6 @@ class ArcFace_SW(LightningModule):
         :param idx: batch number
         :return: value of the loss function
         """
-        self.backbone.eval()
         images, labels = batch
         logits = self(images)
 

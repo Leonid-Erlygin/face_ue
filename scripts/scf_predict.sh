@@ -12,5 +12,5 @@ docker run \
  kolesnikov-face \
  python trainers/train.py predict \
  --config configs/train/train_scf_with_psd.yaml \
- --ckpt_path=/app/outputs/scf_new_data/pixel_dropout/weights_pixel_drop_album_75%/epoch=15-step=232896.ckpt
+ --ckpt_path=/app/outputs/scf_new_data/augmix_only/weights_augmix_only_70%/epoch=15-step=232896.ckpt
 #  --trainer.devices=1 
