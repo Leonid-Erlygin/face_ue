@@ -6,6 +6,9 @@ from typing import Tuple, List
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from pytorch_lightning import LightningModule
+from sklearn.metrics import auc
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 
 def predict_features(
@@ -112,3 +115,42 @@ def compute_distance_and_visualize(
         plt.show()
 
     return dists
+
+
+def tar_far_curve(scores, pairs):
+    is_positive = pairs["is_positive"].values
+    wrong_match_scores = scores[is_positive == 0]
+    true_match_scores = scores[is_positive]
+    fars = [10**ii for ii in np.arange(-6, 0, 4 / 100)] + [1]
+    threshes, recalls = [], []
+    wrong_match_scores_sorted = np.sort(wrong_match_scores)[::-1]
+    for far in fars:
+        thresh = wrong_match_scores_sorted[
+            max(int((wrong_match_scores_sorted.shape[0]) * far) - 1, 0)
+        ]
+        recall = np.sum(true_match_scores > thresh) / true_match_scores.shape[0]
+        threshes.append(thresh)
+        recalls.append(recall)
+
+    sns.set_style("whitegrid")
+    fig = plt.figure()
+
+    auc_value = auc(fars, recalls)
+    label = "%s (AUC = %0.4f%%), tar %0.4f at far %.1E" % (
+        "Косинусное расстояние",
+        auc_value * 100,
+        recalls[0],
+        fars[0],
+    )
+    plt.plot(fars, recalls, lw=1, label=label)
+
+    plt.xlabel("False Acceptance Rate")
+    plt.xlim([fars[0], 1])
+    plt.xscale("log")
+    plt.ylabel("True Acceptance Rate (%)")
+    plt.ylim([0, 1])
+
+    # plt.grid(linestyle="--", linewidth=1)
+    plt.legend(fontsize="x-small")
+    # plt.tight_layout()
+    plt.show()
