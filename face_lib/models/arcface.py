@@ -57,13 +57,14 @@ class ArcFace_SW(LightningModule):
         """
         images, labels = batch
         logits = self(images)
-
+        rows = torch.arange(logits.shape[0])
+        self.log("cos distance", torch.mean(logits[rows,labels]).item(), prog_bar=True)
         loss = self.arcface_loss(logits, labels)
 
         # log loss value
         self.log("train_loss", loss.item(), prog_bar=True)
-        self.log("cos distance", torch.mean(torch.max(logits, dim = 1)[0]).item(), prog_bar=True)
-
+        #self.log("cos distance", torch.mean(torch.max(logits, dim = 1)[0]).item(), prog_bar=True)
+        #self.log("cos distance", torch.mean(logits[:,labels]).item(), prog_bar=True)
         return loss
 
 
