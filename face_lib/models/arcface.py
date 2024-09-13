@@ -62,7 +62,7 @@ class ArcFace_SW(LightningModule):
 
         # log loss value
         self.log("train_loss", loss.item(), prog_bar=True)
-        self.log("cos distance", torch.mean(torch.max(logits, dim = 1)[0]).item(), prog_bar=True)
+        self.log("cos distance", torch.mean(logits[np.arange(logits.shape[0]), labels]).item(), prog_bar=True)
 
         return loss
 

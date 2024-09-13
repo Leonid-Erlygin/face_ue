@@ -3,6 +3,7 @@ cache
 .vscode
 datasets
 unsorted_data
+downloads_torrent
 wandb
 # happy_whale
 *.bin
