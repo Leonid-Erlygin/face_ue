@@ -45,7 +45,7 @@ trainer:
   callbacks:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args:
-      dirpath: outputs/scf_new_data/arcface_vgg2_version2
+      dirpath: outputs/scf_new_data/arcface_vgg2_version3
       filename: null
       monitor: null
       verbose: false
@@ -113,13 +113,13 @@ model:
       optimizer_path: torch.optim
       optimizer_name: AdamW
       params:
-        lr: 0.1
+        lr: 0.01
         weight_decay: 0.0005
     scheduler_params:
       scheduler: StepLR
       params:
         step_size: 4
-        gamma: 0.1
+        gamma: 0.5
       interval: step
       frequency: 1
     permute_batch: false
@@ -155,5 +155,5 @@ data:
         album_augments: null
         album_probability: 0.0
     batch_size: 512
-    num_workers: 36
+    num_workers: 32
     train_batch_sampler: null

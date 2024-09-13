@@ -11,7 +11,7 @@ trainer:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args: 
       every_n_epochs: 1
-      dirpath: outputs/scf_new_data/arcface_vgg2_version2
+      dirpath: outputs/scf_new_data/arcface_vgg2_version3
       save_last: True
   - class_path: pytorch_lightning.callbacks.LearningRateMonitor
     init_args: 
@@ -44,13 +44,13 @@ model:
             optimizer_path: torch.optim
             optimizer_name: AdamW # Adam
             params:
-                lr: 1e-1
+                lr: 1e-2
                 weight_decay: 5e-4
         scheduler_params:
             scheduler: StepLR
             params:
                 step_size: 4
-                gamma: 0.1
+                gamma: 0.5
             interval: "step"
             frequency: 1
         permute_batch: False
@@ -99,4 +99,4 @@ data:
             #     dataset_name: IJBC
             #     norm_image: True
         batch_size: 512
-        num_workers: 36
+        num_workers: 32
