@@ -141,11 +141,10 @@ class SphereConfidenceFace(LightningModule):
         }
 
     def predict_step(self, batch, batch_idx):
-        print(len(batch))
         if len(batch) == 4:
             # five ds pred
-            images_batch = batch[0]
-        if len(batch) == 2:
+            images_batch, _, _, _ = batch
+        elif len(batch) == 2:
             # ms1m pred
             images_batch, labels = batch
             return self(images_batch)

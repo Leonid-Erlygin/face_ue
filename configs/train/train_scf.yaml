@@ -23,7 +23,7 @@ trainer:
 #       write_interval: epoch
   - class_path: face_lib.models.scf.FiveDsPrediction_writer
     init_args: 
-      output_dir: /app/cache
+      output_dir: /app/cache/five_ds_embs
       file_name: default_scf_embs_five_ds
       write_interval: epoch
   max_epochs: 16
@@ -81,10 +81,10 @@ model:
             init_args:
                 distance_function:
                     class_path: evaluation.distance_functions.distance_functions.CosineSimPairwise
-        verification_metrics:
-            - _target_: evaluation.metrics.TarFar
-              far_range: [-6, -0.5, 0.1]
-              display_fars: [1e-6, 1e-5, 1e-4, 1e-3]
+        # verification_metrics:
+        #     - _target_: evaluation.metrics.TarFar
+        #       far_range: [-6, -0.5, 0.1]
+        #       display_fars: [1e-6, 1e-5, 1e-4, 1e-3]
 
 data:
     class_path: face_lib.dataset_classes.lightning_datasets.UncertaintyDataModule
