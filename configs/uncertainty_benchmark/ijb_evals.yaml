@@ -18,7 +18,7 @@ test_datasets:
   #   dataset_path: /app/datasets/arcface_ijb/IJBB
 
   - _target_: evaluation.test_datasets.FaceRecogntioniDataset
-    dataset_name: IJBC
+  dataset_name: IJBC
     dataset_path: /app/datasets/arcface_ijb/IJBC
 
   # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
