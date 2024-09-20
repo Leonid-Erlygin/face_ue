@@ -21,6 +21,19 @@ class Prediction_writer(BasePredictionWriter):
         np.savez(self.output_dir / f"{self.file_name}.npz", embs=embs, unc=unc)
 
 
+class FiveDsPrediction_writer(BasePredictionWriter):
+    def __init__(self, output_dir: str, file_name: str, write_interval: str):
+        super().__init__(write_interval)
+        self.output_dir = Path(output_dir)
+        self.file_name = file_name
+
+    def write_on_epoch_end(self, trainer, pl_module, predictions, batch_indices):
+        embs = torch.cat([batch[0] for batch in predictions], axis=0).numpy()
+        unc = torch.cat([batch[1] for batch in predictions], axis=0).numpy()
+        print(embs.shape, unc.shape)
+        np.savez(self.output_dir / f"{self.file_name}.npz", embs=embs, unc=unc)
+
+
 class SoftmaxWeights(torch.nn.Module):
     def __init__(
         self, softmax_weights_path: str, radius: int, requires_grad=False
@@ -129,6 +142,9 @@ class SphereConfidenceFace(LightningModule):
 
     def predict_step(self, batch, batch_idx):
         print(len(batch))
+        if len(batch) == 4:
+            # five ds pred
+            images_batch = batch[0]
         if len(batch) == 2:
             # ms1m pred
             images_batch, labels = batch

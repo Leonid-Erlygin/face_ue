@@ -3,13 +3,13 @@ docker run \
  --memory=160g \
  --gpus '"device=2"' \
  --cpus=40 \
- --user 1005:1005 \
- --name scf_pred \
+ --user ${UID}:${UID} \
+ --name ${USER}_$(basename $(dirname "$PWD"))_scf_pred \
  --rm \
  --init \
- -v $HOME/face_ue:/app \
+ -v $(dirname "$PWD"):/app \
  -w="/app" \
- face-eval \
+ ${USER}_$(basename $(dirname "$PWD")) \
  python trainers/train.py predict \
  --config configs/train/train_scf.yaml \
  --ckpt_path=/app/outputs/scf_uniform_batch/default_scf/epoch=14-step=218340.ckpt \
