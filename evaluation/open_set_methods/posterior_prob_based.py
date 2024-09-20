@@ -1,7 +1,7 @@
 import numpy as np
 from .base_method import OpenSetMethod
 from evaluation.metrics import FrrFarIdent
-from evaluation.test_datasets import FaceRecogntioniDataset
+from evaluation.test_datasets import FaceRecogntionDataset
 from evaluation.template_pooling_strategies import PoolingDefault
 from evaluation.embeddings import process_embeddings
 from evaluation.face_recognition_test import Face_Fecognition_test
@@ -213,7 +213,7 @@ class PosteriorProbability(OpenSetMethod):
         calibrate_unc: bool = None,
         calibrate_by_false_reject: bool = False,
         calibrate_gallery_unc: str = None,
-        calibration_set: FaceRecogntioniDataset = None,
+        calibration_set: FaceRecogntionDataset = None,
     ) -> None:
         super().__init__()
         self.distance_function = distance_function

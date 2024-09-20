@@ -4,7 +4,7 @@ from tqdm import tqdm
 
 from .embeddings import process_embeddings
 from .template_pooling_strategies import AbstractTemplatePooling
-from .test_datasets import FaceRecogntioniDataset
+from .test_datasets import FaceRecogntionDataset
 
 
 class Face_Fecognition_test:
@@ -14,7 +14,7 @@ class Face_Fecognition_test:
         method_name: str,
         pretty_name: str,
         recognition_method,
-        test_dataset: FaceRecogntioniDataset,
+        test_dataset: FaceRecogntionDataset,
         embedding_type: str,
         embeddings_path: str,
         use_detector_score: bool,
