@@ -219,7 +219,7 @@ class MXFaceDataset(Dataset):
             label = label[0]
         label = torch.tensor(label, dtype=torch.long)
         sample = mx.image.imdecode(img).asnumpy()
-        if self.transform is not None:
+        if self.transform is not None and self.test is False:
             sample = self.alb_transform(image=sample)
             sample = sample["image"]
             sample = self.transform(sample)

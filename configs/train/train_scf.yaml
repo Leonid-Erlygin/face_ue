@@ -1,9 +1,9 @@
 seed_everything: 777
 trainer:
-#   logger:
-#     class_path: pytorch_lightning.loggers.WandbLogger
-#     init_args:
-#       project: "scf-uniform-batch_from_start"
+  logger:
+    class_path: pytorch_lightning.loggers.WandbLogger
+    init_args:
+      project: "scf-uniform-batch_from_start"
   log_every_n_steps: 3
   default_root_dir: outputs/scf_train
   enable_checkpointing: true
@@ -21,7 +21,7 @@ trainer:
 #       output_dir: /app/datasets/arcface_ijb/IJBC/embeddings
 #       file_name: uniform_scf_embs_IJBC
 #       write_interval: epoch
-  - class_path: face_lib.models.scf.FiveDsPrediction_writer
+  - class_path: face_lib.models.scf.Prediction_writer
     init_args: 
       output_dir: /app/cache/five_ds_embs
       file_name: default-scf_embs_five_ds
@@ -81,10 +81,10 @@ model:
             init_args:
                 distance_function:
                     class_path: evaluation.distance_functions.distance_functions.CosineSimPairwise
-        # verification_metrics:
-        #     - _target_: evaluation.metrics.TarFar
-        #       far_range: [-6, -0.5, 0.1]
-        #       display_fars: [1e-6, 1e-5, 1e-4, 1e-3]
+        verification_metrics:
+            - _target_: evaluation.metrics.TarFar
+              far_range: [-6, -0.5, 0.1]
+              display_fars: [1e-6, 1e-5, 1e-4, 1e-3, 1e-2]
 
 data:
     class_path: face_lib.dataset_classes.lightning_datasets.UncertaintyDataModule

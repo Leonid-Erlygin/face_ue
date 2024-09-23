@@ -21,19 +21,6 @@ class Prediction_writer(BasePredictionWriter):
         np.savez(self.output_dir / f"{self.file_name}.npz", embs=embs, unc=unc)
 
 
-class FiveDsPrediction_writer(BasePredictionWriter):
-    def __init__(self, output_dir: str, file_name: str, write_interval: str):
-        super().__init__(write_interval)
-        self.output_dir = Path(output_dir)
-        self.file_name = file_name
-
-    def write_on_epoch_end(self, trainer, pl_module, predictions, batch_indices):
-        embs = torch.cat([batch[0] for batch in predictions], axis=0).numpy()
-        unc = torch.cat([batch[1] for batch in predictions], axis=0).numpy()
-        print(embs.shape, unc.shape)
-        np.savez(self.output_dir / f"{self.file_name}.npz", embs=embs, unc=unc)
-
-
 class SoftmaxWeights(torch.nn.Module):
     def __init__(
         self, softmax_weights_path: str, radius: int, requires_grad=False
@@ -50,10 +37,6 @@ class SoftmaxWeights(torch.nn.Module):
         self.softmax_weights = torch.nn.Parameter(
             self.softmax_weights, requires_grad=requires_grad
         )
-        # self.softmax_weights = torch.nn.Parameter(
-        #     torch.empty((8631, 512))
-        # )
-        # torch.nn.init.kaiming_uniform_(self.softmax_weights, a=math.sqrt(5))
 
 
 class SphereConfidenceFace(LightningModule):
