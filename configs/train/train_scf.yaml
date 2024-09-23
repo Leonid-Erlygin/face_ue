@@ -24,7 +24,7 @@ trainer:
   - class_path: face_lib.models.scf.FiveDsPrediction_writer
     init_args: 
       output_dir: /app/cache/five_ds_embs
-      file_name: default_scf_embs_five_ds
+      file_name: default-scf_embs_five_ds
       write_interval: epoch
   max_epochs: 16
   accelerator: gpu
