@@ -75,7 +75,7 @@ class SphereConfidenceFace(LightningModule):
         self.validation_dataset = validation_dataset
         self.template_pooling_strategy = template_pooling_strategy
         self.recognition_method = recognition_method
-        self.verification_metrics = instantiate_list(verification_metrics)
+        self.verification_metrics = verification_metrics
         print(self.verification_metrics)
 
     def forward(self, x):

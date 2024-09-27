@@ -1,5 +1,6 @@
 outputs
 cache
+multirun
 .vscode
 datasets
 unsorted_data

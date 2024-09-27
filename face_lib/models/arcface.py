@@ -20,8 +20,8 @@ class ArcFace_SW(LightningModule):
         softmax_weights: torch.nn.Module,
     ):
         super().__init__()
-        self.backbone = torch.load(backbone)
-        self.backbone.eval()
+        self.backbone = backbone
+        self.backbone.backbone.eval()
 
         self.arcface_loss = arcface_loss
         self.softmax_weights = softmax_weights.softmax_weights
@@ -38,7 +38,7 @@ class ArcFace_SW(LightningModule):
             - logits: result of the last linear transformations
         """
         with torch.no_grad():
-            backbone_outputs = self.backbone(x)
+            backbone_outputs = self.backbone(x)["feature"]
             backbone_outputs = torch.nn.functional.normalize(backbone_outputs, p=2.0, dim=1)
 
         norm_weights = F.normalize(self.softmax_weights, dim=1)
@@ -57,8 +57,7 @@ class ArcFace_SW(LightningModule):
         """
         images, labels = batch
         logits = self(images)
-        rows = torch.arange(logits.shape[0])
-        self.log("cos distance", torch.mean(logits[rows,labels]).item(), prog_bar=True)
+
         loss = self.arcface_loss(logits, labels)
 
         # log loss value

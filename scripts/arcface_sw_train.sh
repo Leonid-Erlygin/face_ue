@@ -2,7 +2,7 @@ docker run \
  --shm-size=8g \
  --memory=80g \
  --cpus=40 \
- --user 1012:1012 \
+ --user 4200214:4200214 \
  --name arcface_train_first \
  --env WANDB_API_KEY=fc366b0c6dc3150de383b028451e1cfa35009932 \
  --rm \

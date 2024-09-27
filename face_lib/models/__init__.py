@@ -1,7 +1,7 @@
 from .base import FaceModule
 from .losses import MLSLoss, AngleLoss, ArcFace, CosFace, MLS, ProbLoss
 from .spherenet import SphereNet20
-from .heads import PFEHead, PFEHeadAdjustable, ProbHead, PFEHeadAdjustableSpectralSimple
+from .heads import SCFHead,PFEHead, PFEHeadAdjustable, ProbHead, PFEHeadAdjustableSpectralSimple
 from .pair_classifiers import MLP, SmartCosine, Bilinear
 from .iresnet import (
     iresnet18,
@@ -11,7 +11,7 @@ from .iresnet import (
     iresnet50_normalized,
     iresnet50_spectral_normalized,
 )
-from .scf import SphereConfidenceFace
+from .scf import SphereConfidenceFace, Prediction_writer
 from .partial_fc import PartialFC
 from .style_gan import StyleGanDiscriminator
 from .scale_predictors import MLPHead
@@ -26,29 +26,29 @@ model_dict = {
     "iresnet50_spectral_normalized": iresnet50_spectral_normalized,
 }
 
-criterions_dict = {
-    "mlsloss": MLSLoss,
-    "angle_loss": AngleLoss,
-    "arcface": ArcFace,
-    "cosface": CosFace,
-    "probloss": ProbLoss,
-    "bce_loss": BCELoss,
-    "cross_entropy_loss": CrossEntropyLoss,
-}
+# criterions_dict = {
+#     "mlsloss": MLSLoss,
+#     "angle_loss": AngleLoss,
+#     "arcface": ArcFace,
+#     "cosface": CosFace,
+#     "probloss": ProbLoss,
+#     "bce_loss": BCELoss,
+#     "cross_entropy_loss": CrossEntropyLoss,
+# }
 
-heads = {
-    "pfe_head": PFEHead,
-    "pfe_head_adjustable": PFEHeadAdjustable,
-    "pfe_head_adjustable_spectral": PFEHeadAdjustableSpectralSimple,
-    "prob_head": ProbHead,
-}
+# heads = {
+#     "pfe_head": PFEHead,
+#     "pfe_head_adjustable": PFEHeadAdjustable,
+#     "pfe_head_adjustable_spectral": PFEHeadAdjustableSpectralSimple,
+#     "prob_head": ProbHead,
+# }
 
-pair_classifiers = {
-    "multilayer_perceptron": MLP,
-    "smart_cosine": SmartCosine,
-    "bilinear": Bilinear,
-}
+# pair_classifiers = {
+#     "multilayer_perceptron": MLP,
+#     "smart_cosine": SmartCosine,
+#     "bilinear": Bilinear,
+# }
 
-scale_predictors = {
-    "MLPHead": MLPHead,
-}
+# scale_predictors = {
+#     "MLPHead": MLPHead,
+# }

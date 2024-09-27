@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y \
 RUN mkdir /app
 WORKDIR /app
 
+ENV PYTHONPATH /app
 
 USER root
 RUN groupadd -g 4200214 ikolesnikov

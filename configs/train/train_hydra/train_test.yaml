@@ -1,0 +1,115 @@
+seed_everything: 777
+trainer:
+  _target_: pytorch_lightning.Trainer
+  logger:
+    _target_: pytorch_lightning.loggers.WandbLogger
+    project: "face-ue"
+  callbacks:
+  - _target_: pytorch_lightning.callbacks.ModelCheckpoint 
+    every_n_epochs: 1
+    dirpath: outputs/scf_multiple/testing
+    save_last: True
+  - _target_: pytorch_lightning.callbacks.LearningRateMonitor
+    logging_interval: "step"
+  - _target_: face_lib.models.scf.Prediction_writer
+    output_dir: /app/cache/features
+    file_name: scf_vgg_from_zero # scf_embs_inter  #scf_embs_lfw #scf_embs_ms1m_3531-classes_0-seed_30-min-class-size
+    write_interval: epoch
+  max_epochs: 2
+  accelerator: gpu
+  devices: 1
+  num_sanity_val_steps: -1
+  log_every_n_steps: 3
+  default_root_dir: outputs/scf_train
+  enable_checkpointing: true
+model:
+    _target_: face_lib.models.scf.SphereConfidenceFace
+    backbone:
+        _target_: face_lib.models.lightning_wrappers.ResNet
+        resnet_name: iresnet50_normalized
+        weights: /app/model_weights/backbone/ms1mv3_arcface_r50/backbone.pth
+        learnable: False #False
+    head:
+        _target_: face_lib.models.heads.SCFHead
+        convf_dim: 25088
+        latent_vector_size: 1024 #8096
+    scf_loss:
+        _target_: face_lib.models.losses.KLDiracVMF
+        z_dim: 512
+        radius: 64
+    softmax_weights:
+        _target_: face_lib.models.scf.SoftmaxWeights
+        softmax_weights_path: "/app/model_weights/backbone/ms1mv3_arcface_r50/softmax_weight.pt"
+        radius: 64 #${model.scf_loss.init_args.radius}
+    optimizer_params:
+        optimizer_path: torch.optim
+        optimizer_name: AdamW # Adam
+        params:
+            lr: 3e-5 #3e-5
+            weight_decay: 5e-4
+    scheduler_params:
+            scheduler: StepLR
+            params:
+                step_size: 2
+                gamma: 0.5
+            interval: "step"
+            frequency: 1
+    validation_dataset:
+        _target_: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+        dataset_path: /app/datasets/arcface_ijb/IJBC
+        dataset_name: IJBC
+        norm_image: True
+    template_pooling_strategy:
+        _target_: evaluation.template_pooling_strategies.PoolingConcentration
+    recognition_method:
+        _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+        distance_function:
+            _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+    permute_batch: False
+    verification_metrics:
+        - _target_: evaluation.metrics.TarFar
+          far_range: [-6, -0.5, 0.1]
+          display_fars: [1e-6, 1e-5, 1e-4, 1e-3]
+
+data:
+    _target_: face_lib.dataset_classes.lightning_datasets.UncertaintyDataModule
+    train_dataset:
+        # class_path: face_lib.dataset_classes.lightning_datasets
+        # dataset_name: VGGFaceDataset
+        # init_args:
+        #     root_dir: /app/datasets/faces_vgg_112x112/
+        _target_: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
+        root_dir: /app/datasets/ms1m/
+        # album_augments: 
+        # - class_path: albumentations
+        #   aug_name: GridDistortion
+        #   init_args: 
+        #     num_steps: 5
+        #     distort_limit: 0.3
+        #     p: 0.5
+        # - class_path: albumentations
+        #   aug_name: GridDistortion
+        #   init_args: 
+        #     num_steps: 10
+        #     distort_limit: 0.5
+        #     p: 0.5
+        # - class_path: albumentations
+        #   aug_name: GridDistortion
+        #   init_args: 
+        #     num_steps: 50
+        #     distort_limit: 1.0
+        #     p: 0.5
+        # album_probability: 1.0
+    validation_dataset:
+        _target_: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+        dataset_path: /app/datasets/arcface_ijb/IJBC
+        dataset_name: IJBC
+        norm_image: True
+
+    predict_dataset:
+        _target_: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+        dataset_path: /app/datasets/arcface_ijb/IJBC
+        dataset_name: IJBC
+        norm_image: True
+    batch_size: 400
+    num_workers: 36

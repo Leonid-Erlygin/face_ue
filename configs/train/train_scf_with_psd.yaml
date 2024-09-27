@@ -4,14 +4,14 @@ trainer:
 #     class_path: pytorch_lightning.loggers.WandbLogger
 #     init_args:
 #       project: "face-ue"
-#   log_every_n_steps: 3
+  log_every_n_steps: 3
   default_root_dir: outputs/scf_train
   enable_checkpointing: true
   callbacks:
   - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args: 
       every_n_epochs: 1
-      dirpath: outputs/scf_new_data/augmix_only/weights_augmix_only_70%
+      dirpath: outputs/scf_new_data/vgg_old_backbone_from_zero
       save_last: True
   - class_path: pytorch_lightning.callbacks.LearningRateMonitor
     init_args: 
@@ -19,9 +19,9 @@ trainer:
   - class_path: face_lib.models.scf.Prediction_writer
     init_args: 
       output_dir: /app/cache/features
-      file_name: scf_augmix_only_70%_embs_IJBC # scf_embs_inter  #scf_embs_lfw #scf_embs_ms1m_3531-classes_0-seed_30-min-class-size
+      file_name: scf_vgg_from_zero # scf_embs_inter  #scf_embs_lfw #scf_embs_ms1m_3531-classes_0-seed_30-min-class-size
       write_interval: epoch
-  max_epochs: 16
+  max_epochs: 7
   accelerator: gpu
   devices: 1
   num_sanity_val_steps: 0
@@ -48,7 +48,7 @@ model:
         softmax_weights:
             class_path: face_lib.models.scf.SoftmaxWeights
             init_args:
-                softmax_weights_path: /app/model_weights/backbone/ms1mv3_arcface_r50/softmax_weight.pt
+                softmax_weights_path: "/app/model_weights/backbone/vgg_iresnet50/softmax_weights_trained_old_backbone.pt"
                 radius: 64 #${model.scf_loss.init_args.radius}
         optimizer_params:
             optimizer_path: torch.optim
@@ -86,12 +86,12 @@ data:
     class_path: face_lib.dataset_classes.lightning_datasets.UncertaintyDataModule
     init_args:
         train_dataset:
-            # class_path: face_lib.dataset_classes.lightning_datasets.VGGFaceDataset
-            # init_args:
-            #     root_dir: /app/datasets/faces_vgg_112x112/
-            class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
+            class_path: face_lib.dataset_classes.lightning_datasets.VGGFaceDataset
             init_args:
-                root_dir: /app/datasets/ms1m/
+                root_dir: /app/datasets/faces_vgg_112x112/
+            # class_path: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
+            # init_args:
+            #     root_dir: /app/datasets/ms1m/
                 # album_augments: 
                 # - class_path: albumentations
                 #   aug_name: GridDistortion
