@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y \
 RUN mkdir /app
 WORKDIR /app
 
+ENV PYTHONPATH /app
 
 # set theese arg's when using docker build
 ARG GID
@@ -42,6 +43,13 @@ USER ${NAME}
 
 ENV HOME=/home/${NAME}
 
+# RUN groupadd -g ${GID} ${NAME}
+# RUN adduser --disabled-password --force-badname --uid ${UID} --gid ${GID} --gecos '' --shell /bin/bash ${NAME} \
+#  && chown -R ${NAME}:${NAME} /app
+# RUN echo "${NAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-${NAME}
+# USER ${NAME}
+
+# ENV HOME=/home/${NAME}
 
 RUN mkdir $HOME/.cache $HOME/.config \
  && chmod -R 777 $HOME

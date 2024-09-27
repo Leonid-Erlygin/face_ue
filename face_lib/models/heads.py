@@ -37,6 +37,17 @@ class SCFHead(nn.Module):
         else:
             raise ValueError
 
+        # Trying to increase number of parameters
+        # self._log_kappa = nn.Sequential(
+        #     nn.Linear(self.convf_dim, self.convf_dim // 2),
+        #     nn.BatchNorm1d(self.convf_dim // 2, affine=True),
+        #     nn.ReLU(inplace=True),
+        #     nn.Linear(self.convf_dim // 2, self.convf_dim // 4),
+        #     nn.BatchNorm1d(self.convf_dim // 4, affine=True),
+        #     nn.ReLU(inplace=True),
+        #     nn.Linear(self.convf_dim // 4, 1),
+        # )
+
     def forward(self, convf):
         log_kappa = self._log_kappa(convf)
         log_kappa = torch.log(1e-6 + torch.exp(log_kappa))
