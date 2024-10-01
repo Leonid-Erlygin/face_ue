@@ -8,9 +8,9 @@ docker run \
  --rm \
  --init \
  -v /home/l.erlygin/face_ue:/app \
- --gpus '"device=0"' \
+ --gpus '"device=1"' \
  -w="/app" \
  face-eval \
  python trainers/train.py fit \
  --config configs/train/train_scf.yaml \
-# --ckpt_path=/app/model_weights/scf_base.ckpt
+ --ckpt_path=/app/model_weights/scf_base.ckpt

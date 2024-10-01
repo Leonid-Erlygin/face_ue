@@ -220,7 +220,7 @@ class MXFaceDataset(Dataset):
             label = label[0]
         label = torch.tensor(label, dtype=torch.long)
         sample = mx.image.imdecode(img).asnumpy()
-        if self.transform is not None:
+        if self.transform is not None and self.test is False:
             sample = self.alb_transform(image=sample)
             sample = sample["image"]
             sample = self.transform(sample)
@@ -441,7 +441,7 @@ class VGGFaceDataset(Dataset):
 
                 self.alb_transform = A.Compose(albument_transforms, p=album_probability)
             else:
-                self.alb_transform = A.NoOp(p = album_probability) #identity transform
+                self.alb_transform = A.NoOp(p=album_probability)  # identity transform
 
             self.transform = v2.Compose(
                 [

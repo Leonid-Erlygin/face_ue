@@ -3,8 +3,6 @@ import math
 from pytorch_lightning import LightningModule
 from pytorch_lightning.callbacks import BasePredictionWriter, Callback
 import importlib
-import pickle
-from decimal import Decimal
 from pathlib import Path
 import numpy as np
 from evaluation.ijb_evals import instantiate_list
@@ -24,7 +22,9 @@ class Prediction_writer(BasePredictionWriter):
 
 
 class SoftmaxWeights(torch.nn.Module):
-    def __init__(self, softmax_weights_path: str, radius: int, requires_grad=False) -> None:
+    def __init__(
+        self, softmax_weights_path: str, radius: int, requires_grad=False
+    ) -> None:
         super().__init__()
         self.softmax_weights = torch.load(softmax_weights_path)
         softmax_weights_norm = torch.norm(
@@ -37,13 +37,6 @@ class SoftmaxWeights(torch.nn.Module):
         self.softmax_weights = torch.nn.Parameter(
             self.softmax_weights, requires_grad=requires_grad
         )
-        # self.softmax_weights = torch.nn.Parameter(
-        #     torch.empty((8631, 512))
-        # )
-        # torch.nn.init.kaiming_uniform_(self.softmax_weights, a=math.sqrt(5))
-
-
-
 
 
 class SphereConfidenceFace(LightningModule):
@@ -54,16 +47,17 @@ class SphereConfidenceFace(LightningModule):
         scf_loss: torch.nn.Module,
         optimizer_params,
         scheduler_params,
-        permute_batch: bool,
         softmax_weights: torch.nn.Module,
-        validation_dataset,
-        template_pooling_strategy,
-        recognition_method,
-        verification_metrics,
+        permute_batch: bool,
+        validation_dataset=None,
+        template_pooling_strategy=None,
+        recognition_method=None,
+        verification_metrics=None,
+        predict_kappa_by_input=False,
     ):
         super().__init__()
         self.backbone = backbone
-        self.backbone.backbone.eval()
+        self.backbone.eval()
         self.head = head
         self.scf_loss = scf_loss
         self.softmax_weights = softmax_weights.softmax_weights
@@ -79,8 +73,13 @@ class SphereConfidenceFace(LightningModule):
         #print(self.verification_metrics)
 
     def forward(self, x):
+        self.backbone.eval()
         backbone_outputs = self.backbone(x)
-        log_kappa = self.head(backbone_outputs["bottleneck_feature"])
+        if self.predict_kappa_by_input:
+            x = torch.flatten(x, 1)
+            log_kappa = self.head(x)
+        else:
+            log_kappa = self.head(backbone_outputs["bottleneck_feature"])
         return backbone_outputs["feature"], log_kappa
 
     def training_step(self, batch):
@@ -123,7 +122,10 @@ class SphereConfidenceFace(LightningModule):
         }
 
     def predict_step(self, batch, batch_idx):
-        if len(batch) == 2:
+        if len(batch) == 4:
+            # five ds pred
+            images_batch, _, _, _ = batch
+        elif len(batch) == 2:
             # ms1m pred
             images_batch, labels = batch
             return self(images_batch)

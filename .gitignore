@@ -9,6 +9,7 @@ wandb
 # happy_whale
 *.bin
 *.pkl
+*.csv
 sandbox/happy_whale/kaggle-happywhale-1st-place/input
 sandbox/happy_whale/kaggle-happywhale-1st-place/result
 *api.yaml
@@ -21,6 +22,7 @@ __pycache__/
 *torchviz*
 *.zip
 *.npz
+*.npy
 scripts/whale_train.sh
 # C extensions
 *.so
@@ -156,3 +158,5 @@ checkpoints/
 exman/
 .idea/
 tmp
+sandbox/five_mem_concat
+sandbox/five_mem_concat.conf

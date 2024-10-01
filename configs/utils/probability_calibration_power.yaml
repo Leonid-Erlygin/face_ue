@@ -10,19 +10,19 @@ draw_bin_importance: alpha
 draw_averages: True
 test_datasets:
 
-  # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
+  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
   #   dataset_name: ms1m
   #   dataset_path: /app/datasets/ms1m_ident
 
-  - _target_: evaluation.test_datasets.FaceRecogntioniDataset
+  - _target_: evaluation.test_datasets.FaceRecogntionDataset
     dataset_name: IJBC
     dataset_path: /app/datasets/arcface_ijb/IJBC
 
-  # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
+  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
   #   dataset_name: IJBB
   #   dataset_path: /app/datasets/arcface_ijb/IJBB
   
-  # - _target_: evaluation.test_datasets.FaceRecogntioniDataset
+  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
   #   dataset_name: survFace
   #   dataset_path: /app/datasets/QMUL-SurvFace/Face_Identification_Test_Set
 

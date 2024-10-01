@@ -1,2 +1,1 @@
-# docker build --build-arg="GID=${GID}" --build-arg="UID=${UID}" --build-arg="NAME=${USER}" -t ${USER}_$(basename $(dirname "$PWD")) ../docker_scripts
-docker build -t ikolesnikov-face $HOME/face_ue/docker_scripts
+docker build --build-arg="GID=${UID}" --build-arg="UID=${UID}" --build-arg="NAME=${USER}" -t ${USER}_$(basename $(dirname "$PWD")) ../docker_scripts

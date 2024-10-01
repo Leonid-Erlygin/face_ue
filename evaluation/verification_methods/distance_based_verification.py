@@ -17,7 +17,8 @@ class VerifEval:
     ) -> Any:
         template2id = np.zeros(max(unique_templates) + 1, dtype=int)
         template2id[unique_templates] = np.arange(len(unique_templates))
-        batch_size = 50000
+        # batch_size = 50000
+        batch_size = 5000
         steps = int(np.ceil(len(p1) / batch_size))
         scores = []
         unc = []

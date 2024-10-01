@@ -19,3 +19,4 @@
 "FAR=0.3": ["$\\text{FAR}=0.3$"]
 "TAR@FAR=0.00001": ["TAR@FAR=0.00001"]
 "TAR@FAR=0.0001": ["TAR@FAR=0.0001"]
+"TAR@FAR=0.01": ["TAR@FAR=0.01"]

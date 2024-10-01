@@ -8,12 +8,12 @@ use_two_galleries: True
 recompute_template_pooling: False
 
 # test_dataset:
-#   _target_: evaluation.test_datasets.FaceRecogntioniDataset
+#   _target_: evaluation.test_datasets.FaceRecogntionDataset
 #   dataset_name: survFace
 #   dataset_path: /app/datasets/QMUL-SurvFace/Face_Identification_Test_Set
 
 test_dataset:
-  _target_: evaluation.test_datasets.FaceRecogntioniDataset
+  _target_: evaluation.test_datasets.FaceRecogntionDataset
   dataset_name: IJBB
   dataset_path: /app/datasets/arcface_ijb/IJBB
 

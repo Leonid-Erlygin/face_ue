@@ -152,25 +152,24 @@ def plot_cmc_scores(scores, names=None):
     return fig
 
 
-def draw_score_distr_plot(
-    scores_distr, score_type, model_name, in_data_name, out_data_name
-):
+def draw_score_distr_plot(scores_distr, positive_pair_name, negative_pair_name):
     sns.set_theme()
     plt.figure(figsize=(12, 8))
     sns.distplot(
-        scores_distr[in_data_name],
+        scores_distr[positive_pair_name],
         kde=True,
         norm_hist=True,
         hist=True,
-        label=in_data_name,
+        label=positive_pair_name,
     )
     sns.distplot(
-        scores_distr[out_data_name],
+        scores_distr[negative_pair_name],
         kde=True,
         norm_hist=True,
         hist=True,
-        label=out_data_name,
+        label=negative_pair_name,
     )
+
     plt.xlabel(f"Косинусная схожесть")
 
     plt.legend()

@@ -29,21 +29,19 @@ WORKDIR /app
 
 ENV PYTHONPATH /app
 
-USER root
-RUN groupadd -g 4200214 ikolesnikov
-
-RUN adduser --disabled-password --uid 4200214 --gid 4200214 --gecos '' --shell /bin/bash ikolesnikov \
- && chown -R ikolesnikov /app
-RUN echo  "ikolesnikov ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-ikolesnikov
-USER ikolesnikov
-
-ENV HOME=/home/ikolesnikov
-
 # set theese arg's when using docker build
-# ARG GID
-# ARG UID
-# ARG NAME
-# USER root
+ARG GID
+ARG UID
+ARG NAME
+USER root
+
+RUN groupadd -g ${GID} ${NAME}
+RUN adduser --disabled-password --force-badname --uid ${UID} --gid ${GID} --gecos '' --shell /bin/bash ${NAME} \
+ && chown -R ${NAME}:${NAME} /app
+RUN echo "${NAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-${NAME}
+USER ${NAME}
+
+ENV HOME=/home/${NAME}
 
 # RUN groupadd -g ${GID} ${NAME}
 # RUN adduser --disabled-password --force-badname --uid ${UID} --gid ${GID} --gecos '' --shell /bin/bash ${NAME} \

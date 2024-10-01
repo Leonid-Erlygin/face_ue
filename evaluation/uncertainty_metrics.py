@@ -17,13 +17,13 @@ class DisposeBasedOnUncVerif:
     def __call__(
         self, scores: np.ndarray, labels: np.ndarray, predicted_unc: np.ndarray
     ) -> Any:
-        predicted_unc = predicted_unc[:, 0]
+        predicted_unc = predicted_unc
         unc_indexes = np.argsort(predicted_unc)
         unc_metrics = {"fractions": self.fractions}
-        for fraction in self.fractions:
+        assert len(scores) == len(predicted_unc)
+        for fraction in tqdm(self.fractions):
             # drop worst fraction
             good_idx = unc_indexes[: int((1 - fraction) * scores.shape[0])]
-            print(fraction)
             metric = self.metric_to_monitor(
                 scores=scores[good_idx],
                 labels=labels[good_idx],
