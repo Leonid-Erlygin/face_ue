@@ -1,0 +1,96 @@
+seed_everything: 777
+trainer:
+  _target_: pytorch_lightning.Trainer
+  logger:
+    _target_: pytorch_lightning.loggers.WandbLogger
+    project: face-ue
+  callbacks:
+  - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+    every_n_epochs: 1
+    dirpath: outputs/scf_multiple/testing
+    save_last: true
+  - _target_: pytorch_lightning.callbacks.LearningRateMonitor
+    logging_interval: step
+  - _target_: face_lib.models.scf.Prediction_writer
+    output_dir: /app/cache/features
+    file_name: scf_vgg_from_zero
+    write_interval: epoch
+  max_epochs: 2
+  accelerator: gpu
+  devices: 2
+  num_sanity_val_steps: 0
+  log_every_n_steps: 3
+  default_root_dir: outputs/scf_train
+  enable_checkpointing: true
+model:
+  _target_: face_lib.models.scf.SphereConfidenceFace
+  backbone:
+    _target_: face_lib.models.lightning_wrappers.ResNet
+    resnet_name: iresnet50_normalized
+    weights: /app/model_weights/backbone/ms1mv3_arcface_r50/backbone.pth
+    learnable: false
+  head:
+    _target_: face_lib.models.heads.SCFHead
+    convf_dim: 25088
+    latent_vector_size: 2048
+  scf_loss:
+    _target_: face_lib.models.losses.KLDiracVMF
+    z_dim: 512
+    radius: 64
+  softmax_weights:
+    _target_: face_lib.models.scf.SoftmaxWeights
+    softmax_weights_path: /app/model_weights/backbone/ms1mv3_arcface_r50/softmax_weight.pt
+    radius: 64
+  optimizer_params:
+    optimizer_path: torch.optim
+    optimizer_name: AdamW
+    params:
+      lr: 3.0e-05
+      weight_decay: 0.0005
+  scheduler_params:
+    scheduler: StepLR
+    params:
+      step_size: 2
+      gamma: 0.5
+    interval: step
+    frequency: 1
+  validation_dataset:
+    _target_: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+    dataset_path: /app/datasets/arcface_ijb/IJBC
+    dataset_name: IJBC
+    norm_image: true
+  template_pooling_strategy:
+    _target_: evaluation.template_pooling_strategies.PoolingConcentration
+  recognition_method:
+    _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+    distance_function:
+      _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+  permute_batch: false
+  verification_metrics:
+  - _target_: evaluation.metrics.TarFar
+    far_range:
+    - -6
+    - -0.5
+    - 0.1
+    display_fars:
+    - 1.0e-06
+    - 1.0e-05
+    - 0.0001
+    - 0.001
+data:
+  _target_: face_lib.dataset_classes.lightning_datasets.UncertaintyDataModule
+  train_dataset:
+    _target_: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
+    root_dir: /app/datasets/ms1m/
+  validation_dataset:
+    _target_: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+    dataset_path: /app/datasets/arcface_ijb/IJBC
+    dataset_name: IJBC
+    norm_image: true
+  predict_dataset:
+    _target_: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+    dataset_path: /app/datasets/arcface_ijb/IJBC
+    dataset_name: IJBC
+    norm_image: true
+  batch_size: 400
+  num_workers: 36

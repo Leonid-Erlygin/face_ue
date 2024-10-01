@@ -13,11 +13,11 @@ from omegaconf import DictConfig, OmegaConf
 import hydra
 from hydra.utils import instantiate
 
-@hydra.main(version_base=None, config_path="/app/configs/train/train_hydra/", config_name="train_test.yaml")
+@hydra.main(version_base=None, config_path="/app/configs/train/train_hydra/", config_name="train_scf_base.yaml")
 def train_model(cfg):
     #cli = LightningCLI(SphereConfidenceFace, parser_kwargs={"parser_mode": "omegaconf"})
     #print(**cfg.model.init_args, type(**cfg.model.init_args))
-    seed_everything(42, workers=True)
+    seed_everything(cfg.seed_everything, workers=True)
 
     # backbone = getattr(
     #     importlib.import_module(cfg.model.backbone.class_path),
