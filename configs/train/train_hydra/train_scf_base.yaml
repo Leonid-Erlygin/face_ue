@@ -32,7 +32,7 @@ model:
     head:
         _target_: face_lib.models.heads.SCFHead
         convf_dim: 25088
-        latent_vector_size: 256
+        latent_vector_size: 4096
         #activation: "sigmoid"
     scf_loss:
         _target_: face_lib.models.losses.KLDiracVMF

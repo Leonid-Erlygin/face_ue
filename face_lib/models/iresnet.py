@@ -199,8 +199,8 @@ class IResNet(nn.Module):
             x = self.conv1(x)
             x = self.bn1(x)
             x = self.prelu(x)
-            x = self.layer1(x)
-            x = self.layer2(x)
+            layer1_out = self.layer1(x)
+            x = self.layer2(layer1_out)
             x = self.layer3(x)
             x = self.layer4(x)
             x = self.bn2(x)
@@ -212,6 +212,7 @@ class IResNet(nn.Module):
         output = {
             "feature": x,
             "bottleneck_feature": sig_x,
+            "layer1_features": layer1_out,
         }
         return output
 

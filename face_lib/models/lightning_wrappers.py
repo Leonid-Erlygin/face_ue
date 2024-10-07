@@ -30,12 +30,17 @@ sys.path.append("/app/sandbox/happy_whale/kaggle-happywhale-1st-place")
 
 
 class ResNet(torch.nn.Module):
-    def __init__(self, resnet_name: str, weights, learnable: bool) -> None:
+    def __init__(
+        self, resnet_name: str, weights, learnable: bool, use_cpu=False
+    ) -> None:
         super().__init__()
         self.backbone = mlib.model_dict[resnet_name](learnable=learnable)
 
         if weights is not False:
-            backbone_dict = torch.load(weights)
+            if use_cpu:
+                backbone_dict = torch.load(weights, map_location=torch.device("cpu"))
+            else:
+                backbone_dict = torch.load(weights)
             self.backbone.load_state_dict(backbone_dict)
 
     def forward(self, x):

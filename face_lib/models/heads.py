@@ -5,6 +5,29 @@ from torch.nn import Parameter
 from torch.nn.utils import spectral_norm
 from face_lib.models import FaceModule
 from face_lib import models as mlib
+from face_lib.models.iresnet import IBasicBlock, conv1x1
+
+
+def make_scf_layer(block, inplanes, planes, blocks, stride=2):
+    layers = []
+    downsample = nn.Sequential(
+        conv1x1(inplanes, planes * block.expansion, stride),
+        nn.BatchNorm2d(
+            planes * block.expansion,
+            eps=1e-05,
+        ),
+    )
+    layers.append(block(inplanes, planes, stride, downsample))
+    inplanes = planes * block.expansion
+    for _ in range(1, blocks):
+        layers.append(
+            block(
+                inplanes,
+                planes,
+            )
+        )
+
+    return nn.Sequential(*layers)
 
 
 class SCFHead(nn.Module):
@@ -37,21 +60,46 @@ class SCFHead(nn.Module):
         else:
             raise ValueError
 
-        # Trying to increase number of parameters
-        # self._log_kappa = nn.Sequential(
-        #     nn.Linear(self.convf_dim, self.convf_dim // 2),
-        #     nn.BatchNorm1d(self.convf_dim // 2, affine=True),
-        #     nn.ReLU(inplace=True),
-        #     nn.Linear(self.convf_dim // 2, self.convf_dim // 4),
-        #     nn.BatchNorm1d(self.convf_dim // 4, affine=True),
-        #     nn.ReLU(inplace=True),
-        #     nn.Linear(self.convf_dim // 4, 1),
-        # )
-
-    def forward(self, convf):
+    def forward(self, backbone_outputs):
+        convf = backbone_outputs["bottleneck_feature"]
         log_kappa = self._log_kappa(convf)
         log_kappa = torch.log(1e-6 + torch.exp(log_kappa))
 
+        return log_kappa
+
+
+class SCFHeadLayer1(nn.Module):
+    def __init__(self, num_planes, num_layers):
+        super().__init__()
+
+        scf_layer1 = make_scf_layer(
+            IBasicBlock, 64, num_planes[0], num_layers[0], stride=2
+        )
+        scf_layer2 = make_scf_layer(
+            IBasicBlock, num_planes[0], num_planes[1], num_layers[1], stride=2
+        )
+        scf_layer3 = make_scf_layer(
+            IBasicBlock, num_planes[1], num_planes[2], num_layers[2], stride=2
+        )
+        scf_layer4 = make_scf_layer(
+            IBasicBlock, num_planes[2], num_planes[3], num_layers[3], stride=2
+        )
+        self.conv = nn.Sequential(*[scf_layer1, scf_layer2, scf_layer3, scf_layer4])
+        self.bn2 = nn.BatchNorm2d(
+            num_planes[-1],
+            eps=1e-05,
+        )
+        self.fc = nn.Linear(512, 1)
+        self.bn3 = nn.BatchNorm1d(512, eps=1e-05)
+
+    def forward(self, backbone_outputs):
+        layer1_features = backbone_outputs["layer1_features"]
+        conv_out = self.conv(layer1_features)
+        log_kappa = self.bn2(conv_out)
+        log_kappa = torch.flatten(log_kappa, 1)
+        log_kappa = self.fc(log_kappa)
+        log_kappa = self.bn3(log_kappa)
+        log_kappa = torch.log(1e-6 + torch.exp(log_kappa))
         return log_kappa
 
 
