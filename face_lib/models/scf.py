@@ -6,7 +6,7 @@ import importlib
 from pathlib import Path
 import numpy as np
 from evaluation.ijb_evals import instantiate_list
-
+from evaluation.template_pooling_strategies import PoolingDefault
 
 class Prediction_writer(BasePredictionWriter):
     def __init__(self, output_dir: str, file_name: str, write_interval: str):
@@ -53,7 +53,7 @@ class SphereConfidenceFace(LightningModule):
         template_pooling_strategy=None,
         recognition_method=None,
         verification_metrics=None,
-        predict_kappa_by_input=False,
+        verification_uncertainty_metrics=None,
     ):
         super().__init__()
         self.backbone = backbone
@@ -70,16 +70,12 @@ class SphereConfidenceFace(LightningModule):
         self.template_pooling_strategy = template_pooling_strategy
         self.recognition_method = recognition_method
         self.verification_metrics = verification_metrics
-        #print(self.verification_metrics)
+        self.verification_uncertainty_metrics = verification_uncertainty_metrics
 
     def forward(self, x):
         self.backbone.eval()
         backbone_outputs = self.backbone(x)
-        if self.predict_kappa_by_input:
-            x = torch.flatten(x, 1)
-            log_kappa = self.head(x)
-        else:
-            log_kappa = self.head(backbone_outputs["bottleneck_feature"])
+        log_kappa = self.head(backbone_outputs["bottleneck_feature"])
         return backbone_outputs["feature"], log_kappa
 
     def training_step(self, batch):
@@ -164,12 +160,29 @@ class SphereConfidenceFace(LightningModule):
             test_dataset.templates,
             test_dataset.medias,
         )
+        pooling_default_strategy = PoolingDefault()
+        pooled_default_data = pooling_default_strategy(
+            image_input_feats,
+            unc,
+            test_dataset.templates,
+            test_dataset.medias,
+        )
+
         template_pooled_emb = pooled_data[0]
         template_pooled_unc = pooled_data[1]
+        template_pooled_default_emb = pooled_default_data[0]
+        template_pooled_default_unc = pooled_default_data[1]
         template_ids = np.unique(test_dataset.templates)
         scores, unc = self.recognition_method(
             template_pooled_emb,
             template_pooled_unc,
+            template_ids,
+            test_dataset.p1,
+            test_dataset.p2,
+        )
+        scores_default, unc_default = self.recognition_method(
+            template_pooled_default_emb,
+            template_pooled_default_unc,
             template_ids,
             test_dataset.p1,
             test_dataset.p2,
@@ -185,142 +198,18 @@ class SphereConfidenceFace(LightningModule):
                 )
             )
         print(metrics)
+        unc_metrics = {}
+        # compute uncertainty metrics
+        for unc_metric in self.verification_uncertainty_metrics:
+            print(unc_metric)
+            unc_metrics.update(
+                unc_metric(
+                    scores=scores_default,
+                    labels=test_dataset.label,
+                    predicted_unc=unc_default[:, 0],
+                )
+            )
+        print(unc_metrics)
         for metric_name, value in metrics.items():
             if "TAR" in metric_name:
                 self.log(metric_name, value)
-
-
-###################
-
-
-class SphereConfidenceFaceV2(LightningModule):
-    def __init__(
-        self,
-        backbone: torch.nn.Module,
-        head: torch.nn.Module,
-        embed_head: torch.nn.Module,
-        scf_loss: torch.nn.Module,
-        optimizer_params,
-        scheduler_params,
-        permute_batch: bool,
-        softmax_weights: torch.nn.Module = None,
-    ):
-        super().__init__()
-        self.backbone = backbone
-        self.head = head
-        self.embed_head = embed_head
-        self.scf_loss = scf_loss
-        if softmax_weights is None:
-            # assume that weights are stored in the backbone
-            self.softmax_weights = self.backbone.backbone.head_id.weight.data
-            delattr(self.backbone.backbone, "head_id")
-            softmax_weights_norm = torch.norm(
-                self.softmax_weights, dim=1, keepdim=True
-            )  # [N, 1]
-            self.softmax_weights = (
-                self.softmax_weights / softmax_weights_norm * scf_loss.radius
-            )  # $ w_c \in rS^{d-1} $
-            self.softmax_weights = torch.nn.Parameter(
-                self.softmax_weights, requires_grad=False
-            )
-        else:
-            self.softmax_weights = softmax_weights.softmax_weights
-        self.optimizer_params = optimizer_params
-        self.scheduler_params = scheduler_params
-        self.permute_batch = permute_batch
-
-    def forward(self, x):
-        backbone_outputs = self.backbone(x)
-        log_kappa = self.head(backbone_outputs["bottleneck_feature"])
-        new_embed = self.embed_head(backbone_outputs["bottleneck_feature"])
-        return new_embed, log_kappa
-
-    def training_step(self, batch):
-        images, labels = batch
-
-        # freezing bn layers
-        self.backbone.backbone.eval()
-
-        feature, log_kappa = self(images)
-
-        kappa = torch.exp(log_kappa)
-        wc = self.softmax_weights[labels, :]
-        losses, l1, l2, l3, cos = self.scf_loss(feature, kappa, wc)
-
-        kappa_mean = kappa.mean()
-        total_loss = losses.mean()
-
-        self.log("train_loss", total_loss.item(), prog_bar=True)
-        self.log("kappa", kappa_mean.item())
-        self.log("l1", l1.mean().item())
-        self.log("l2", l2.mean().item())
-        self.log("l3", l3.mean().item())
-        self.log("cos", cos.mean().item())
-
-        return total_loss
-
-    def configure_optimizers(self):
-        optimizer = getattr(
-            importlib.import_module(self.optimizer_params["optimizer_path"]),
-            self.optimizer_params["optimizer_name"],
-        )(
-            [*self.head.parameters(), *self.embed_head.parameters()],
-            **self.optimizer_params["params"],
-        )  #!!! добавил бэкбон
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": getattr(
-                    importlib.import_module("torch.optim.lr_scheduler"),
-                    self.scheduler_params["scheduler"],
-                )(optimizer, **self.scheduler_params["params"]),
-                # "interval": "step",
-            },
-        }
-
-    # Trying 2 optimizers - need to rewrite training step
-    # def configure_optimizers(self):
-    #     optimizer_kappa = getattr(
-    #         importlib.import_module(self.optimizer_params["optimizer_path"]),
-    #         self.optimizer_params["optimizer_name"],
-    #     )(
-    #         [*self.head.parameters()],
-    #         **self.optimizer_params["params"],
-    #     )  #!!! добавил новую голову
-    #     optimizer_embed = getattr(
-    #         importlib.import_module(self.optimizer_params["optimizer_path"]),
-    #         self.optimizer_params["optimizer_name"],
-    #     )(
-    #         [*self.embed_head.parameters()],
-    #         **self.optimizer_params["params"],
-    #     )
-
-    #     return (
-    #         {
-    #         "optimizer": optimizer_kappa,
-    #         "lr_scheduler": {
-    #             "scheduler": getattr(
-    #                 importlib.import_module("torch.optim.lr_scheduler"),
-    #                 self.scheduler_params["scheduler"],
-    #             )(optimizer_kappa, **self.scheduler_params["params"]),
-    #             # "interval": "step",
-    #         },
-    #         },
-    #         {
-    #         "optimizer": optimizer_embed,
-    #         "lr_scheduler": {
-    #             "scheduler": getattr(
-    #                 importlib.import_module("torch.optim.lr_scheduler"),
-    #                 self.scheduler_params["scheduler"],
-    #             )(optimizer_embed, **self.scheduler_params["params"]),
-    #             # "interval": "step",
-    #         },
-    #     }
-    #     )
-
-    def predict_step(self, batch, batch_idx):
-        images_batch = batch
-        if self.permute_batch:
-            images_batch = images_batch.permute(0, 3, 1, 2)
-
-        return self(images_batch)

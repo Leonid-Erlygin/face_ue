@@ -24,7 +24,9 @@ class MXFaceDataset(Dataset):
         test=False,
         num_classes=0,
         album_augments=None,
+        torch_augments=None,
         album_probability=0.0,
+        torch_probability=0.0
     ):
         """
         ArcFace loader
@@ -55,6 +57,20 @@ class MXFaceDataset(Dataset):
                 self.alb_transform = A.Compose(albument_transforms, p=album_probability)
             else:
                 self.alb_transform = A.NoOp(p=album_probability)  # identity transform
+            
+            if torch_augments is not None:
+
+                torch_transforms = [
+                    getattr(
+                        importlib.import_module(augmentation["class_path"]),
+                        augmentation["aug_name"],
+                    )(**augmentation["init_args"])
+                    for augmentation in torch_augments
+                ]
+
+                self.torch_transform = v2.RandomApply(torch_transforms, p=torch_probability)
+            else:
+                self.torch_transform = v2.ToTensor()(p=torch_probability)
 
             self.transform = v2.Compose(
                 [
@@ -224,6 +240,7 @@ class MXFaceDataset(Dataset):
             sample = self.alb_transform(image=sample)
             sample = sample["image"]
             sample = self.transform(sample)
+            sample = self.torch_transform(sample)
         if self.test:
             return sample
         else:

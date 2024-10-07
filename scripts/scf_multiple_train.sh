@@ -8,10 +8,10 @@ docker run \
  --rm \
  --init \
  -v /home/i.kolesnikov/face_ue:/app \
- --gpus '"device=2"' \
+ --gpus '"device=0"' \
  -w="/app" \
  ikolesnikov-face \
- python3 trainers/train_multiple_runs_scf.py \
+ python3 trainers/train_multiple_runs_scf.py --multirun data.train_dataset.torch_augments.0.init_args.sigma=2,3,4,5,7,9,11
 #  --config configs/train/train_scf_with_psd.yaml \
 #  --ckpt_path=/app/outputs/scf_new_data/vgg_old_backbone_from_zero/epoch=11-step=174672_pretrained.ckpt
-#--multirun model.head.latent_vector_size=1024,2048,4096,8192
+#--multirun data.train_dataset.torch_augments.0.init_args.sigma=2,3,4,5,7,9,11
