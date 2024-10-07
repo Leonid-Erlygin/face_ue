@@ -199,6 +199,7 @@ class SphereConfidenceFace(LightningModule):
             )
         print(metrics)
         unc_metrics = {}
+        
         # compute uncertainty metrics
         for unc_metric in self.verification_uncertainty_metrics:
             print(unc_metric)
