@@ -90,7 +90,8 @@ class SCFHeadLayer1(nn.Module):
             eps=1e-05,
         )
         self.fc = nn.Linear(512, 1)
-        self.bn3 = nn.BatchNorm1d(512, eps=1e-05)
+        # self.bn3 = nn.BatchNorm1d(1, eps=1e-05)
+        # self.fc2 = nn.Linear(1, 1)
 
     def forward(self, backbone_outputs):
         layer1_features = backbone_outputs["layer1_features"]
@@ -98,7 +99,8 @@ class SCFHeadLayer1(nn.Module):
         log_kappa = self.bn2(conv_out)
         log_kappa = torch.flatten(log_kappa, 1)
         log_kappa = self.fc(log_kappa)
-        log_kappa = self.bn3(log_kappa)
+        # log_kappa = self.bn3(log_kappa)
+        # log_kappa = self.fc2(log_kappa)
         log_kappa = torch.log(1e-6 + torch.exp(log_kappa))
         return log_kappa
 

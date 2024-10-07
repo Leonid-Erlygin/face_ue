@@ -29,11 +29,14 @@ model:
         resnet_name: iresnet50_normalized
         weights: /app/model_weights/backbone/ms1mv3_arcface_r50/backbone.pth
         learnable: False
+    # head:
+    #     _target_: face_lib.models.heads.SCFHead
+    #     convf_dim: 25088
+    #     latent_vector_size: 4096
     head:
-        _target_: face_lib.models.heads.SCFHead
-        convf_dim: 25088
-        latent_vector_size: 4096
-        #activation: "sigmoid"
+        _target_: face_lib.models.heads.SCFHeadLayer1
+        num_planes: [32, 32, 32, 32]
+        num_layers: [4, 4, 4, 4]
     scf_loss:
         _target_: face_lib.models.losses.KLDiracVMF
         z_dim: 512
@@ -46,7 +49,7 @@ model:
         optimizer_path: torch.optim
         optimizer_name: AdamW
         params:
-            lr: 3e-5
+            lr: 3e-3 #3e-5
             weight_decay: 5e-4
     scheduler_params:
             scheduler: StepLR
