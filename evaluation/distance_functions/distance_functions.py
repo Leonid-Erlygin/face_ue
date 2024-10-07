@@ -28,6 +28,7 @@ def compute_pfe(
 class CosineSimPairwise:
     def __init__(self):
         self.nothing = 0
+
     @staticmethod
     def __call__(
         X_1: np.ndarray,

@@ -8,6 +8,7 @@ import numpy as np
 from evaluation.ijb_evals import instantiate_list
 from evaluation.template_pooling_strategies import PoolingDefault
 
+
 class Prediction_writer(BasePredictionWriter):
     def __init__(self, output_dir: str, file_name: str, write_interval: str):
         super().__init__(write_interval)
@@ -199,7 +200,7 @@ class SphereConfidenceFace(LightningModule):
             )
         print(metrics)
         unc_metrics = {}
-        
+
         # compute uncertainty metrics
         for unc_metric in self.verification_uncertainty_metrics:
             print(unc_metric)
@@ -214,3 +215,9 @@ class SphereConfidenceFace(LightningModule):
         for metric_name, value in metrics.items():
             if "TAR" in metric_name:
                 self.log(metric_name, value)
+
+        for unc_metric_name, unc_value in unc_metrics.items():
+            if "TAR" in unc_metric_name:
+                filter_auc = unc_metrics["fractions"][-1] * np.mean(unc_value)
+                name = unc_metric_name.split(":")[-1]
+                self.log(f"filter_auc_{name}", filter_auc)

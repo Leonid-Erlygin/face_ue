@@ -21,25 +21,25 @@ test_datasets:
     dataset_name: IJBC
     dataset_path: /app/datasets/arcface_ijb/IJBC
 
-  - _target_: evaluation.test_datasets.HQVerifivationDataset
-    dataset_name: agedb_30
-    dataset_path: /app/datasets/five_hq_datasets/agedb_30
+  # - _target_: evaluation.test_datasets.HQVerifivationDataset
+  #   dataset_name: agedb_30
+  #   dataset_path: /app/datasets/five_hq_datasets/agedb_30
 
-  - _target_: evaluation.test_datasets.HQVerifivationDataset
-    dataset_name: cfp_fp
-    dataset_path: /app/datasets/five_hq_datasets/cfp_fp
+  # - _target_: evaluation.test_datasets.HQVerifivationDataset
+  #   dataset_name: cfp_fp
+  #   dataset_path: /app/datasets/five_hq_datasets/cfp_fp
 
-  - _target_: evaluation.test_datasets.HQVerifivationDataset
-    dataset_name: lfw
-    dataset_path: /app/datasets/five_hq_datasets/lfw
+  # - _target_: evaluation.test_datasets.HQVerifivationDataset
+  #   dataset_name: lfw
+  #   dataset_path: /app/datasets/five_hq_datasets/lfw
 
-  - _target_: evaluation.test_datasets.HQVerifivationDataset
-    dataset_name: cplfw
-    dataset_path: /app/datasets/five_hq_datasets/cplfw
+  # - _target_: evaluation.test_datasets.HQVerifivationDataset
+  #   dataset_name: cplfw
+  #   dataset_path: /app/datasets/five_hq_datasets/cplfw
 
-  - _target_: evaluation.test_datasets.HQVerifivationDataset
-    dataset_name: calfw
-    dataset_path: /app/datasets/five_hq_datasets/calfw
+  # - _target_: evaluation.test_datasets.HQVerifivationDataset
+  #   dataset_name: calfw
+  #   dataset_path: /app/datasets/five_hq_datasets/calfw
 
   # - _target_: evaluation.test_datasets.FaceRecogntionDataset
   #   dataset_name: whale
@@ -135,15 +135,15 @@ verification_methods:
   #       _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
   #   pretty_name: "Uniform batch"
     
-  - embeddings: scf_blur_only_album_75%
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.${pooling_method}
-    use_detector_score: False
-    recognition_method:
-      _target_: evaluation.verification_methods.distance_based_verification.VerifEval
-      distance_function:
-        _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
-    pretty_name: "Blur"
+  # - embeddings: scf_blur_only_album_75%
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.${pooling_method}
+  #   use_detector_score: False
+  #   recognition_method:
+  #     _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+  #     distance_function:
+  #       _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+  #   pretty_name: "Blur"
 
   # - embeddings: scf_rand_effects_album_75%
   #   gallery_template_pooling_strategy:

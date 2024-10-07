@@ -8,18 +8,25 @@ from omegaconf import DictConfig, OmegaConf
 import hydra
 from hydra.utils import instantiate
 
+import sys
+
+sys.path.append("/app")
+
+
 @hydra.main(version_base=None, config_path="/app/configs/train/train_hydra")
 def train_model(cfg):
-    
+
     seed_everything(cfg.seed_everything, workers=True)
 
     trainer = instantiate(cfg.trainer)
     model = instantiate(cfg.model)
-    checkpoint = torch.load(cfg.weights_path, weights_only=True)
-    model.load_state_dict(checkpoint["state_dict"])
+    if hasattr(cfg, "weights_path"):
+        checkpoint = torch.load(cfg.weights_path, weights_only=True)
+        model.load_state_dict(checkpoint["state_dict"])
     dataclass = instantiate(cfg.data)
 
-    trainer.fit(model = model, datamodule=dataclass)
+    trainer.fit(model=model, datamodule=dataclass)
+
 
 if __name__ == "__main__":
     train_model()

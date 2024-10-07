@@ -46,7 +46,9 @@ class ArcFace_SW(LightningModule):
         """
         with torch.no_grad():
             backbone_outputs = self.backbone(x)["feature"]
-            backbone_outputs = torch.nn.functional.normalize(backbone_outputs, p=2.0, dim=1)
+            backbone_outputs = torch.nn.functional.normalize(
+                backbone_outputs, p=2.0, dim=1
+            )
 
         norm_weights = F.normalize(self.softmax_weights, dim=1)
         logits = F.linear(backbone_outputs, norm_weights)

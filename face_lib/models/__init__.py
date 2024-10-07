@@ -1,7 +1,13 @@
 from .base import FaceModule
 from .losses import MLSLoss, AngleLoss, ArcFace, CosFace, MLS, ProbLoss
 from .spherenet import SphereNet20
-from .heads import SCFHead,PFEHead, PFEHeadAdjustable, ProbHead, PFEHeadAdjustableSpectralSimple
+from .heads import (
+    SCFHead,
+    PFEHead,
+    PFEHeadAdjustable,
+    ProbHead,
+    PFEHeadAdjustableSpectralSimple,
+)
 from .pair_classifiers import MLP, SmartCosine, Bilinear
 from .iresnet import (
     iresnet18,
