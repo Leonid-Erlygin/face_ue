@@ -55,6 +55,7 @@ class SphereConfidenceFace(LightningModule):
         recognition_method=None,
         verification_metrics=None,
         verification_uncertainty_metrics=None,
+        predict_kappa_by_input=False,
     ):
         super().__init__()
         self.backbone = backbone
@@ -72,11 +73,16 @@ class SphereConfidenceFace(LightningModule):
         self.recognition_method = recognition_method
         self.verification_metrics = verification_metrics
         self.verification_uncertainty_metrics = verification_uncertainty_metrics
+        self.predict_kappa_by_input = predict_kappa_by_input
 
     def forward(self, x):
         self.backbone.eval()
         backbone_outputs = self.backbone(x)
-        log_kappa = self.head(backbone_outputs)
+        if self.predict_kappa_by_input:
+            x = torch.flatten(x, 1)
+            log_kappa = self.head({"bottleneck_feature": x})
+        else:
+            log_kappa = self.head(backbone_outputs)
         return backbone_outputs["feature"], log_kappa
 
     def training_step(self, batch):
