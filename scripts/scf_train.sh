@@ -1,5 +1,5 @@
 docker run \
- --shm-size=8g \
+ --shm-size=16g \
  --memory=80g \
  --cpus=40 \
  --user ${UID}:${UID} \
