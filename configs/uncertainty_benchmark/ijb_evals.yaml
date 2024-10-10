@@ -115,6 +115,16 @@ verification_methods:
     #     _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
     # pretty_name: "Default pooling"
 
+  - embeddings: scf_layer1_2_epoch
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.${pooling_method}
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+      distance_function:
+        _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+    pretty_name: "Layer1 2 epoch SCF"
+    
   - embeddings: default-scf
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.${pooling_method}
@@ -124,6 +134,8 @@ verification_methods:
       distance_function:
         _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
     pretty_name: "Default SCF"
+
+
 
   # - embeddings: uniform_scf
   #   gallery_template_pooling_strategy:
