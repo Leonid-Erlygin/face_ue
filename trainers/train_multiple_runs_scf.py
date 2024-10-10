@@ -25,7 +25,12 @@ def train_model(cfg):
         model.load_state_dict(checkpoint["state_dict"])
     dataclass = instantiate(cfg.data)
 
-    trainer.fit(model=model, datamodule=dataclass)
+    if cfg.mode == "train":
+        trainer.fit(model=model, datamodule=dataclass)
+    elif cfg.mode == "predict":
+        trainer.predict(model=model, datamodule=dataclass)
+    else:
+        raise ValueError
 
 
 if __name__ == "__main__":
