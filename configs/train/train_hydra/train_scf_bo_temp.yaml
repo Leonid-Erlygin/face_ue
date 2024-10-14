@@ -1,0 +1,153 @@
+seed_everything: 777
+config_path: /app/configs/train/train_hydra/train_scf_bo.yaml
+bounds:
+  sigma:
+  - 0.0
+  - 8.0
+  torch_probability:
+  - 0.0
+  - 1.0
+initial_points:
+- - 0.25
+  - 2.0
+- - 0.25
+  - 6.0
+- - 0.75
+  - 2.0
+- - 0.75
+  - 6.0
+- - 0.5
+  - 4.0
+considered_points:
+- - 0.25
+  - 2.0
+  - 0.5
+- - 1.0
+  - 1.0
+  - 1.0
+target_metric: filter_auc_TAR@FAR=0.001
+temp_cfg_path: /app/configs/train/train_hydra/train_scf_bo_temp.yaml
+trainer:
+  _target_: pytorch_lightning.Trainer
+  logger:
+    _target_: pytorch_lightning.loggers.CSVLogger
+    save_dir: outputs/scf_multiple/scf_bo
+    name: s=?;p=?
+  callbacks:
+  - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+    every_n_epochs: 1
+    dirpath: outputs/scf_multiple/scf_bo
+    save_last: true
+  - _target_: pytorch_lightning.callbacks.LearningRateMonitor
+    logging_interval: step
+  - _target_: face_lib.models.scf.Prediction_writer
+    output_dir: /app/cache/features
+    file_name: scf_vgg_from_zero
+    write_interval: epoch
+  max_epochs: 1
+  max_steps: 5544
+  accelerator: gpu
+  devices: 1
+  num_sanity_val_steps: 0
+  log_every_n_steps: 3
+  default_root_dir: outputs/scf_train
+  val_check_interval: 5543
+  enable_checkpointing: true
+model:
+  _target_: face_lib.models.scf.SphereConfidenceFace
+  backbone:
+    _target_: face_lib.models.lightning_wrappers.ResNet
+    resnet_name: iresnet50_normalized
+    weights: /app/model_weights/backbone/ms1mv3_arcface_r50/backbone.pth
+    learnable: false
+  head:
+    _target_: face_lib.models.heads.SCFHead
+    convf_dim: 25088
+    latent_vector_size: 4096
+  scf_loss:
+    _target_: face_lib.models.losses.KLDiracVMF
+    z_dim: 512
+    radius: 64
+  softmax_weights:
+    _target_: face_lib.models.scf.SoftmaxWeights
+    softmax_weights_path: /app/model_weights/backbone/ms1mv3_arcface_r50/softmax_weight.pt
+    radius: 64
+  optimizer_params:
+    optimizer_path: torch.optim
+    optimizer_name: AdamW
+    params:
+      lr: 0.03
+      weight_decay: 0.0005
+  scheduler_params:
+    scheduler: OneCycleLR
+    params:
+      max_lr: 0.0003
+      steps_per_epoch: 13863
+      epochs: 1
+      div_factor: 10.0
+      final_div_factor: 10.0
+    interval: step
+  validation_dataset:
+    _target_: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+    dataset_path: /app/datasets/arcface_ijb/IJBC
+    dataset_name: IJBC
+    norm_image: true
+  template_pooling_strategy:
+    _target_: evaluation.template_pooling_strategies.PoolingConcentration
+  recognition_method:
+    _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+    distance_function:
+      _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+  permute_batch: false
+  verification_metrics:
+  - _target_: evaluation.metrics.TarFar
+    far_range:
+    - -5
+    - -0.5
+    - 0.1
+    display_fars:
+    - 1.0e-05
+    - 0.0001
+    - 0.001
+    - 0.01
+  verification_uncertainty_metrics:
+  - _target_: evaluation.uncertainty_metrics.DisposeBasedOnUncVerif
+    fractions:
+    - 0
+    - 0.5
+    - 10
+    metric_to_monitor:
+      _target_: evaluation.metrics.TarFar
+      far_range:
+      - -5
+      - -0.5
+      - 0.1
+      display_fars:
+      - 1.0e-05
+      - 0.0001
+      - 0.001
+      - 0.01
+data:
+  _target_: face_lib.dataset_classes.lightning_datasets.UncertaintyDataModule
+  train_dataset:
+    _target_: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
+    root_dir: /app/datasets/ms1m/
+    torch_augments:
+    - class_path: torchvision.transforms.v2
+      aug_name: GaussianBlur
+      init_args:
+        kernel_size: 23
+        sigma: 4
+    torch_probability: 0.5
+  validation_dataset:
+    _target_: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+    dataset_path: /app/datasets/arcface_ijb/IJBC
+    dataset_name: IJBC
+    norm_image: true
+  predict_dataset:
+    _target_: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+    dataset_path: /app/datasets/arcface_ijb/IJBC
+    dataset_name: IJBC
+    norm_image: true
+  batch_size: 420
+  num_workers: 42

@@ -1,0 +1,142 @@
+seed_everything: 777
+
+# bayesian optimization specifications
+config_path: /app/configs/train/train_hydra/train_scf_bo.yaml
+
+# defines augmentation search space
+bounds:
+    torch_probability: [0.0, 1.0]
+    sigma: [0.0, 8.0]
+    
+
+# defines 5 predetermined points
+initial_points: [[0.25, 2.0], [0.25, 6.0], [0.75, 2.0], [0.75, 6.0], [0.5, 4.0]]
+
+# # stores metrics for evaluated points
+considered_points: [[0.25, 2.0, 0.493725], [0.25, 6.0, 0.493807], [0.75, 2.0, 0.4935], [0.75, 6.0, 0.493602], [0.5, 4.0, 0.493816], [0.370516, 4.691363, 0.4937], [0.178902, 6.781637, 0.493106], [0.380587, 3.250708, 0.493029], [0.520961, 5.154961, 0.49402], [0.598536, 4.809990, 0.493543]]
+
+num_points: 3
+
+# target metric in bo
+target_metric: "filter_auc_TAR@FAR=0.001"
+
+#temp_cfg_path: /app/configs/train/train_hydra/train_scf_bo_temp.yaml
+
+# model and data specifications
+trainer:
+  _target_: pytorch_lightning.Trainer
+  logger:
+    _target_: pytorch_lightning.loggers.CSVLogger
+    save_dir: outputs/scf_multiple/scf_bo
+    name: "s=?;p=?"
+  callbacks:
+  - _target_: pytorch_lightning.callbacks.ModelCheckpoint 
+    every_n_epochs: 1
+    dirpath: outputs/scf_multiple/scf_bo
+    save_last: True
+  - _target_: pytorch_lightning.callbacks.LearningRateMonitor
+    logging_interval: "step"
+  - _target_: face_lib.models.scf.Prediction_writer
+    output_dir: /app/cache/features
+    file_name: scf_vgg_from_zero
+    write_interval: epoch
+  max_epochs: 1
+  max_steps: 5544 # 0.4 of epoch steps
+  accelerator: gpu
+  devices: 1
+  num_sanity_val_steps: 0
+  log_every_n_steps: 3
+  default_root_dir: outputs/scf_train
+  val_check_interval: 5544
+  enable_checkpointing: true
+model:
+    _target_: face_lib.models.scf.SphereConfidenceFace
+    backbone:
+        _target_: face_lib.models.lightning_wrappers.ResNet
+        resnet_name: iresnet50_normalized
+        weights: /app/model_weights/backbone/ms1mv3_arcface_r50/backbone.pth
+        learnable: False
+    head:
+        _target_: face_lib.models.heads.SCFHead
+        convf_dim: 25088
+        latent_vector_size: 4096
+    # head:
+    #     _target_: face_lib.models.heads.SCFHeadLayer1
+    #     num_planes: [32, 32, 32, 32]
+    #     num_layers: [1, 2, 3, 4]
+    scf_loss:
+        _target_: face_lib.models.losses.KLDiracVMF
+        z_dim: 512
+        radius: 64
+    softmax_weights:
+        _target_: face_lib.models.scf.SoftmaxWeights
+        softmax_weights_path: "/app/model_weights/backbone/ms1mv3_arcface_r50/softmax_weight.pt"
+        radius: 64
+    optimizer_params:
+        optimizer_path: torch.optim
+        optimizer_name: AdamW
+        params:
+            lr: 3e-2 #3e-5
+            weight_decay: 5e-4
+    scheduler_params:
+            # scheduler: StepLR
+            # params:
+            #     step_size: 2
+            #     gamma: 0.1
+        scheduler: OneCycleLR
+        params:
+            max_lr: 3e-4
+            steps_per_epoch: 13863
+            epochs: 1
+            div_factor: 1e1
+            final_div_factor: 1e1
+        interval: step
+    validation_dataset:
+        _target_: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+        dataset_path: /app/datasets/arcface_ijb/IJBC
+        dataset_name: IJBC
+        norm_image: True
+    template_pooling_strategy:
+        _target_: evaluation.template_pooling_strategies.PoolingConcentration
+    recognition_method:
+        _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+        distance_function:
+            _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+    permute_batch: False
+    verification_metrics:
+        - _target_: evaluation.metrics.TarFar
+          far_range: [-5, -0.5, 0.1]
+          display_fars: [1e-5, 1e-4, 1e-3, 1e-2]
+    verification_uncertainty_metrics:
+        - _target_: evaluation.uncertainty_metrics.DisposeBasedOnUncVerif
+          fractions: [0, 0.5, 10]
+          metric_to_monitor:
+            _target_: evaluation.metrics.TarFar
+            far_range: [-5, -0.5, 0.1]
+            display_fars: [1e-5, 1e-4, 1e-3, 1e-2]
+
+data:
+    _target_: face_lib.dataset_classes.lightning_datasets.UncertaintyDataModule
+    train_dataset:
+        _target_: face_lib.dataset_classes.lightning_datasets.MXFaceDataset
+        root_dir: /app/datasets/ms1m/
+        torch_augments: 
+        - class_path: torchvision.transforms.v2
+          aug_name: GaussianBlur
+          init_args: 
+            kernel_size: 23
+            sigma: 4
+        torch_probability: 0.5
+    validation_dataset:
+        _target_: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+        dataset_path: /app/datasets/arcface_ijb/IJBC
+        dataset_name: IJBC
+        norm_image: True
+
+    predict_dataset:
+        _target_: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
+        dataset_path: /app/datasets/arcface_ijb/IJBC
+        dataset_name: IJBC
+        norm_image: True
+    batch_size: 420
+    num_workers: 42
