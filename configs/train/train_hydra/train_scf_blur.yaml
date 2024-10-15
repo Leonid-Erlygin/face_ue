@@ -5,7 +5,7 @@ trainer:
   logger:
     _target_: pytorch_lightning.loggers.WandbLogger
     project: "SCF-train"
-    name: "Blur Default SCF train. k=23;s=4;p=0.5"
+    name: "Blur Default SCF train. k=23;s=5.55102062;p=0.46938774"
   callbacks:
   - _target_: pytorch_lightning.callbacks.ModelCheckpoint 
     every_n_epochs: 1
@@ -17,7 +17,7 @@ trainer:
     output_dir: /app/cache/features
     file_name: scf_vgg_from_zero
     write_interval: epoch
-  max_epochs: 1
+  max_epochs: 2
   accelerator: gpu
   devices: 1
   num_sanity_val_steps: 0
@@ -63,7 +63,7 @@ model:
         params:
             max_lr: 3e-4
             steps_per_epoch: 13863
-            epochs: 1
+            epochs: 2
             div_factor: 1e1
             final_div_factor: 1e1
         interval: step
@@ -101,8 +101,8 @@ data:
           aug_name: GaussianBlur
           init_args: 
             kernel_size: 23
-            sigma: 4
-        torch_probability: 0.5
+            sigma: 5.55102062
+        torch_probability: 0.46938774
     validation_dataset:
         _target_: face_lib.dataset_classes.arcface_ijb.IJB_aligned_images
         dataset_path: /app/datasets/arcface_ijb/IJBC
