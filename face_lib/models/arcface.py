@@ -141,6 +141,7 @@ class MetricLearningModel(LightningModule):
         num_labels: int,
         train_set: Dataset,
         val_set: Dataset,
+        scheduler_params,
         num_features: int = 2,
         batch_size: int = 128,
         learning_rate: float = 1e-4,
@@ -172,6 +173,7 @@ class MetricLearningModel(LightningModule):
         self.train_set = train_set
         self.val_set = val_set
         self.validation_step_outputs = []
+        self.scheduler_params = scheduler_params
         self.save_hyperparameters()
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -245,7 +247,6 @@ class MetricLearningModel(LightningModule):
 
         dists = []
         colors = list(mcolors.TABLEAU_COLORS)[: self.hparams.num_labels]
-        self.log("val_avg_distance", np.mean(dists), prog_bar=True)
 
         # if self.hparams.num_features == 2:
         #     # plot feature space in 2D
@@ -264,31 +265,15 @@ class MetricLearningModel(LightningModule):
         #     plt.gca().set_aspect("equal")
         #     plt.axis("off")
         #     plt.title("Feature space visualization", fontsize=14)
+        #     # image_array = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+        #     # image_array = image_array.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        #     # images = wandb.Image(image_array)
+        #     # # images = [PIL.Image.fromarray(image) for image in image_array]
 
-        # elif self.hparams.num_features == 3:
-        #     # plot feature space in 3D
-        #     fig = plt.figure(figsize=(6, 6))
-        #     ax = plt.axes(projection="3d")
-
-        #     u, v = np.mgrid[0 : 2 * np.pi : 50j, 0 : np.pi : 50j]
-        #     x = np.cos(u) * np.sin(v)
-        #     y = np.sin(u) * np.sin(v)
-        #     z = np.cos(v)
-
-        #     ax.plot_wireframe(x, y, z, color="gray", alpha=0.2, rstride=2, cstride=2)
-
-        #     for i, (center, color) in enumerate(zip(weights, colors)):
-        #         points = features[labels == i]
-
-        #         dists.append(((points - center) ** 2).sum(axis=1).mean().item())
-
-        #         x, y, z = [0, center[0]], [0, center[1]], [0, center[2]]
-        #         ax.plot3D(x, y, z, marker="", c=color)
-        #         ax.scatter3D(points[:, 0], points[:, 1], points[:, 2], color=color, s=3)
-
-        #     plt.gca().set_aspect("equal")
-        #     plt.axis("off")
-        #     plt.title("Feature space visualization", fontsize=14)
+        #     # self.log("Ray plot", images)
+        #     # self.log("val_avg_distance", np.mean(dists), prog_bar=True)
+        #     plt.show()
+        #     plt.clf()
 
         # log matplotlib.figure() and the metrics to Logger
         # figure logging works only with several loggers (e.g. comet)
@@ -310,7 +295,16 @@ class MetricLearningModel(LightningModule):
             lr=self.hparams.learning_rate,
             weight_decay=self.hparams.weight_decay,
         )
-        return {"optimizer": optimizer}
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": getattr(
+                    importlib.import_module("torch.optim.lr_scheduler"),
+                    self.scheduler_params["scheduler"],
+                )(optimizer, **self.scheduler_params["params"]),
+                "interval": self.scheduler_params["interval"],
+            },
+        }
 
     def train_dataloader(self) -> DataLoader:
         """Create training dataloader."""
