@@ -1,7 +1,7 @@
 
 seed_everything: 777
 mode: predict
-weights_path: /app/outputs/scf_multiple/scf_base/last-v3.ckpt
+weights_path: /app/outputs/scf_multiple/scf_blur/last-v1.ckpt
 trainer:
   _target_: pytorch_lightning.Trainer
   callbacks:
@@ -13,7 +13,7 @@ trainer:
     logging_interval: "step"
   - _target_: face_lib.models.scf.Prediction_writer
     output_dir: /app/datasets/arcface_ijb/IJBC/embeddings
-    file_name: scf_layer1_2_epoch_embs_IJBC
+    file_name: scf_blur_p=0.469_s=5.55_embs_IJBC
     write_interval: epoch
   max_epochs: 2
   accelerator: gpu
@@ -30,14 +30,14 @@ model:
         resnet_name: iresnet50_normalized
         weights: /app/model_weights/backbone/ms1mv3_arcface_r50/backbone.pth
         learnable: False
-    # head:
-    #     _target_: face_lib.models.heads.SCFHead
-    #     convf_dim: 25088
-    #     latent_vector_size: 4096
     head:
-        _target_: face_lib.models.heads.SCFHeadLayer1
-        num_planes: [32, 32, 32, 32]
-        num_layers: [1, 2, 3, 4]
+        _target_: face_lib.models.heads.SCFHead
+        convf_dim: 25088
+        latent_vector_size: 4096
+    # head:
+    #     _target_: face_lib.models.heads.SCFHeadLayer1
+    #     num_planes: [32, 32, 32, 32]
+    #     num_layers: [1, 2, 3, 4]
     scf_loss:
         _target_: face_lib.models.losses.KLDiracVMF
         z_dim: 512

@@ -103,17 +103,15 @@ pooling_method: PoolingDefault
 
 verification_methods:
 
-
-
-  #- embeddings: scf
-    # gallery_template_pooling_strategy:
-    #   _target_: evaluation.template_pooling_strategies.PoolingDefault
-    # use_detector_score: False
-    # recognition_method:
-    #   _target_: evaluation.verification_methods.distance_based_verification.VerifEval
-    #   distance_function:
-    #     _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
-    # pretty_name: "Default pooling"
+  - embeddings: scf_2epoch
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.${pooling_method}
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+      distance_function:
+        _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+    pretty_name: "Default SCF"
 
   - embeddings: scf_layer1_2_epoch
     gallery_template_pooling_strategy:
@@ -123,9 +121,9 @@ verification_methods:
       _target_: evaluation.verification_methods.distance_based_verification.VerifEval
       distance_function:
         _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
-    pretty_name: "Layer1 2 epoch SCF"
-    
-  - embeddings: default-scf
+    pretty_name: "Layer1 SCF"
+
+  - embeddings: scf_blur_p=0.5_s=4.0
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.${pooling_method}
     use_detector_score: False
@@ -133,7 +131,24 @@ verification_methods:
       _target_: evaluation.verification_methods.distance_based_verification.VerifEval
       distance_function:
         _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
-    pretty_name: "Default SCF"
+    pretty_name: "SCF Blur p=0.5, s=4.0"
+
+  - embeddings: scf_blur_p=0.469_s=5.55
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.${pooling_method}
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+      distance_function:
+        _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+    pretty_name: "SCF Blur p=0.469, s=5.55"
+
+
+
+
+
+
+    
 
 
 
