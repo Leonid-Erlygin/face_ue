@@ -1,0 +1,183 @@
+hydra:
+  run:
+    dir: ${exp_dir}
+
+exp_dir: outputs/experiments/verification_scf_test_rejection
+use_two_galleries: False
+recompute_template_pooling: True
+metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name_unc.yaml
+create_pool_plot: False
+
+test_datasets:
+  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
+  #   dataset_name: ms1m
+  #   dataset_path: /app/datasets/ms1m_ident
+
+  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
+  #   dataset_name: IJBB
+  #   dataset_path: /app/datasets/arcface_ijb/IJBB
+
+  - _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: IJBC
+    dataset_path: /app/datasets/arcface_ijb/IJBC
+
+  # - _target_: evaluation.test_datasets.HQVerifivationDataset
+  #   dataset_name: agedb_30
+  #   dataset_path: /app/datasets/five_hq_datasets/agedb_30
+
+  # - _target_: evaluation.test_datasets.HQVerifivationDataset
+  #   dataset_name: cfp_fp
+  #   dataset_path: /app/datasets/five_hq_datasets/cfp_fp
+
+  # - _target_: evaluation.test_datasets.HQVerifivationDataset
+  #   dataset_name: lfw
+  #   dataset_path: /app/datasets/five_hq_datasets/lfw
+
+  # - _target_: evaluation.test_datasets.HQVerifivationDataset
+  #   dataset_name: cplfw
+  #   dataset_path: /app/datasets/five_hq_datasets/cplfw
+
+  # - _target_: evaluation.test_datasets.HQVerifivationDataset
+  #   dataset_name: calfw
+  #   dataset_path: /app/datasets/five_hq_datasets/calfw
+
+  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
+  #   dataset_name: whale
+  #   dataset_path: /app/datasets/whale
+
+  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
+  #   dataset_name: lfw
+  #   dataset_path: /app/datasets/lfw_ident
+
+
+  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
+  #   dataset_name: survFace
+  #   dataset_path: /app/datasets/QMUL-SurvFace/Face_Identification_Test_Set
+
+
+
+open_set_identification_metrics:
+  - _target_: evaluation.metrics.ErrorDistribution
+    plot_save_dir: ${exp_dir}
+    value_types: [0,1, 2, 3, 4, 5]
+  - _target_: evaluation.metrics.DirFar
+
+fractions: [0, 0.5, 10]
+
+open_set_identification_uncertainty_metrics:
+  - _target_: evaluation.uncertainty_metrics.DisposeBasedOnUnc
+    fractions: ${fractions}
+    metric_to_monitor:
+      _target_: evaluation.metrics.FrrFarIdent
+  
+  - _target_: evaluation.uncertainty_metrics.DisposeBasedOnUnc
+    fractions: ${fractions}
+    metric_to_monitor:
+      _target_: evaluation.metrics.DirFar
+
+  - _target_: evaluation.uncertainty_metrics.DisposeBasedOnUnc
+    fractions: ${fractions}
+    metric_to_monitor:
+      _target_: evaluation.metrics.F1_classic
+
+default_beta: 0.5
+far_list: [0.05] #
+
+# far_range: [0.01, 0.05, 0.1]
+# display_fars: [0.01, 0.05, 0.1]
+
+verification_metrics:
+  - _target_: evaluation.metrics.TarFar
+    far_range: [-5, -0.5, 0.1]
+    display_fars: [0.00001, 0.0001, 0.01]
+verification_uncertainty_metrics:
+  - _target_: evaluation.uncertainty_metrics.DisposeBasedOnUncVerif
+    fractions: ${fractions}
+    metric_to_monitor:
+      _target_: evaluation.metrics.TarFar
+      far_range: [-5, -0.5, 0.1]
+      display_fars: [0.00001, 0.0001, 0.01]
+
+#pooling_method: PoolingConcentration
+pooling_method: PoolingDefault
+
+verification_methods:
+
+  - embeddings: scf_2epoch
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.${pooling_method}
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+      distance_function:
+        _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+    pretty_name: "Default SCF"
+
+  - embeddings: scf_layer1_2_epoch
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.${pooling_method}
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+      distance_function:
+        _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+    pretty_name: "Layer1 SCF"
+
+  - embeddings: scf_blur_p=0.5_s=4.0
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.${pooling_method}
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+      distance_function:
+        _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+    pretty_name: "SCF Blur p=0.5, s=4.0"
+
+  - embeddings: scf_blur_p=0.469_s=5.55
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.${pooling_method}
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+      distance_function:
+        _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+    pretty_name: "SCF Blur p=0.469, s=5.55"
+
+
+
+
+
+
+    
+
+
+
+  # - embeddings: uniform_scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.${pooling_method}
+  #   use_detector_score: False
+  #   recognition_method:
+  #     _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+  #     distance_function:
+  #       _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+  #   pretty_name: "Uniform batch"
+    
+  # - embeddings: scf_blur_only_album_75%
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.${pooling_method}
+  #   use_detector_score: False
+  #   recognition_method:
+  #     _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+  #     distance_function:
+  #       _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+  #   pretty_name: "Blur"
+
+  # - embeddings: scf_rand_effects_album_75%
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.${pooling_method}
+  #   use_detector_score: False
+  #   recognition_method:
+  #     _target_: evaluation.verification_methods.distance_based_verification.VerifEval
+  #     distance_function:
+  #       _target_: evaluation.distance_functions.distance_functions.CosineSimPairwise
+  #   pretty_name: "Effects"
