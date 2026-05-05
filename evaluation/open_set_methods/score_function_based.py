@@ -191,7 +191,8 @@ class SimilarityBasedPrediction(OpenSetMethod):
             unc = self.uncertainty_function(
                 self.similarity_matrix, self.probe_score, self.tau
             )
-            return unc
+            comb_conf = (-unc) * (1 - self.alpha) + self.data_conf * self.alpha
+            return -comb_conf
         # if self.calibration_set is not None:
         #     # logistic calibration for scf confidence
         #     error_calc_calib = FrrFarIdent()
