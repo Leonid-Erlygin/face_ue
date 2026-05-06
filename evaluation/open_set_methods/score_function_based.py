@@ -13,6 +13,7 @@ from sklearn.metrics import roc_auc_score, average_precision_score
 from scipy.special import softmax
 from typing import Tuple
 
+
 class SimilarityBasedPrediction(OpenSetMethod):
     def __init__(
         self,
@@ -100,8 +101,10 @@ class SimilarityBasedPrediction(OpenSetMethod):
 
         if self.calibration_set is not None:
             self.gallery_pooled_templates_calib, self.probe_pooled_templates_calib = (
-            prepare_calibration_dataset(self.calibration_set, self.calibration_embs_name)
-        )
+                prepare_calibration_dataset(
+                    self.calibration_set, self.calibration_embs_name
+                )
+            )
             probe_feats_calib = self.probe_pooled_templates_calib["g1"][
                 "template_pooled_features"
             ][:, np.newaxis, :]
@@ -127,21 +130,31 @@ class SimilarityBasedPrediction(OpenSetMethod):
             )
             self.probe_score_calib = self.acceptance_score(self.similarity_matrix_calib)
             predicted_ids_calib = np.argmax(self.similarity_matrix_calib, axis=-1)
-    
+
             # Get ground truth IDs for calibration probes
-            true_ids_calib = self.probe_pooled_templates_calib["g1"]["template_subject_ids_sorted"]
-            
+            true_ids_calib = self.probe_pooled_templates_calib["g1"][
+                "template_subject_ids_sorted"
+            ]
+
             # Calibrate T for MSP
-            if hasattr(self.uncertainty_function, 'T'):  # Is MSP or similar
-                g_unique_ids = self.gallery_pooled_templates_calib["g1"]["template_subject_ids_sorted"]
-                true_ids_calib = self.probe_pooled_templates_calib["g1"]["template_subject_ids_sorted"]
+            if hasattr(self.uncertainty_function, "T"):  # Is MSP or similar
+                g_unique_ids = self.gallery_pooled_templates_calib["g1"][
+                    "template_subject_ids_sorted"
+                ]
+                true_ids_calib = self.probe_pooled_templates_calib["g1"][
+                    "template_subject_ids_sorted"
+                ]
 
                 # 1. Compute tau specifically for the calibration set to avoid test-set leakage
                 is_seen_calib = np.isin(true_ids_calib, g_unique_ids)
                 ood_scores_calib = self.probe_score_calib[~is_seen_calib]
                 if len(ood_scores_calib) == 0:
-                    raise ValueError("Calibration set contains no unseen probes for tau computation.")
-                tau_calib = np.sort(ood_scores_calib)[int(ood_scores_calib.shape[0] * (1 - self.far))]
+                    raise ValueError(
+                        "Calibration set contains no unseen probes for tau computation."
+                    )
+                tau_calib = np.sort(ood_scores_calib)[
+                    int(ood_scores_calib.shape[0] * (1 - self.far))
+                ]
 
                 # 2. Run calibration with the correctly computed tau_calib
                 T_opt, info = self.calibrate_msp_temperature(
@@ -150,10 +163,15 @@ class SimilarityBasedPrediction(OpenSetMethod):
                     tau_calib=tau_calib,
                     true_ids_calib=true_ids_calib,
                     g_unique_ids=g_unique_ids,
-                    T_min=0.01, T_max=50.0, max_iter=100, metric='auc'
+                    T_min=0.01,
+                    T_max=50.0,
+                    max_iter=100,
+                    metric="auc",
                 )
                 self.uncertainty_function.T = T_opt
-                print(f"Calibrated MSP T: {T_opt:.3f} (AUC: {info['final_metric']:.4f})")
+                print(
+                    f"Calibrated MSP T: {T_opt:.3f} (AUC: {info['final_metric']:.4f})"
+                )
 
     def predict(self):
         if self.predictor is not None:
@@ -264,6 +282,7 @@ class SimilarityBasedPrediction(OpenSetMethod):
         #     conf_norm = -unc
         # comb_conf = conf_norm * (1 - self.alpha) + data_conf * self.alpha
         # return -comb_conf
+
     def calibrate_msp_temperature(
         self,
         similarity_calib: np.ndarray,
@@ -275,56 +294,59 @@ class SimilarityBasedPrediction(OpenSetMethod):
         T_max: float = 100.0,
         max_iter: int = 50,
         tol: float = 1e-3,
-        metric: str = 'auc'
+        metric: str = "auc",
     ) -> Tuple[float, dict]:
         n_gallery = similarity_calib.shape[1]
-        
+
         # 1. Map true IDs to 0..n_gallery indices. Unseen (-1) -> n_gallery (reject class)
         id_to_idx = {gid: i for i, gid in enumerate(g_unique_ids)}
-        true_indices = np.array([id_to_idx.get(tid, n_gallery) for tid in true_ids_calib], dtype=int)
-        
+        true_indices = np.array(
+            [id_to_idx.get(tid, n_gallery) for tid in true_ids_calib], dtype=int
+        )
+
         # 2. Augment similarities with tau as the (n_gallery)-th class
-        sims_aug = np.column_stack([
-            similarity_calib, 
-            np.full(similarity_calib.shape[0], tau_calib)
-        ])
-        
+        sims_aug = np.column_stack(
+            [similarity_calib, np.full(similarity_calib.shape[0], tau_calib)]
+        )
+
         # 3. Compute predictions in the unified space
         pred_ids_aug = np.argmax(sims_aug, axis=-1)
-        
+
         # 4. Unified error mask (covers misID + false accepts automatically)
-        is_error = (pred_ids_aug != true_indices)
-        
+        is_error = pred_ids_aug != true_indices
+
         # 5. Objective function for search
         def objective(T: float) -> float:
-            if T <= 1e-8: return 0.0 if metric == 'auc' else -np.inf
+            if T <= 1e-8:
+                return 0.0 if metric == "auc" else -np.inf
             self.uncertainty_function.T = T
             msp_unc = self.uncertainty_function(similarity_calib, None, tau_calib)
-            
+
             if len(np.unique(is_error)) < 2:
-                return 0.5 if metric == 'auc' else -np.inf
-                
-            if metric == 'auc':
+                return 0.5 if metric == "auc" else -np.inf
+
+            if metric == "auc":
                 return roc_auc_score(is_error, msp_unc)
-            elif metric == 'ap':
+            elif metric == "ap":
                 return average_precision_score(is_error, msp_unc)
             else:
                 raise ValueError("Use 'auc' or 'ap' for search")
-        
+
         # 6. Ternary search (robust for unimodal T-vs-AUC curve)
         left, right = T_min, T_max
         for _ in range(max_iter):
-            if right - left < tol: break
+            if right - left < tol:
+                break
             m1 = left + (right - left) / 3
             m2 = right - (right - left) / 3
             if objective(m1) < objective(m2):
                 left = m1
             else:
                 right = m2
-                
+
         T_opt = (left + right) / 2
         return T_opt, {
-            'optimal_T': T_opt, 
-            'final_metric': objective(T_opt), 
-            'n_errors': int(is_error.sum())
+            "optimal_T": T_opt,
+            "final_metric": objective(T_opt),
+            "n_errors": int(is_error.sum()),
         }

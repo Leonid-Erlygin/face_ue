@@ -47,7 +47,7 @@ class FarLossCalc:
             all_classes_log_prob.shape[-1] - 1
         )
         far = np.mean(was_rejected[~self.is_seen] == False)
-        print(f"Found kappa {np.round(kappa,4)} for far {far}")
+        # print(f"Found kappa {np.round(kappa,4)} for far {far}")
         return -np.abs(far - self.target_far) / self.target_far
 
 
@@ -88,12 +88,10 @@ class PosteriorProbability(OpenSetMethod):
         self.calibrate_by_false_reject = calibrate_by_false_reject
         self.calibrate_gallery_unc = calibrate_gallery_unc
         self.calibration_set = calibration_set
+        self.calibration_embs_name = calibration_embs_name
         self.log_dir = log_dir
         if calibration_set is None:
             return
-        self.gallery_pooled_templates_calib, self.probe_pooled_templates_calib = (
-            prepare_calibration_dataset(calibration_set, calibration_embs_name)
-        )
 
     def setup(
         self,
@@ -156,6 +154,11 @@ class PosteriorProbability(OpenSetMethod):
 
         # get calibration set log probs
         if self.calibration_set is not None:
+            self.gallery_pooled_templates_calib, self.probe_pooled_templates_calib = (
+                prepare_calibration_dataset(
+                    self.calibration_set, self.calibration_embs_name
+                )
+            )
             self.data_uncertainty_calib = self.probe_pooled_templates_calib["g1"][
                 "template_pooled_data_unc"
             ]
@@ -224,6 +227,18 @@ class PosteriorProbability(OpenSetMethod):
                 all_classes_log_prob_calib, dim=1
             ).numpy()
 
+            self._calibrate_T(similarity_matrix_calib)
+            T = self.predict_T
+            # Recompute test & calib probabilities with optimal T
+            self.all_classes_log_prob = (
+                self.posterior_prob.compute_all_class_log_probabilities(
+                    similarity_matrix, T
+                )
+            )
+            self.all_classes_log_prob = torch.mean(
+                self.all_classes_log_prob, dim=1
+            ).numpy()
+
     @staticmethod
     def find_kappa_by_far(
         kappa: float,
@@ -248,7 +263,7 @@ class PosteriorProbability(OpenSetMethod):
             all_classes_log_prob.shape[-1] - 1
         )
         far = np.mean(was_rejected[~is_seen] == False)
-        print(f"Found kappa {np.round(kappa[0]*100,4)} for far {far}")
+        # print(f"Found kappa {np.round(kappa[0]*100,4)} for far {far}")
         return -np.abs(far - target_far)
 
     def predict(self):
@@ -257,6 +272,60 @@ class PosteriorProbability(OpenSetMethod):
             self.all_classes_log_prob.shape[-1] - 1
         )
         return self.predicted_id, self.was_rejected
+
+    def _calibrate_T(self, similarity_matrix_calib):
+        """Find optimal T via ternary search on calibration set to maximize error-prediction AUC."""
+        from sklearn.metrics import roc_auc_score
+        import torch
+
+        # 1. Compute ground-truth error labels using existing pipeline logic
+        error_calc = FrrFarIdent()
+        pred_ids = np.argmax(self.all_classes_log_prob_calib[:, :-1], axis=-1)
+        was_rejected = (
+            np.argmax(self.all_classes_log_prob_calib, axis=-1)
+            == self.all_classes_log_prob_calib.shape[-1] - 1
+        )
+        error_calc(
+            pred_ids, was_rejected, self.g_unique_ids_calib, self.probe_unique_ids_calib
+        )
+
+        true_pred_label = np.zeros(len(self.probe_unique_ids_calib), dtype=bool)
+        true_pred_label[error_calc.is_seen] = error_calc.true_accept_true_ident
+        true_pred_label[~error_calc.is_seen] = error_calc.true_reject
+        is_error = ~true_pred_label
+
+        # 2. Objective: AUC of uncertainty vs error at temperature T
+        def objective(T):
+            log_probs = self.posterior_prob.compute_all_class_log_probabilities(
+                similarity_matrix_calib, T
+            )
+            log_probs = torch.mean(log_probs, dim=1).numpy()
+
+            if self.uncertainty_type == "maxprob":
+                unc = 1 - np.exp(np.max(log_probs, axis=-1))
+            else:  # entropy
+                probs = np.exp(log_probs)
+                p_log_p = np.where(probs > 0, probs * np.log(probs), 0)
+                unc = -np.sum(p_log_p, axis=-1)
+
+            return roc_auc_score(is_error, unc) if len(np.unique(is_error)) > 1 else 0.5
+
+        # 3. Ternary search (unimodal T-vs-AUC curve, analogous to kappa golden search)
+        left, right, tol, max_iter = 0.01, 100.0, 1e-3, 100
+        for _ in range(max_iter):
+            if right - left < tol:
+                break
+            m1 = left + (right - left) / 3
+            m2 = right - (right - left) / 3
+            if objective(m1) < objective(m2):
+                left = m1
+            else:
+                right = m2
+
+        self.predict_T = (left + right) / 2
+        print(
+            f"[GalUE] Calibrated T={self.predict_T:.3f} | Error AUC={objective(self.predict_T):.4f}"
+        )
 
     @staticmethod
     def train_calibration(
