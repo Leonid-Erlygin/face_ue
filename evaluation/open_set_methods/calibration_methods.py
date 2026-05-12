@@ -423,6 +423,167 @@ class NNcalibration:
             model_name=self.model.name,
         )
 
+    def train_calibration_parameters_joint(
+        self,
+        kl_forward_fn,
+        extra_params,
+        extra_params_lr,
+        error_calc,
+        dataset_name,
+        far,
+    ):
+        """
+        Joint optimization of MLP calibration weights and `extra_params`
+        (e.g. predict_T). `kl_forward_fn()` must return differentiable
+        (kl_1, kl_2) tensors w.r.t. the current `extra_params`.
+        """
+        self.val_ds_name = dataset_name
+
+        # --- Labels (same as in the non-joint method) -----------------------
+        true_pred_label = np.zeros(error_calc.is_seen.shape[0])
+        true_pred_label[error_calc.is_seen] = error_calc.true_accept_true_ident
+        true_pred_label[~error_calc.is_seen] = error_calc.true_reject
+        false_reject_or_ident = (
+            error_calc.true_accept_false_ident
+            + error_calc.false_reject_false_ident
+            + error_calc.false_reject_true_ident
+        )
+
+        y = torch.tensor(
+            true_pred_label.astype("bool"), dtype=torch.float32, device=self.device
+        )
+        true_index = y == 1.0
+
+        # --- Loss-type weights (copy from original) -------------------------
+        true_index_weight = 1
+        if self.weight_loss_types:
+            false_accept_count = np.sum(error_calc.false_accept)
+            false_reject_or_ident_count = np.sum(false_reject_or_ident) + 500
+            false_accept_weight = (
+                false_accept_count + false_reject_or_ident_count
+            ) / false_accept_count
+            false_reject_or_ident_weight = (
+                false_accept_count + false_reject_or_ident_count
+            ) / false_reject_or_ident_count
+        else:
+            false_accept_weight = 1
+            false_reject_or_ident_weight = 1
+
+        # --- Get a first KL snapshot to fit normalization stats -------------
+        with torch.no_grad():
+            kl1_0, kl2_0 = kl_forward_fn()
+            X0 = torch.stack([kl1_0.float(), kl2_0.float()], dim=1).to(self.device)
+            self.X_mean_val = X0.mean(dim=0).detach()
+            self.X_std_val = X0.std(dim=0).detach().clamp_min(1e-8)
+
+        # --- Weight for balanced BCE ----------------------------------------
+        if self.weight is None:
+            self.weight = (y.sum() / y.shape[0]).item()
+        if self.train_weight:
+            weight = torch.nn.Parameter(
+                torch.tensor(self.weight, device=self.device), requires_grad=True
+            )
+        else:
+            weight = torch.tensor(self.weight, device=self.device)
+
+        # --- Loss -----------------------------------------------------------
+        loss_fn = (
+            nn.MSELoss(reduce=False)
+            if self.loss_type == "MSE"
+            else nn.BCELoss(reduce=False)
+        )
+
+        # --- Optimizer: MLP + weight + extra_params -------------------------
+        param_groups = [
+            {"params": self.model.parameters(), "lr": self.lr},
+            {"params": list(extra_params), "lr": extra_params_lr, "weight_decay": 0.0},
+        ]
+        if self.train_weight:
+            param_groups.append({"params": [weight], "lr": self.lr})
+
+        optimizer = torch.optim.Adam(param_groups, weight_decay=self.weight_decay)
+
+        scheduler_params = {
+            "max_lr": (
+                [
+                    self.scheduler_params.max_lr,
+                    extra_params_lr * 10,
+                    self.scheduler_params.max_lr,
+                ]
+                if self.train_weight
+                else [self.scheduler_params.max_lr, extra_params_lr * 10]
+            ),
+            "steps_per_epoch": self.scheduler_params.steps_per_epoch,
+            "epochs": self.epochs,
+            "div_factor": self.scheduler_params.div_factor,
+            "final_div_factor": self.scheduler_params.final_div_factor,
+        }
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, **scheduler_params)
+
+        for iteration in range(self.epochs):
+            self.model.train()
+            optimizer.zero_grad()
+
+            # (1) Recompute KLs under current T.
+            kl1_t, kl2_t = kl_forward_fn()  # differentiable in T
+            X = torch.stack([kl1_t.float(), kl2_t.float()], dim=1).to(self.device)
+            X_norm = (X - self.X_mean_val) / self.X_std_val  # stats frozen after iter 0
+
+            # (2) Forward MLP + loss (same structure as original).
+            pred = self.model(X_norm)
+            loss_element_wise = loss_fn(pred, y)
+
+            if self.weight_loss_types:
+                loss_fa = (
+                    loss_element_wise[~error_calc.is_seen][
+                        error_calc.false_accept
+                    ].mean()
+                    * false_accept_weight
+                )
+                loss_fri = (
+                    loss_element_wise[error_calc.is_seen][false_reject_or_ident].mean()
+                    * false_reject_or_ident_weight
+                )
+                loss_ti = loss_element_wise[true_index].mean() * true_index_weight
+                loss = loss_fa + loss_fri + loss_ti
+            else:
+                w = torch.sigmoid(weight) if self.train_weight else weight
+                loss = (
+                    loss_element_wise[true_index].mean() * (1 - w)
+                    + loss_element_wise[~true_index].mean() * w
+                )
+
+            loss.backward()
+
+            # Guard T > 0  (simple, no reparameterization).
+            optimizer.step()
+            with torch.no_grad():
+                for p in extra_params:
+                    p.clamp_(min=1e-3)
+
+            scheduler.step()
+
+            if iteration % 100 == 0:
+                T_now = float(extra_params[0].detach())
+                print(
+                    f"[joint] it {iteration}  loss {loss.item():.4f}  "
+                    f"T {T_now:.4f}  lr {optimizer.param_groups[0]['lr']:.2e}"
+                )
+
+        # --- Final diagnostics plot (reuse existing drawer) ----------------
+        with torch.no_grad():
+            kl1_f, kl2_f = kl_forward_fn()
+            X_final = torch.stack([kl1_f.float(), kl2_f.float()], dim=1).to(self.device)
+            X_norm_final = (X_final - self.X_mean_val) / self.X_std_val
+            self.draw_dencity_plot(
+                X_norm_final.cpu(),
+                error_calc,
+                dataset_name,
+                far,
+                is_val=True,
+                model_name=self.model.name,
+            )
+
     def apply_calibration_transform(self, kl_1, kl_2, error_calc, dataset_name, far):
 
         X = torch.tensor(

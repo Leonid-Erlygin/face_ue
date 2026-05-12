@@ -311,7 +311,7 @@ class PosteriorProbability(OpenSetMethod):
             return roc_auc_score(is_error, unc) if len(np.unique(is_error)) > 1 else 0.5
 
         # 3. Ternary search (unimodal T-vs-AUC curve, analogous to kappa golden search)
-        left, right, tol, max_iter = 0.01, 100.0, 1e-3, 100
+        left, right, tol, max_iter = 1, 200.0, 1e-3, 100
         for _ in range(max_iter):
             if right - left < tol:
                 break

@@ -12,23 +12,24 @@ defaults:
   - meta_data@metric_order: metric_order
 
 
-#datasets: ["yahoo", "agnews", "dbpedia"]
-datasets: ["pan_test", "clinc150"]
+datasets: ["yahoo", "agnews", "dbpedia"]
+#datasets: ["pan_test", "clinc150"]
 
 task: filter
 
 # CHANGE
 metric_table_path: /app/outputs/experiments/osr_text/open_set_identification/{dataset}/filter_tabels/f1_class_prr_filtering.csv
 
-caption: >
-  Prediction Rejection Ratios (PRR, $\uparrow$) for $F_1$ filtering curve for PAN authorship attribution and CLINC150 intent classification datasets.
-
 # caption: >
-#   Prediction Rejection Ratios (PRR, $\uparrow$) for $F_1$ filtering curve for three topic classification datasets.
+#   Prediction Rejection Ratios (PRR, $\uparrow$) for $F_1$ filtering curve for PAN authorship attribution and CLINC150 intent classification datasets.
+
+caption: >
+  Prediction Rejection Ratios (PRR, $\uparrow$) for $F_1$ filtering curve for three topic classification datasets.
 
   
 fix_table: False
-table_lable: "tab:${task}"
+#table_lable: "tab:pan_and_clinc"
+table_lable: "tab:topic_classification"
 round_num: 2
 table_size: footnotesize
 tabcolsep: 2
