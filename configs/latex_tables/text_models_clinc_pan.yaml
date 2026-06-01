@@ -21,7 +21,7 @@ task: filter
 metric_table_path: /app/outputs/experiments/osr_text/open_set_identification/{dataset}/filter_tabels/f1_class_prr_filtering.csv
 
 caption: >
-  Prediction Rejection Ratios (PRR, $\uparrow$) for $F_1$ filtering curve for PAN authorship attribution and CLINC150 intent classification datasets.
+  Prediction Rejection Ratios (PRR, $\uparrow$) for the $F_1$ filtering curve on PAN-20-AV authorship attribution and CLINC150 intent classification. Baselines follow the same convention as Table~\ref{tab:topic_classification}; MSP and Entropy use the calibrated temperature $T^\star$. Best results in bold, second-best underlined.
 
 # caption: >
 #   Prediction Rejection Ratios (PRR, $\uparrow$) for $F_1$ filtering curve for three topic classification datasets.

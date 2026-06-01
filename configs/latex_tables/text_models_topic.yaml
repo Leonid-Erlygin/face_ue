@@ -22,9 +22,9 @@ metric_table_path: /app/outputs/experiments/osr_text/open_set_identification/{da
 
 # caption: >
 #   Prediction Rejection Ratios (PRR, $\uparrow$) for $F_1$ filtering curve for PAN authorship attribution and CLINC150 intent classification datasets.
-
+\caption{}
 caption: >
-  Prediction Rejection Ratios (PRR, $\uparrow$) for $F_1$ filtering curve for three topic classification datasets.
+  Prediction Rejection Ratios (PRR, $\uparrow$) for the $F_1$ filtering curve on three topic-classification datasets. MSP and Entropy are computed over the gallery-augmented logit vector defined in Section~\ref{sec:logit_baselines} with the calibrated temperature $T^\star$ obtained on the validation set; Margin uses the raw cosine similarities. SCF, GalUE and HolUE are the embedding- and gallery-aware methods of Section~\ref{sec:probabilistic_embeddigns}. Best results in bold, second-best underlined.
 
   
 fix_table: False
