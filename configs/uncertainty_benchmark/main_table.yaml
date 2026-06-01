@@ -84,152 +84,152 @@ display_oracle_curve: True
 open_set_identification_methods:
 
 
-  - embeddings: pfe
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    recognition_method:
-      _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
-      distance_function: 
-        _target_: evaluation.distance_functions.open_set_identification.CosineSim
-      acceptance_score: 
-        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
-      uncertainty_function:
-        _target_: evaluation.open_set_methods.uncertainty_functions.BernoulliVariance
-      alpha: 1
-      calib_strategy: "norm_val"
-    pretty_name: "PFE"
+  # - embeddings: pfe
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
+  #     distance_function: 
+  #       _target_: evaluation.distance_functions.open_set_identification.CosineSim
+  #     acceptance_score: 
+  #       _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+  #     uncertainty_function:
+  #       _target_: evaluation.open_set_methods.uncertainty_functions.BernoulliVariance
+  #     alpha: 1
+  #     calib_strategy: "norm_val"
+  #   pretty_name: "PFE"
 
 
-  - embeddings: scf
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    recognition_method:
-      _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
-      distance_function: 
-        _target_: evaluation.distance_functions.open_set_identification.CosineSim
-      acceptance_score: 
-        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
-      uncertainty_function:
-        _target_: evaluation.open_set_methods.uncertainty_functions.BernoulliVariance
-      alpha: 1
-      calib_strategy: "norm_val"
-    pretty_name: "SCF"
+  # - embeddings: scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
+  #     distance_function: 
+  #       _target_: evaluation.distance_functions.open_set_identification.CosineSim
+  #     acceptance_score: 
+  #       _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+  #     uncertainty_function:
+  #       _target_: evaluation.open_set_methods.uncertainty_functions.BernoulliVariance
+  #     alpha: 1
+  #     calib_strategy: "norm_val"
+  #   pretty_name: "SCF"
 
-  - embeddings: scaleface
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    recognition_method:
-      _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
-      distance_function: 
-        _target_: evaluation.distance_functions.open_set_identification.CosineSim
-      acceptance_score: 
-        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
-      uncertainty_function:
-        _target_: evaluation.open_set_methods.uncertainty_functions.BernoulliVariance
-      alpha: 1
-      calib_strategy: "norm_val"
-    pretty_name: "ScaleFace"
+  # - embeddings: scaleface
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
+  #     distance_function: 
+  #       _target_: evaluation.distance_functions.open_set_identification.CosineSim
+  #     acceptance_score: 
+  #       _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+  #     uncertainty_function:
+  #       _target_: evaluation.open_set_methods.uncertainty_functions.BernoulliVariance
+  #     alpha: 1
+  #     calib_strategy: "norm_val"
+  #   pretty_name: "ScaleFace"
 
-  - embeddings: scf
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    recognition_method:
-      _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
-      distance_function: 
-        _target_: evaluation.distance_functions.open_set_identification.CosineSim
-      acceptance_score: 
-        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
-      uncertainty_function:
-        _target_: evaluation.open_set_methods.uncertainty_functions.BernoulliVariance
-      alpha: 0
-      calib_strategy: "norm_val"
-    pretty_name: "AccScr"
-
-
-  - embeddings: scf
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    recognition_method:
-      _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
-      calibration_set: True
-      calibration_embs_name: scf
-      distance_function: 
-        _target_: evaluation.distance_functions.open_set_identification.CosineSim
-      acceptance_score: 
-        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
-      uncertainty_function:
-        _target_: evaluation.open_set_methods.uncertainty_functions.MaximumSoftmaxProbability
-        T: 1
-      alpha: 0
-      calib_strategy: "norm_val"
-    pretty_name: "MSP"
-
-  - embeddings: scf
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    recognition_method:
-      _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
-      calibration_set: True
-      calibration_embs_name: scf
-      distance_function: 
-        _target_: evaluation.distance_functions.open_set_identification.CosineSim
-      acceptance_score: 
-        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
-      uncertainty_function:
-        _target_: evaluation.open_set_methods.uncertainty_functions.Entropy
-        T: 0.1
-      alpha: 0
-      calib_strategy: "norm_val"
-    pretty_name: "Entropy"
-
-  - embeddings: scf
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    recognition_method:
-      _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
-      distance_function: 
-        _target_: evaluation.distance_functions.open_set_identification.CosineSim
-      acceptance_score: 
-        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
-      uncertainty_function:
-        _target_: evaluation.open_set_methods.uncertainty_functions.Margin
-      alpha: 0
-      calib_strategy: "norm_val"
-    pretty_name: "Margin"
+  # - embeddings: scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
+  #     distance_function: 
+  #       _target_: evaluation.distance_functions.open_set_identification.CosineSim
+  #     acceptance_score: 
+  #       _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+  #     uncertainty_function:
+  #       _target_: evaluation.open_set_methods.uncertainty_functions.BernoulliVariance
+  #     alpha: 0
+  #     calib_strategy: "norm_val"
+  #   pretty_name: "AccScr"
 
 
-  - embeddings: scf
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault  
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    recognition_method:
-      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
-      distance_function: 
-        _target_: evaluation.distance_functions.open_set_identification.CosineSim
-      class_model: power #vMF
-      far: ${far_list}
-      beta: 0.5
-      uncertainty_type: maxprob
-      alpha: 0
-      aggregation: sum
-      predict_T: null
-      T_data_unc: 1
-    pretty_name: "GalUE"
+  # - embeddings: scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
+  #     calibration_set: True
+  #     calibration_embs_name: scf
+  #     distance_function: 
+  #       _target_: evaluation.distance_functions.open_set_identification.CosineSim
+  #     acceptance_score: 
+  #       _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+  #     uncertainty_function:
+  #       _target_: evaluation.open_set_methods.uncertainty_functions.MaximumSoftmaxProbability
+  #       T: 1
+  #     alpha: 0
+  #     calib_strategy: "norm_val"
+  #   pretty_name: "MSP"
+
+  # - embeddings: scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
+  #     calibration_set: True
+  #     calibration_embs_name: scf
+  #     distance_function: 
+  #       _target_: evaluation.distance_functions.open_set_identification.CosineSim
+  #     acceptance_score: 
+  #       _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+  #     uncertainty_function:
+  #       _target_: evaluation.open_set_methods.uncertainty_functions.Entropy
+  #       T: 0.1
+  #     alpha: 0
+  #     calib_strategy: "norm_val"
+  #   pretty_name: "Entropy"
+
+  # - embeddings: scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
+  #     distance_function: 
+  #       _target_: evaluation.distance_functions.open_set_identification.CosineSim
+  #     acceptance_score: 
+  #       _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+  #     uncertainty_function:
+  #       _target_: evaluation.open_set_methods.uncertainty_functions.Margin
+  #     alpha: 0
+  #     calib_strategy: "norm_val"
+  #   pretty_name: "Margin"
+
+
+  # - embeddings: scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault  
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
+  #     distance_function: 
+  #       _target_: evaluation.distance_functions.open_set_identification.CosineSim
+  #     class_model: power #vMF
+  #     far: ${far_list}
+  #     beta: 0.5
+  #     uncertainty_type: maxprob
+  #     alpha: 0
+  #     aggregation: sum
+  #     predict_T: null
+  #     T_data_unc: 1
+  #   pretty_name: "GalUE"
 
 
   - embeddings: scf
@@ -263,7 +263,7 @@ open_set_identification_methods:
         use_norm: True
         train_weight: False
         weight_loss_types: False
-        weight_decay: 0.01
+        weight_decay: 0.001
         normalize_kl_by_test: False 
         scheduler_params: 
           max_lr: 1e-4

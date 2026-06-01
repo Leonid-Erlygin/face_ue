@@ -24,7 +24,7 @@ class EfficientNet(torch.nn.Module):
         delattr(self.backbone, "head_species")
         if learnable is False:
             for p in self.backbone.modules():
-                p.requires_grad = False
+                p.requires_grad_(False)
 
     def forward(self, x):
         bottleneck_feat = self.backbone.get_bottleneck_feature(x)

@@ -6,6 +6,23 @@ from .embeddings import process_embeddings
 from .test_datasets import FaceRecogntionDataset
 from .embedding_utils import get_template_subsets
 
+def _decode_uncertainty(self, unc: np.ndarray) -> np.ndarray:
+    name = self.embedding_type.lower()
+
+    # SCF stores log kappa.
+    if "scf" in name:
+        return np.exp(unc)
+
+    # PFE stores log sigma^2.
+    if "pfe" in name:
+        return np.exp(unc)
+
+    # ScaleFace writer currently stores scale itself.
+    if "scaleface" in name or "scale" in name:
+        return unc
+
+    # Safe default for older saved SCF/PFE-like files.
+    return np.exp(unc)
 
 class Recognition_test:
     def __init__(
@@ -89,7 +106,7 @@ class Recognition_test:
             )
             template_ids = data["template_ids"]
         else:
-            unc = np.exp(self.unc)
+            unc = self._decode_uncertainty(self.unc)
             pooled_data = self.gallery_template_pooling_strategy(
                 self.image_input_feats,
                 unc,
@@ -183,7 +200,7 @@ class Recognition_test:
                 probe_subject_ids_sorted=probe_subject_ids_sorted,
             )
 
-        probe_unc = np.exp(probe_unc)
+        probe_unc = self._decode_uncertainty(probe_unc)
 
         for gallery_name in used_galleries:
             gallery_templates = getattr(self.test_dataset, f"{gallery_name}_templates")
@@ -220,8 +237,7 @@ class Recognition_test:
                 )
             # 1. pool selected gallery templates
             # assert gallery_unc.shape[1] == 1  # working with scf unc
-            gallery_unc = np.exp(gallery_unc)
-            # kappa = np.exp(gallery_unc)
+            gallery_unc = self._decode_uncertainty(gallery_unc)
             if (
                 template_pool_path / f"gallery_{gallery_name}.npz"
             ).is_file() and self.recompute_template_pooling is False:

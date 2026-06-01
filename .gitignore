@@ -17,6 +17,7 @@ external
 notebooks/misc
 unsorted_data
 downloads_torrent
+combined.txt
 wandb
 # happy_whale
 *.bin

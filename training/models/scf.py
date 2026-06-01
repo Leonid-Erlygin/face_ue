@@ -14,8 +14,11 @@ class Prediction_writer(BasePredictionWriter):
         self.file_name = file_name
 
     def write_on_epoch_end(self, trainer, pl_module, predictions, batch_indices):
-        embs = torch.cat([batch[0] for batch in predictions], axis=0).numpy()
-        unc = torch.cat([batch[1] for batch in predictions], axis=0).numpy()
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        embs = torch.cat([batch[0].detach().cpu() for batch in predictions], dim=0).numpy()
+        unc = torch.cat([batch[1].detach().cpu() for batch in predictions], dim=0).numpy()
+
         print(embs.shape, unc.shape)
         np.savez(self.output_dir / f"{self.file_name}.npz", embs=embs, unc=unc)
 
@@ -63,19 +66,19 @@ class SphereConfidenceFace(LightningModule):
         self.scf_loss = scf_loss
         # bad style code:
         if softmax_weights is None:
-            # assume that weights are stored in the backbone as in case of whale dataset
-            self.softmax_weights = self.backbone.backbone.head_id.weight.data
+            # Assume weights are stored in the backbone, e.g. Whale model.
+            self.softmax_weights = self.backbone.backbone.head_id.weight.detach()
             delattr(self.backbone.backbone, "head_id")
-            softmax_weights_norm = torch.norm(self.softmax_weights, dim=1, keepdim=True)
-            self.softmax_weights = (
-                self.softmax_weights / softmax_weights_norm * scf_loss.radius
-            )
+
+            self.softmax_weights = torch.nn.functional.normalize(
+                self.softmax_weights, p=2, dim=1
+            ) * scf_loss.radius
+
             self.softmax_weights = torch.nn.Parameter(
                 self.softmax_weights, requires_grad=False
             )
         else:
             self.softmax_weights = softmax_weights.softmax_weights
-        self.softmax_weights = softmax_weights.softmax_weights
 
         self.optimizer_params = optimizer_params
         self.scheduler_params = scheduler_params

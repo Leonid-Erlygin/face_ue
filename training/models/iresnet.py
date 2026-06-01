@@ -153,7 +153,7 @@ class IResNet(nn.Module):
 
         if learnable is False:
             for p in self.modules():
-                p.requires_grad = False
+                p.requires_grad_(False)
 
     def _make_layer(self, block, planes, blocks, stride=1, dilate=False):
         downsample = None
