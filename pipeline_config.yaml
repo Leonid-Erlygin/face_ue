@@ -1,0 +1,822 @@
+# pipeline_config.yaml
+# Reproducibility pipeline for:
+# "Holistic Uncertainty Estimation For Open-Set Recognition" / HolUE
+#
+# Expected usage:
+#   python pipeline_config.py --config pipeline_config.yaml
+#   python pipeline_config.py --config pipeline_config.yaml --resume
+#   python pipeline_config.py --config pipeline_config.yaml --stage main_results
+#
+# Notes:
+# - This config assumes that dataset protocols and precomputed embeddings may already
+#   exist under paths.data_root. If embeddings are missing and recompute_embeddings=true,
+#   pipeline_config.py should run the corresponding prediction steps.
+# - All long-running steps must be checkpointed by pipeline_config.py using the
+#   checkpointing section below.
+# - No API keys, MLFlow URIs, or W&B credentials should be stored here.
+
+project:
+  name: holue
+  seed: 777
+  deterministic: true
+  device: cuda:0
+  num_workers: 20
+
+paths:
+  project_root: "."
+  data_root: "./datasets"
+  model_root: "./model_weights"
+  output_root: "./outputs/reproduce_holue"
+  cache_root: "./cache"
+  temp_config_root: "./outputs/reproduce_holue/generated_configs"
+  paper_output_root: "./outputs/reproduce_holue/paper_artifacts"
+
+checkpointing:
+  enabled: true
+  resume: true
+  state_file: "./outputs/reproduce_holue/pipeline_state.json"
+  step_dir: "./outputs/reproduce_holue/.pipeline_checkpoints"
+  save_stdout: true
+  save_stderr: true
+  save_command: true
+  checksum_inputs: true
+  skip_if_done_marker_exists: true
+  done_marker_name: "_DONE"
+  failed_marker_name: "_FAILED"
+
+runtime:
+  fail_fast: true
+  dry_run: false
+  python_executable: "python"
+  env:
+    PYTHONPATH: "."
+    CUDA_VISIBLE_DEVICES: "0"
+    NUMEXPR_MAX_THREADS: "16"
+    NUMEXPR_NUM_THREADS: "16"
+    WANDB_MODE: "disabled"
+    MPLBACKEND: "Agg"
+
+reproduction:
+  # "corrected" means the pipeline should use the logically corrected implementation.
+  # If you need exact legacy numbers from the originally submitted code, add support
+  # for "accepted_legacy" in pipeline_config.py and disable fixes there.
+  mode: corrected
+  recompute_embeddings: false
+  recompute_template_pooling: false
+  use_precomputed_embeddings_if_available: true
+  use_detector_score: false
+  use_two_galleries: false
+
+pretrained_models:
+  face_arcface:
+    backbone_path: "./model_weights/backbone/ms1mv3_arcface_r50/backbone.pth"
+    softmax_weights_path: "./model_weights/backbone/ms1mv3_arcface_r50/softmax_weight.pt"
+    embedding_dim: 512
+    radius: 64
+
+  cosface_glint360k:
+    backbone_path: "./model_weights/backbone/glint360k_cosface_r50_fp16_0.1/backbone.pth"
+    softmax_weights_path: "./model_weights/backbone/glint360k_cosface_r50_fp16_0.1/softmax_weight.pt"
+    embedding_dim: 512
+    radius: 64
+
+  haaml_casia:
+    backbone_path: "./model_weights/backbone/haaml_r18_casia/backbone.pth"
+    softmax_weights_path: "./model_weights/backbone/haaml_r18_casia/softmax_weight.pt"
+    embedding_dim: 512
+    radius: 64
+
+  whale_arcface:
+    checkpoint_path: "./model_weights/whale_arcface/last-v4.ckpt"
+    embedding_dim: 512
+    radius: 64
+
+uncertainty_models:
+  face:
+    scf:
+      train_config: "unc_model_train/scf_ms1m"
+      checkpoint_path: "./model_weights/uncertainty/scf_ms1m.ckpt"
+      embedding_name: "scf"
+    pfe:
+      train_config: "unc_model_train/pfe_ms1m"
+      checkpoint_path: "./model_weights/uncertainty/pfe_ms1m.ckpt"
+      embedding_name: "pfe"
+    scaleface:
+      train_config: "unc_model_train/scaleface_ms1m"
+      checkpoint_path: "./model_weights/uncertainty/scaleface_ms1m.ckpt"
+      embedding_name: "scaleface"
+
+  whale:
+    scf:
+      train_config: "unc_model_train/scf_whale"
+      checkpoint_path: "./model_weights/uncertainty/scf_whale.ckpt"
+      embedding_name: "scf"
+    pfe:
+      train_config: "unc_model_train/pfe_whale"
+      checkpoint_path: "./model_weights/uncertainty/pfe_whale.ckpt"
+      embedding_name: "pfe"
+    scaleface:
+      train_config: "unc_model_train/scaleface_whale"
+      checkpoint_path: "./model_weights/uncertainty/scaleface_whale.ckpt"
+      embedding_name: "scaleface"
+
+  voxblink:
+    scf:
+      train_config: "unc_model_train/scf_vb2"
+      checkpoint_path: "./model_weights/uncertainty/scf_vb2.ckpt"
+      embedding_name: "scf"
+    pfe:
+      train_config: "unc_model_train/pfe_vb2"
+      checkpoint_path: "./model_weights/uncertainty/pfe_vb2.ckpt"
+      embedding_name: "pfe"
+    scaleface:
+      train_config: "unc_model_train/scaleface_vb2"
+      checkpoint_path: "./model_weights/uncertainty/scaleface_vb2.ckpt"
+      embedding_name: "scaleface"
+
+datasets:
+  IJBC:
+    pretty_name: "IJB-C"
+    domain: face
+    path: "./datasets/arcface_ijb/IJBC"
+    calibration_dataset: ms1m
+    display_fars: [0.05, 0.1, 0.2]
+    required_embeddings:
+      - scf
+      - pfe
+      - scaleface
+
+  IJBB:
+    pretty_name: "IJB-B"
+    domain: face
+    path: "./datasets/arcface_ijb/IJBB"
+    calibration_dataset: ms1m
+    display_fars: [0.05, 0.1, 0.2]
+    required_embeddings:
+      - scf
+      - pfe
+      - scaleface
+
+  whale:
+    pretty_name: "Whale"
+    domain: whale
+    path: "./datasets/whale"
+    calibration_dataset: whale_val
+    display_fars: [0.05, 0.1, 0.2]
+    required_embeddings:
+      - scf
+      - pfe
+      - scaleface
+
+  voxblink_large:
+    dataset_name_in_code: "large_12k-perspk5"
+    pretty_name: "VB-Eval-L-5"
+    domain: voxblink
+    path: "./datasets/vb-clean_ident/Large_12k/perspk5"
+    calibration_dataset: voxblink_medium
+    display_fars: [0.01, 0.05, 0.1]
+    required_embeddings:
+      - scf
+      - pfe
+      - scaleface
+
+calibration_datasets:
+  ms1m:
+    dataset_name_in_code: "ms1m"
+    pretty_name: "MS1MV2 validation"
+    domain: face
+    path: "./datasets/ms1m_ident"
+    required_embeddings:
+      - scf
+
+  whale_val:
+    dataset_name_in_code: "whale_val"
+    pretty_name: "Whale validation"
+    domain: whale
+    path: "./datasets/whale_val"
+    required_embeddings:
+      - scf
+
+  voxblink_medium:
+    dataset_name_in_code: "medium_1.2k-perspk5"
+    pretty_name: "VB-Eval-M-5"
+    domain: voxblink
+    path: "./datasets/vb-clean_ident/Medium_1.2k/perspk5"
+    required_embeddings:
+      - scf
+
+embedding_files:
+  pattern: "{dataset_path}/embeddings/{embedding_name}_embs_{dataset_name}.npz"
+  aliases:
+    IJBC:
+      dataset_name: "IJBC"
+    IJBB:
+      dataset_name: "IJBB"
+    whale:
+      dataset_name: "whale"
+    voxblink_large:
+      dataset_name: "large_12k-perspk5"
+    ms1m:
+      dataset_name: "ms1m"
+    whale_val:
+      dataset_name: "whale_val"
+    voxblink_medium:
+      dataset_name: "medium_1.2k-perspk5"
+
+evaluation_defaults:
+  beta: 0.5
+  beta_list_main: [0.5]
+  far_list_all: [0.01, 0.05, 0.1, 0.2]
+  filter_fractions: [0.0, 0.5, 20]
+  display_oracle_curve: true
+  create_pool_plot: false
+  metric_pretty_name_path: "./configs/latex_tables/pretty_names/column_pretty_name.yaml"
+
+  dataset_name_to_T_scale:
+    IJBB: 7
+    IJBC: 7
+    whale: 20
+    large_12k-perspk5: 20
+
+  holue:
+    # Reported code used Power Spherical class conditionals for GalUE/HolUE.
+    # Set to "vMF" only if the paper text and implementation are both changed.
+    gallery_prior: power
+    emb_unc_model: vMF
+    beta: 0.5
+    alpha: 0.5
+    predict_T: 20
+    M: 0
+    pred_uncertainty_type: entropy
+    kappa_input_scale: 1.0
+    train_predict_T: false
+
+    calibration:
+      type: mlp
+      use_validation_normalization: true
+      normalize_kl_by_test: false
+      balanced_loss: true
+      model:
+        hidden_size: 6
+        num_layers: 3
+        use_bn: false
+      optimization:
+        lr: 0.001
+        epochs: 2000
+        weight_decay: 0.001
+        scheduler:
+          max_lr: 0.0001
+          steps_per_epoch: 1
+          div_factor: 10
+          final_div_factor: 10
+
+methods:
+  PFE:
+    pretty_name: "PFE"
+    embedding: pfe
+    recognizer: similarity
+    distance_function: cosine
+    acceptance_score: max_similarity
+    uncertainty_function: data_quality
+    alpha: 1.0
+    calib_strategy: norm_val
+
+  SCF:
+    pretty_name: "SCF"
+    embedding: scf
+    recognizer: similarity
+    distance_function: cosine
+    acceptance_score: max_similarity
+    uncertainty_function: data_quality
+    alpha: 1.0
+    calib_strategy: norm_val
+
+  ScaleFace:
+    pretty_name: "ScaleFace"
+    paper_name: "SF"
+    embedding: scaleface
+    recognizer: similarity
+    distance_function: cosine
+    acceptance_score: max_similarity
+    uncertainty_function: data_quality
+    alpha: 1.0
+    calib_strategy: norm_val
+
+  AccScr:
+    pretty_name: "AccScr"
+    embedding: scf
+    recognizer: similarity
+    distance_function: cosine
+    acceptance_score: max_similarity
+    uncertainty_function: acceptance_score_margin
+    alpha: 0.0
+    calib_strategy: norm_val
+
+  MSP:
+    pretty_name: "MSP"
+    embedding: scf
+    recognizer: similarity
+    distance_function: cosine
+    acceptance_score: max_similarity
+    uncertainty_function: maximum_softmax_probability
+    T: 1.0
+    alpha: 0.0
+    calib_strategy: norm_val
+
+  Entropy:
+    pretty_name: "Entropy"
+    embedding: scf
+    recognizer: similarity
+    distance_function: cosine
+    acceptance_score: max_similarity
+    uncertainty_function: entropy
+    T: 0.1
+    alpha: 0.0
+    calib_strategy: norm_val
+
+  Margin:
+    pretty_name: "Margin"
+    embedding: scf
+    recognizer: similarity
+    distance_function: cosine
+    acceptance_score: max_similarity
+    uncertainty_function: margin
+    alpha: 0.0
+    calib_strategy: norm_val
+
+  GalUE:
+    pretty_name: "GalUE"
+    embedding: scf
+    recognizer: posterior_probability
+    distance_function: cosine
+    class_model: power
+    uncertainty_type: maxprob
+    beta: 0.5
+    alpha: 0.0
+    aggregation: sum
+    predict_T: null
+    T_data_unc: 1.0
+
+  HolUE:
+    pretty_name: "HolUE"
+    embedding: scf
+    recognizer: monte_carlo_predictive_probability
+    gallery_prior: power
+    emb_unc_model: vMF
+    beta: 0.5
+    alpha: 0.5
+    predict_T: 20
+    M: 0
+    pred_uncertainty_type: entropy
+    calibration: mlp
+
+  Random:
+    pretty_name: "Random"
+    embedding: scf
+    recognizer: similarity
+    distance_function: cosine
+    acceptance_score: max_similarity
+    uncertainty_function: random
+    alpha: 0.0
+
+  Oracle:
+    pretty_name: "Oracle"
+    embedding: scf
+    recognizer: similarity
+    distance_function: cosine
+    acceptance_score: max_similarity
+    uncertainty_function: oracle
+    alpha: 0.0
+    oracle_predictions: true
+
+experiments:
+  main_table:
+    enabled: true
+    stage: main_results
+    description: "Main PRR table for IJB-C, IJB-B, Whale, and VoxBlink."
+    output_dir: "./outputs/reproduce_holue/experiments/main_table"
+    hydra_config_name: "main_table"
+    datasets:
+      - IJBC
+      - IJBB
+      - whale
+      - voxblink_large
+    methods:
+      - PFE
+      - SCF
+      - ScaleFace
+      - AccScr
+      - GalUE
+      - HolUE
+      - Random
+      - Oracle
+    far_list: [0.01, 0.05, 0.1, 0.2]
+    beta_list: [0.5]
+    primary_metric: "f1_class"
+    expected_outputs:
+      - "./outputs/reproduce_holue/experiments/main_table/open_set_identification/IJBC/filter_tabels/f1_class_prr_filtering.csv"
+      - "./outputs/reproduce_holue/experiments/main_table/open_set_identification/IJBB/filter_tabels/f1_class_prr_filtering.csv"
+      - "./outputs/reproduce_holue/experiments/main_table/open_set_identification/whale/filter_tabels/f1_class_prr_filtering.csv"
+      - "./outputs/reproduce_holue/experiments/main_table/open_set_identification/large_12k-perspk5/filter_tabels/f1_class_prr_filtering.csv"
+
+  main_rejection_curves:
+    enabled: true
+    stage: figures
+    description: "Risk-controlled rejection curves for IJB-C at FPIR=0.05."
+    depends_on:
+      - main_table
+    source_experiment: main_table
+    dataset: IJBC
+    far: 0.05
+    metrics:
+      - f1_class
+      - fpir
+      - fnir
+      - false_ident
+    output_dir: "./outputs/reproduce_holue/paper_artifacts/figures/main_rejection_curves"
+    expected_outputs:
+      - "./outputs/reproduce_holue/paper_artifacts/figures/main_rejection_curves/ijbc_fpir_0.05.pdf"
+
+  calibration_ablation:
+    enabled: true
+    stage: ablations
+    description: "Calibration/post-processing ablation table."
+    output_dir: "./outputs/reproduce_holue/experiments/calibration_ablation"
+    hydra_config_name: "new_calib_all_ds"
+    datasets:
+      - IJBC
+      - IJBB
+    far_list: [0.05, 0.1, 0.2]
+    beta_list: [0.5]
+    variants:
+      - name: "exp_weight_only"
+        model: exp_transform
+        use_T: false
+        use_shift: false
+        use_alpha: true
+      - name: "exp_shift_only"
+        model: exp_transform
+        use_T: false
+        use_shift: true
+        use_alpha: false
+      - name: "exp_T_only"
+        model: exp_transform
+        use_T: true
+        use_shift: false
+        use_alpha: false
+      - name: "exp_T_shift"
+        model: exp_transform
+        use_T: true
+        use_shift: true
+        use_alpha: false
+      - name: "exp_shift_weight"
+        model: exp_transform
+        use_T: false
+        use_shift: true
+        use_alpha: true
+      - name: "exp_T_weight"
+        model: exp_transform
+        use_T: true
+        use_shift: false
+        use_alpha: true
+      - name: "exp_T_shift_weight"
+        model: exp_transform
+        use_T: true
+        use_shift: true
+        use_alpha: true
+      - name: "sum"
+        model: standardization_sum
+        normalize_kl_by_test: false
+      - name: "mlp"
+        model: mlp
+    expected_outputs:
+      - "./outputs/reproduce_holue/experiments/calibration_ablation/open_set_identification/IJBC/filter_tabels/f1_class_prr_filtering.csv"
+      - "./outputs/reproduce_holue/experiments/calibration_ablation/open_set_identification/IJBB/filter_tabels/f1_class_prr_filtering.csv"
+
+  beta_ablation:
+    enabled: true
+    stage: ablations
+    description: "Sensitivity of HolUE to beta."
+    output_dir: "./outputs/reproduce_holue/experiments/beta_ablation"
+    hydra_config_name: "beta_ablation"
+    datasets:
+      - IJBC
+      - IJBB
+      - whale
+      - voxblink_large
+    methods:
+      - HolUE
+      - Random
+      - Oracle
+    far_list: [0.05]
+    beta_list: [0.01, 0.173, 0.337, 0.5, 0.663, 0.827, 0.99]
+    expected_outputs:
+      - "./outputs/reproduce_holue/experiments/beta_ablation/open_set_identification/IJBC/filter_tabels/f1_class_prr_filtering.csv"
+      - "./outputs/reproduce_holue/paper_artifacts/figures/beta_sensitivity.pdf"
+
+  cosface_backbone:
+    enabled: true
+    stage: ablations
+    description: "Backbone ablation: CosFace on Glint360K."
+    output_dir: "./outputs/reproduce_holue/experiments/cosface"
+    hydra_config_name: "cosface_exp_table"
+    datasets:
+      - IJBC
+      - IJBB
+    methods:
+      - SCF
+      - AccScr
+      - GalUE
+      - HolUE
+      - Random
+      - Oracle
+    embeddings:
+      scf: "scf_cosface"
+    far_list: [0.05, 0.1, 0.2]
+    beta_list: [0.5]
+    expected_outputs:
+      - "./outputs/reproduce_holue/experiments/cosface/open_set_identification/IJBC/filter_tabels/f1_class_prr_filtering.csv"
+      - "./outputs/reproduce_holue/experiments/cosface/open_set_identification/IJBB/filter_tabels/f1_class_prr_filtering.csv"
+
+  haaml_backbone:
+    enabled: true
+    stage: ablations
+    description: "Backbone ablation: HAAML on CASIA-WebFace."
+    output_dir: "./outputs/reproduce_holue/experiments/haaml"
+    hydra_config_name: "haaml_exp_table"
+    datasets:
+      - IJBC
+      - IJBB
+    methods:
+      - SCF
+      - AccScr
+      - GalUE
+      - HolUE
+      - Random
+      - Oracle
+    embeddings:
+      scf: "scf_haaml_casia"
+    far_list: [0.01, 0.05, 0.1, 0.2]
+    beta_list: [0.5]
+    expected_outputs:
+      - "./outputs/reproduce_holue/experiments/haaml/open_set_identification/IJBC/filter_tabels/f1_class_prr_filtering.csv"
+      - "./outputs/reproduce_holue/experiments/haaml/open_set_identification/IJBB/filter_tabels/f1_class_prr_filtering.csv"
+
+  monte_carlo_holue:
+    enabled: false
+    stage: ablations
+    description: "Optional MC-vs-mean HolUE check."
+    output_dir: "./outputs/reproduce_holue/experiments/mc_holue"
+    hydra_config_name: "mc_holue"
+    datasets:
+      - IJBC
+    far_list: [0.05]
+    variants:
+      - name: "HolUE_mean"
+        M: 0
+      - name: "HolUE_MC_50"
+        M: 50
+
+  qualitative_interpolation:
+    enabled: false
+    stage: figures
+    description: "Optional qualitative interpolation figure."
+    output_dir: "./outputs/reproduce_holue/paper_artifacts/figures/interpolation"
+    dataset_path: "./datasets/interpolation"
+    methods:
+      - SCF
+      - GalUE
+      - HolUE
+    expected_outputs:
+      - "./outputs/reproduce_holue/paper_artifacts/figures/interpolation/interpolation_uncertainty.pdf"
+
+reporting:
+  enabled: true
+  output_dir: "./outputs/reproduce_holue/paper_artifacts"
+  round_digits: 2
+
+  method_order:
+    - PFE
+    - SCF
+    - ScaleFace
+    - AccScr
+    - GalUE
+    - HolUE
+
+  method_display_names:
+    PFE: "PFE"
+    SCF: "SCF"
+    ScaleFace: "SF"
+    AccScr: "AccScr"
+    GalUE: "GalUE"
+    HolUE: "HolUE"
+    Random: "Random"
+    Oracle: "Oracle"
+
+  tables:
+    main_prr:
+      enabled: true
+      source_experiment: main_table
+      metric: f1_class
+      output_tex: "./outputs/reproduce_holue/paper_artifacts/tables/main_prr_table.tex"
+      output_csv: "./outputs/reproduce_holue/paper_artifacts/tables/main_prr_table.csv"
+      datasets:
+        IJBC:
+          fars: [0.05, 0.1, 0.2]
+        IJBB:
+          fars: [0.05, 0.1, 0.2]
+        whale:
+          fars: [0.05, 0.1, 0.2]
+        voxblink_large:
+          fars: [0.01, 0.05, 0.1]
+
+    calibration_ablation:
+      enabled: true
+      source_experiment: calibration_ablation
+      metric: f1_class
+      output_tex: "./outputs/reproduce_holue/paper_artifacts/tables/calibration_ablation_table.tex"
+      output_csv: "./outputs/reproduce_holue/paper_artifacts/tables/calibration_ablation_table.csv"
+      datasets:
+        IJBC:
+          fars: [0.05, 0.1, 0.2]
+        IJBB:
+          fars: [0.05, 0.1, 0.2]
+
+    backbone_ablation:
+      enabled: true
+      source_experiments:
+        - cosface_backbone
+        - haaml_backbone
+      metric: f1_class
+      output_tex: "./outputs/reproduce_holue/paper_artifacts/tables/backbone_ablation_table.tex"
+      output_csv: "./outputs/reproduce_holue/paper_artifacts/tables/backbone_ablation_table.csv"
+
+  figures:
+    main_rejection_curves:
+      enabled: true
+      source_experiment: main_table
+      dataset: IJBC
+      far: 0.05
+      output_pdf: "./outputs/reproduce_holue/paper_artifacts/figures/main_rejection_curves.pdf"
+      output_png: "./outputs/reproduce_holue/paper_artifacts/figures/main_rejection_curves.png"
+
+    beta_sensitivity:
+      enabled: true
+      source_experiment: beta_ablation
+      far: 0.05
+      metric: f1_class
+      output_pdf: "./outputs/reproduce_holue/paper_artifacts/figures/beta_sensitivity.pdf"
+      output_png: "./outputs/reproduce_holue/paper_artifacts/figures/beta_sensitivity.png"
+
+pipeline_tasks:
+  - name: prepare_directories
+    kind: internal
+    stage: setup
+    action: prepare_directories
+    outputs:
+      - "./outputs/reproduce_holue/.pipeline_checkpoints/prepare_directories/_DONE"
+
+  - name: validate_inputs
+    kind: internal
+    stage: setup
+    action: validate_inputs
+    depends_on:
+      - prepare_directories
+    required_paths:
+      - "./datasets/arcface_ijb/IJBC"
+      - "./datasets/arcface_ijb/IJBB"
+      - "./datasets/whale"
+      - "./datasets/vb-clean_ident/Large_12k/perspk5"
+      - "./datasets/ms1m_ident"
+      - "./datasets/whale_val"
+      - "./datasets/vb-clean_ident/Medium_1.2k/perspk5"
+      - "./model_weights/backbone/ms1mv3_arcface_r50/backbone.pth"
+      - "./model_weights/backbone/ms1mv3_arcface_r50/softmax_weight.pt"
+    outputs:
+      - "./outputs/reproduce_holue/.pipeline_checkpoints/validate_inputs/_DONE"
+
+  - name: validate_embeddings
+    kind: internal
+    stage: setup
+    action: validate_embeddings
+    depends_on:
+      - validate_inputs
+    allow_missing_if_recompute_embeddings: true
+    outputs:
+      - "./outputs/reproduce_holue/.pipeline_checkpoints/validate_embeddings/_DONE"
+
+  - name: generate_hydra_configs
+    kind: internal
+    stage: setup
+    action: generate_hydra_configs
+    depends_on:
+      - validate_embeddings
+    output_dir: "./outputs/reproduce_holue/generated_configs"
+    outputs:
+      - "./outputs/reproduce_holue/.pipeline_checkpoints/generate_hydra_configs/_DONE"
+
+  - name: run_main_table
+    kind: shell
+    stage: main_results
+    experiment: main_table
+    depends_on:
+      - generate_hydra_configs
+    command: >-
+      python -m evaluation.evaluate
+      --config-path ./outputs/reproduce_holue/generated_configs
+      --config-name main_table
+    outputs:
+      - "./outputs/reproduce_holue/experiments/main_table/open_set_identification/IJBC/filter_tabels/f1_class_prr_filtering.csv"
+      - "./outputs/reproduce_holue/experiments/main_table/open_set_identification/IJBB/filter_tabels/f1_class_prr_filtering.csv"
+      - "./outputs/reproduce_holue/experiments/main_table/open_set_identification/whale/filter_tabels/f1_class_prr_filtering.csv"
+      - "./outputs/reproduce_holue/experiments/main_table/open_set_identification/large_12k-perspk5/filter_tabels/f1_class_prr_filtering.csv"
+
+  - name: run_calibration_ablation
+    kind: shell
+    stage: ablations
+    experiment: calibration_ablation
+    depends_on:
+      - generate_hydra_configs
+    command: >-
+      python -m evaluation.evaluate
+      --config-path ./outputs/reproduce_holue/generated_configs
+      --config-name calibration_ablation
+    outputs:
+      - "./outputs/reproduce_holue/experiments/calibration_ablation/open_set_identification/IJBC/filter_tabels/f1_class_prr_filtering.csv"
+      - "./outputs/reproduce_holue/experiments/calibration_ablation/open_set_identification/IJBB/filter_tabels/f1_class_prr_filtering.csv"
+
+  - name: run_beta_ablation
+    kind: shell
+    stage: ablations
+    experiment: beta_ablation
+    depends_on:
+      - generate_hydra_configs
+    command: >-
+      python -m evaluation.evaluate
+      --config-path ./outputs/reproduce_holue/generated_configs
+      --config-name beta_ablation
+    outputs:
+      - "./outputs/reproduce_holue/experiments/beta_ablation/open_set_identification/IJBC/filter_tabels/f1_class_prr_filtering.csv"
+
+  - name: run_cosface_backbone
+    kind: shell
+    stage: ablations
+    experiment: cosface_backbone
+    depends_on:
+      - generate_hydra_configs
+    command: >-
+      python -m evaluation.evaluate
+      --config-path ./outputs/reproduce_holue/generated_configs
+      --config-name cosface_backbone
+    outputs:
+      - "./outputs/reproduce_holue/experiments/cosface/open_set_identification/IJBC/filter_tabels/f1_class_prr_filtering.csv"
+      - "./outputs/reproduce_holue/experiments/cosface/open_set_identification/IJBB/filter_tabels/f1_class_prr_filtering.csv"
+
+  - name: run_haaml_backbone
+    kind: shell
+    stage: ablations
+    experiment: haaml_backbone
+    depends_on:
+      - generate_hydra_configs
+    command: >-
+      python -m evaluation.evaluate
+      --config-path ./outputs/reproduce_holue/generated_configs
+      --config-name haaml_backbone
+    outputs:
+      - "./outputs/reproduce_holue/experiments/haaml/open_set_identification/IJBC/filter_tabels/f1_class_prr_filtering.csv"
+      - "./outputs/reproduce_holue/experiments/haaml/open_set_identification/IJBB/filter_tabels/f1_class_prr_filtering.csv"
+
+  - name: build_paper_tables
+    kind: internal
+    stage: reporting
+    action: build_paper_tables
+    depends_on:
+      - run_main_table
+      - run_calibration_ablation
+      - run_cosface_backbone
+      - run_haaml_backbone
+    outputs:
+      - "./outputs/reproduce_holue/paper_artifacts/tables/main_prr_table.tex"
+      - "./outputs/reproduce_holue/paper_artifacts/tables/calibration_ablation_table.tex"
+      - "./outputs/reproduce_holue/paper_artifacts/tables/backbone_ablation_table.tex"
+
+  - name: build_paper_figures
+    kind: internal
+    stage: reporting
+    action: build_paper_figures
+    depends_on:
+      - run_main_table
+      - run_beta_ablation
+    outputs:
+      - "./outputs/reproduce_holue/paper_artifacts/figures/main_rejection_curves.pdf"
+      - "./outputs/reproduce_holue/paper_artifacts/figures/beta_sensitivity.pdf"
+
+  - name: final_summary
+    kind: internal
+    stage: reporting
+    action: write_final_summary
+    depends_on:
+      - build_paper_tables
+      - build_paper_figures
+    outputs:
+      - "./outputs/reproduce_holue/paper_artifacts/reproduction_summary.md"

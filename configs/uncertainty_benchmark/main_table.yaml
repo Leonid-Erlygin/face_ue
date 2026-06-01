@@ -78,7 +78,7 @@ open_set_identification_uncertainty_metrics:
       _target_: evaluation.metrics.F1_classic
 
 beta_list: [0.5]
-far_list: [0.01, 0.05, 0.1, 0.2]
+far_list: [0.05] #[0.01, 0.05, 0.1, 0.2]
 display_oracle_curve: True
 
 open_set_identification_methods:

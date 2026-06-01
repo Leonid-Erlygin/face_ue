@@ -6,23 +6,9 @@ from .embeddings import process_embeddings
 from .test_datasets import FaceRecogntionDataset
 from .embedding_utils import get_template_subsets
 
-def _decode_uncertainty(self, unc: np.ndarray) -> np.ndarray:
-    name = self.embedding_type.lower()
 
-    # SCF stores log kappa.
-    if "scf" in name:
-        return np.exp(unc)
 
-    # PFE stores log sigma^2.
-    if "pfe" in name:
-        return np.exp(unc)
 
-    # ScaleFace writer currently stores scale itself.
-    if "scaleface" in name or "scale" in name:
-        return unc
-
-    # Safe default for older saved SCF/PFE-like files.
-    return np.exp(unc)
 
 class Recognition_test:
     def __init__(
@@ -86,7 +72,23 @@ class Recognition_test:
 
         assert self.image_input_feats.shape[0] == self.unc.shape[0]
         assert self.image_input_feats.shape[0] == self.test_dataset.medias.shape[0]
+    def _decode_uncertainty(self, unc: np.ndarray) -> np.ndarray:
+        name = self.embedding_type.lower()
 
+        # SCF stores log kappa.
+        if "scf" in name:
+            return np.exp(unc)
+
+        # PFE stores log sigma^2.
+        if "pfe" in name:
+            return np.exp(unc)
+
+        # ScaleFace writer currently stores scale itself.
+        if "scaleface" in name or "scale" in name:
+            return unc
+
+        # Safe default for older saved SCF/PFE-like files.
+        return np.exp(unc)
     def pool_templates_verification(self, cache_dir: str):
         cache_dir = Path(cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)

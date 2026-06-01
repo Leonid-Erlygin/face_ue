@@ -16,8 +16,12 @@ class Prediction_writer(BasePredictionWriter):
     def write_on_epoch_end(self, trainer, pl_module, predictions, batch_indices):
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        embs = torch.cat([batch[0].detach().cpu() for batch in predictions], dim=0).numpy()
-        unc = torch.cat([batch[1].detach().cpu() for batch in predictions], dim=0).numpy()
+        embs = torch.cat(
+            [batch[0].detach().cpu() for batch in predictions], dim=0
+        ).numpy()
+        unc = torch.cat(
+            [batch[1].detach().cpu() for batch in predictions], dim=0
+        ).numpy()
 
         print(embs.shape, unc.shape)
         np.savez(self.output_dir / f"{self.file_name}.npz", embs=embs, unc=unc)
@@ -70,9 +74,10 @@ class SphereConfidenceFace(LightningModule):
             self.softmax_weights = self.backbone.backbone.head_id.weight.detach()
             delattr(self.backbone.backbone, "head_id")
 
-            self.softmax_weights = torch.nn.functional.normalize(
-                self.softmax_weights, p=2, dim=1
-            ) * scf_loss.radius
+            self.softmax_weights = (
+                torch.nn.functional.normalize(self.softmax_weights, p=2, dim=1)
+                * scf_loss.radius
+            )
 
             self.softmax_weights = torch.nn.Parameter(
                 self.softmax_weights, requires_grad=False

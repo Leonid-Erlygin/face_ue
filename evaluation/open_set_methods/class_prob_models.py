@@ -253,9 +253,11 @@ class MonteCarloPredictiveProb:
             kappa_high = 1000000
             max_iter = 50
             eps = 0.0005
+            probe_unc_calib_scaled = probe_unc_calib * self.kappa_input_scale
+
             far_loss_func_calib = FarLossCalc(
                 probe_feats_calib,
-                probe_unc_calib,
+                probe_unc_calib_scaled,
                 gallery_feats_calib,
                 gallery_unc_calib,
                 self.predict_T,
@@ -488,8 +490,18 @@ class MonteCarloPredictiveProb:
         logit_exp = torch.exp(logit)
         logit_sum = torch.sum(logit_exp, dim=-1) * p_c  # (N, M)
 
-        log_z_prob = inv_T * log_uniform_dencity + torch.log(logit_sum + beta_T)
+        log_p_c_T = inv_T * np.log((1.0 - self.beta) / self.K)
+        log_beta_T = inv_T * np.log(self.beta)
 
+        log_gallery_terms = pz_c_no_norm_log + log_m_c[..., :, 0] * inv_T + log_p_c_T
+        log_gallery_sum = torch.logsumexp(log_gallery_terms, dim=-1)
+
+        log_z_prob = inv_T * log_uniform_dencity + torch.logaddexp(
+            log_gallery_sum,
+            torch.as_tensor(
+                log_beta_T, dtype=log_gallery_sum.dtype, device=log_gallery_sum.device
+            ),
+        )
         # --- 4. Gallery-class log-probs -------------------------------------
         # Note: `similarities` may have been algebraically reused above, but since
         # we never used `out=similarities`, it still holds zs @ gallery_means.T.
@@ -510,7 +522,11 @@ class MonteCarloPredictiveProb:
 
         # --- 5. KL_1 ---------------------------------------------------------
         # log p_c = (1/T) * log((1 - beta)/K)— differentiable in T
-        log_p_c = inv_T * np.log((1 - self.beta) / self.K)
+        log_p_c = torch.as_tensor(
+            np.log((1.0 - self.beta) / self.K),
+            dtype=mean_gallery_probs.dtype,
+            device=mean_gallery_probs.device,
+        )
         kl_1 = torch.sum(
             torch.xlogy(mean_gallery_probs, mean_gallery_probs)
             - mean_gallery_probs * log_p_c,

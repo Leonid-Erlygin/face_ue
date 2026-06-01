@@ -14,6 +14,8 @@ from scipy.special import softmax
 from typing import Tuple
 
 
+
+
 class SimilarityBasedPrediction(OpenSetMethod):
     def __init__(
         self,
@@ -46,7 +48,21 @@ class SimilarityBasedPrediction(OpenSetMethod):
             return
         self.calib_strategy = calib_strategy
         assert self.calib_strategy in ["norm_val", "norm_test"]
+    @staticmethod
+    def _threshold_at_far(scores: np.ndarray, far: float) -> float:
+        scores = np.asarray(scores)
+        if scores.size == 0:
+            raise ValueError("Cannot compute FAR threshold: no out-of-gallery probes.")
 
+        if far <= 0:
+            return np.nextafter(scores.max(), np.inf)
+        if far >= 1:
+            return np.nextafter(scores.min(), -np.inf)
+
+        sorted_scores = np.sort(scores)
+        idx = int(np.ceil((1.0 - far) * scores.size))
+        idx = np.clip(idx, 0, scores.size - 1)
+        return sorted_scores[idx]
     def setup(
         self,
         probe_feats: np.ndarray,
@@ -76,9 +92,7 @@ class SimilarityBasedPrediction(OpenSetMethod):
 
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
         out_of_gallery_scores = self.probe_score[~is_seen]
-        self.tau = np.sort(out_of_gallery_scores)[
-            int(out_of_gallery_scores.shape[0] * (1 - self.far))
-        ]
+        self.tau = self._threshold_at_far(out_of_gallery_scores, self.far)
         if self.predictor is not None:
             assert self.predictor == "AccScore"
             # use cosine sim on pooled embeddings to perform predictions
@@ -95,9 +109,7 @@ class SimilarityBasedPrediction(OpenSetMethod):
             self.similarity_matrix_avg = np.mean(similarity_matrix_avg, axis=1)
             self.probe_score_avg = self.acceptance_score(self.similarity_matrix_avg)
             out_of_gallery_scores = self.probe_score_avg[~is_seen]
-            self.tau_avg = np.sort(out_of_gallery_scores)[
-                int(out_of_gallery_scores.shape[0] * (1 - self.far))
-            ]
+            self.tau_avg = self._threshold_at_far(out_of_gallery_scores, self.far)
 
         if self.calibration_set is not None:
             self.gallery_pooled_templates_calib, self.probe_pooled_templates_calib = (

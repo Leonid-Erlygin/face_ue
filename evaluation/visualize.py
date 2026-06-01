@@ -28,12 +28,13 @@ def plot_rejection_scores(
             score, name = aa.get("scores")[0], aa.get("names")[0]
         fractions, metric_value = score[0], score[1]
         name = name if name is not None else str(id)
-
-        auc_value = fractions[-1] * np.mean(metric_value)
-        if random_area is not None:
-            rejection_metric_value = (auc_value - random_area) / (
-                oracle_area - random_area
-            )
+        auc_value = np.trapezoid(metric_value, fractions)
+        if random_area is not None and oracle_area is not None:
+            denom = oracle_area - random_area
+            if abs(denom) < 1e-12:
+                rejection_metric_value = np.nan
+            else:
+                rejection_metric_value = (auc_value - random_area) / denom
 
             rejection_metric_values.append(rejection_metric_value)
             label = name + f", {np.round(rejection_metric_value, 2)}"
