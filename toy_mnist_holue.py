@@ -1,0 +1,1967 @@
+#!/usr/bin/env python3
+"""
+Toy MNIST HolUE open-set recognition example.
+
+Creates a complete dissertation-friendly toy experiment in `toy_outputs/`:
+
+1. Trains a simple ArcFace-like 2D embedding model on known MNIST classes.
+2. Trains a simple SCF-like concentration head using the SCF KL-vMF objective.
+3. Constructs MNIST open-set recognition validation/test protocols.
+4. Computes OSR predictions at a validation-selected FPIR threshold.
+5. Compares:
+   - HolUE without validation calibration
+   - HolUE with validation calibration
+   - HolUE raw KL, GalUE, SCF, AccScr, MaxSim, Random, Oracle
+6. Saves:
+   - model checkpoints
+   - protocol indices
+   - metric tables
+   - rejection curves
+   - teaser figure on the 2D unit circle
+
+All outputs are stored under `toy_outputs/`.
+
+The no-calibration HolUE score is the predictive entropy of:
+    p(c | x) = ∫ p(c | z) p(z | x) dz
+computed deterministically by quadrature over the unit circle.
+
+The calibrated HolUE score trains a small logistic regression on validation-set
+HolUE/GalUE/SCF features to predict OSR errors. This is included only for
+comparison; the teaser highlights the no-calibration HolUE behavior.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import os
+import random
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Tuple
+
+import matplotlib
+
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+from torch.utils.data import DataLoader, Dataset
+from torchvision import datasets, transforms
+
+
+# ---------------------------------------------------------------------
+# Reproducibility
+# ---------------------------------------------------------------------
+
+
+def seed_everything(seed: int = 777, deterministic: bool = True) -> None:
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+
+    random.seed(seed)
+    np.random.seed(seed)
+
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    if deterministic:
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
+        torch.use_deterministic_algorithms(True, warn_only=True)
+
+
+# ---------------------------------------------------------------------
+# Simple ArcFace / SCF implementation for 2D MNIST embeddings
+# ---------------------------------------------------------------------
+
+
+class ArcFaceLoss(nn.Module):
+    """
+    Minimal ArcFace loss matching the standard implementation:
+      logits_y = cos(theta_y + m) * s
+      logits_j = cos(theta_j) * s for j != y
+    """
+
+    def __init__(self, s: float = 16.0, m: float = 0.30):
+        super().__init__()
+        self.s = float(s)
+        self.m = float(m)
+
+    def forward(self, cosine_logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        eps = 1e-6
+        cosine_logits = torch.clamp(cosine_logits, -1.0 + eps, 1.0 - eps)
+
+        one_hot = torch.zeros_like(cosine_logits)
+        one_hot.scatter_(1, labels[:, None], 1.0)
+
+        target_cos = torch.sum(cosine_logits * one_hot, dim=1)
+        target_theta = torch.acos(target_cos)
+        target_cos_m = torch.cos(target_theta + self.m)
+
+        logits = cosine_logits.clone()
+        logits = logits + one_hot * (target_cos_m[:, None] - target_cos[:, None])
+        logits = logits * self.s
+
+        return F.cross_entropy(logits, labels)
+
+
+class TinyArcFaceMNIST(nn.Module):
+    """
+    CNN -> 128D hidden -> 2D L2-normalized embedding.
+    Classifier weights are also L2-normalized, so logits are cosine similarities.
+    """
+
+    def __init__(self, num_classes: int = 5, embedding_dim: int = 2):
+        super().__init__()
+
+        self.num_classes = num_classes
+        self.embedding_dim = embedding_dim
+
+        self.conv = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.PReLU(),
+            nn.MaxPool2d(2),  # 14 x 14
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.PReLU(),
+            nn.MaxPool2d(2),  # 7 x 7
+            nn.Conv2d(64, 64, kernel_size=3, padding=1),
+            nn.PReLU(),
+        )
+
+        self.fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(64 * 7 * 7, 128),
+            nn.PReLU(),
+        )
+        self.embed = nn.Linear(128, embedding_dim)
+
+        self.weight = nn.Parameter(torch.empty(num_classes, embedding_dim))
+        nn.init.xavier_uniform_(self.weight)
+
+    def extract(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        h = self.conv(x)
+        h = self.fc(h)
+        emb = self.embed(h)
+        emb = F.normalize(emb, p=2.0, dim=1)
+        return h, emb
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        _, emb = self.extract(x)
+        w = F.normalize(self.weight, p=2.0, dim=1)
+        logits = F.linear(emb, w)
+        return emb, logits
+
+    def class_centers(self) -> torch.Tensor:
+        return F.normalize(self.weight.detach(), p=2.0, dim=1)
+
+
+class SCF2DLoss(nn.Module):
+    """
+    SCF-style KL loss for vMF distribution on the unit circle S^1.
+
+    For d=2, v=d/2-1=0, so:
+      NLL / KL-to-Dirac up to constants:
+        - kappa * cos(mu, w_y) + log I_0(kappa) + log(2*pi)
+
+    We use log I_0(kappa) = log(i0e(kappa)) + kappa for stability.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def log_i0(kappa: torch.Tensor) -> torch.Tensor:
+        if hasattr(torch.special, "i0e"):
+            return torch.log(torch.special.i0e(kappa).clamp_min(1e-12)) + kappa
+        # fallback, acceptable here because kappa is capped
+        return torch.log(torch.i0(kappa).clamp_min(1e-12))
+
+    def forward(
+        self,
+        mu: torch.Tensor,
+        kappa: torch.Tensor,
+        class_center: torch.Tensor,
+    ) -> torch.Tensor:
+        cos = torch.sum(mu * class_center, dim=1, keepdim=True).clamp(-1.0, 1.0)
+        loss = -kappa * cos + self.log_i0(kappa) + math.log(2.0 * math.pi)
+        return loss.mean()
+
+
+class TinySCFMNIST(nn.Module):
+    """
+    Frozen ArcFace backbone + small head predicting concentration kappa(x).
+
+    kappa is capped for numerical stability:
+      kappa in [kappa_min, kappa_min + kappa_max]
+    """
+
+    def __init__(
+        self,
+        arc_model: TinyArcFaceMNIST,
+        hidden_dim: int = 128,
+        kappa_min: float = 1.0,
+        kappa_max: float = 80.0,
+    ):
+        super().__init__()
+        self.arc_model = arc_model
+        self.kappa_min = float(kappa_min)
+        self.kappa_max = float(kappa_max)
+
+        self.head = nn.Sequential(
+            nn.Linear(hidden_dim, 64),
+            nn.PReLU(),
+            nn.Linear(64, 32),
+            nn.PReLU(),
+            nn.Linear(32, 1),
+        )
+
+        for p in self.arc_model.parameters():
+            p.requires_grad_(False)
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        self.arc_model.eval()
+        with torch.no_grad():
+            h, emb = self.arc_model.extract(x)
+
+        raw = self.head(h)
+        kappa = self.kappa_min + self.kappa_max * torch.sigmoid(raw)
+        log_kappa = torch.log(kappa.clamp_min(1e-8))
+        return emb, log_kappa
+
+
+# ---------------------------------------------------------------------
+# MNIST protocol and corruption utilities
+# ---------------------------------------------------------------------
+
+
+def get_targets(ds: datasets.MNIST) -> np.ndarray:
+    targets = ds.targets
+    if torch.is_tensor(targets):
+        return targets.cpu().numpy().astype(int)
+    return np.asarray(targets, dtype=int)
+
+
+def corrupt_tensor_mnist(img: torch.Tensor, seed: int) -> torch.Tensor:
+    """
+    Deterministic corruption for probe samples.
+    Input/output tensor is normalized by mean=0.5, std=0.5.
+    """
+    rng = np.random.default_rng(seed)
+
+    x = img.clone()
+    x = x * 0.5 + 0.5  # [-1,1] -> [0,1]
+    x = x.clamp(0.0, 1.0)
+
+    mode = int(rng.integers(0, 4))
+
+    if mode == 0:
+        # black occlusion rectangle
+        h = int(rng.integers(8, 15))
+        w = int(rng.integers(8, 15))
+        y = int(rng.integers(0, 28 - h + 1))
+        z = int(rng.integers(0, 28 - w + 1))
+        x[:, y : y + h, z : z + w] = 0.0
+
+    elif mode == 1:
+        # additive Gaussian noise
+        noise = torch.tensor(
+            rng.normal(0.0, 0.35, size=tuple(x.shape)),
+            dtype=x.dtype,
+            device=x.device,
+        )
+        x = (x + noise).clamp(0.0, 1.0)
+
+    elif mode == 2:
+        # roll/translation with blank borders
+        dy = int(rng.integers(-5, 6))
+        dx = int(rng.integers(-5, 6))
+        x = torch.roll(x, shifts=(dy, dx), dims=(1, 2))
+        if dy > 0:
+            x[:, :dy, :] = 0.0
+        elif dy < 0:
+            x[:, dy:, :] = 0.0
+        if dx > 0:
+            x[:, :, :dx] = 0.0
+        elif dx < 0:
+            x[:, :, dx:] = 0.0
+
+    else:
+        # partial erasing + noise
+        h = int(rng.integers(6, 12))
+        w = int(rng.integers(6, 12))
+        y = int(rng.integers(0, 28 - h + 1))
+        z = int(rng.integers(0, 28 - w + 1))
+        x[:, y : y + h, z : z + w] = float(rng.uniform(0.0, 1.0))
+        noise = torch.tensor(
+            rng.normal(0.0, 0.20, size=tuple(x.shape)),
+            dtype=x.dtype,
+            device=x.device,
+        )
+        x = (x + noise).clamp(0.0, 1.0)
+
+    return (x - 0.5) / 0.5
+
+
+class KnownMNISTDataset(Dataset):
+    """Training dataset containing only known classes with labels remapped to 0..K-1."""
+
+    def __init__(
+        self,
+        base: datasets.MNIST,
+        indices: np.ndarray,
+        class_to_idx: Dict[int, int],
+    ):
+        self.base = base
+        self.indices = np.asarray(indices, dtype=int)
+        self.class_to_idx = class_to_idx
+
+    def __len__(self) -> int:
+        return len(self.indices)
+
+    def __getitem__(self, i: int):
+        orig_idx = int(self.indices[i])
+        img, label = self.base[orig_idx]
+        label = self.class_to_idx[int(label)]
+        return img, torch.tensor(label, dtype=torch.long)
+
+
+class IndexedMNISTView(Dataset):
+    """
+    View of MNIST by original indices. Optionally corrupts selected original indices.
+    """
+
+    def __init__(
+        self,
+        base: datasets.MNIST,
+        indices: np.ndarray,
+        corrupt_indices: Optional[Iterable[int]] = None,
+        corrupt_seed: int = 777,
+    ):
+        self.base = base
+        self.indices = np.asarray(indices, dtype=int)
+
+        # Important: corrupt_indices can be a NumPy array.
+        # Never use `corrupt_indices or []` because NumPy arrays do not have
+        # a scalar truth value.
+        if corrupt_indices is None:
+            self.corrupt_set = set()
+        else:
+            self.corrupt_set = set(map(int, np.asarray(list(corrupt_indices)).reshape(-1)))
+
+        self.corrupt_seed = int(corrupt_seed)
+
+    def __len__(self) -> int:
+        return len(self.indices)
+
+    def __getitem__(self, i: int):
+        orig_idx = int(self.indices[i])
+        img, label = self.base[orig_idx]
+        if orig_idx in self.corrupt_set:
+            img = corrupt_tensor_mnist(img, seed=self.corrupt_seed + orig_idx)
+        return img, int(label)
+
+
+@dataclass
+class ProtocolIndices:
+    gallery: np.ndarray
+    probe_known: np.ndarray
+    probe_unknown: np.ndarray
+    corrupt_probe: np.ndarray
+
+    @property
+    def probe(self) -> np.ndarray:
+        return np.concatenate([self.probe_known, self.probe_unknown], axis=0)
+
+
+def build_train_val_indices(
+    train_ds: datasets.MNIST,
+    known_classes: List[int],
+    unknown_classes: List[int],
+    train_per_known_class: int,
+    val_gallery_per_class: int,
+    val_probe_known_per_class: int,
+    val_probe_unknown_per_class: int,
+    corrupt_known_frac: float,
+    corrupt_unknown_frac: float,
+    rng: np.random.Generator,
+) -> Tuple[np.ndarray, ProtocolIndices]:
+    targets = get_targets(train_ds)
+    train_indices: List[int] = []
+    val_gallery: List[int] = []
+    val_probe_known: List[int] = []
+    val_probe_unknown: List[int] = []
+
+    for c in known_classes:
+        pool = np.where(targets == c)[0]
+        pool = rng.permutation(pool)
+
+        need = train_per_known_class + val_gallery_per_class + val_probe_known_per_class
+        if len(pool) < need:
+            raise ValueError(f"Not enough MNIST train samples for class {c}: need {need}")
+
+        train_indices.extend(pool[:train_per_known_class])
+        s = train_per_known_class
+        val_gallery.extend(pool[s : s + val_gallery_per_class])
+        s += val_gallery_per_class
+        val_probe_known.extend(pool[s : s + val_probe_known_per_class])
+
+    for c in unknown_classes:
+        pool = np.where(targets == c)[0]
+        pool = rng.permutation(pool)
+        if len(pool) < val_probe_unknown_per_class:
+            raise ValueError(f"Not enough MNIST train unknown samples for class {c}")
+        val_probe_unknown.extend(pool[:val_probe_unknown_per_class])
+
+    val_probe_known = np.asarray(val_probe_known, dtype=int)
+    val_probe_unknown = np.asarray(val_probe_unknown, dtype=int)
+
+    corrupt_known_n = int(round(corrupt_known_frac * len(val_probe_known)))
+    corrupt_unknown_n = int(round(corrupt_unknown_frac * len(val_probe_unknown)))
+
+    corrupt = []
+    if corrupt_known_n > 0:
+        corrupt.extend(rng.choice(val_probe_known, size=corrupt_known_n, replace=False))
+    if corrupt_unknown_n > 0:
+        corrupt.extend(rng.choice(val_probe_unknown, size=corrupt_unknown_n, replace=False))
+
+    protocol = ProtocolIndices(
+        gallery=np.asarray(val_gallery, dtype=int),
+        probe_known=val_probe_known,
+        probe_unknown=val_probe_unknown,
+        corrupt_probe=np.asarray(corrupt, dtype=int),
+    )
+    return np.asarray(train_indices, dtype=int), protocol
+
+
+def build_test_indices(
+    test_ds: datasets.MNIST,
+    known_classes: List[int],
+    unknown_classes: List[int],
+    gallery_per_class: int,
+    probe_known_per_class: int,
+    probe_unknown_per_class: int,
+    corrupt_known_frac: float,
+    corrupt_unknown_frac: float,
+    rng: np.random.Generator,
+) -> ProtocolIndices:
+    targets = get_targets(test_ds)
+
+    gallery: List[int] = []
+    probe_known: List[int] = []
+    probe_unknown: List[int] = []
+
+    for c in known_classes:
+        pool = np.where(targets == c)[0]
+        pool = rng.permutation(pool)
+
+        need = gallery_per_class + probe_known_per_class
+        if len(pool) < need:
+            raise ValueError(f"Not enough MNIST test samples for class {c}: need {need}")
+
+        gallery.extend(pool[:gallery_per_class])
+        probe_known.extend(pool[gallery_per_class : gallery_per_class + probe_known_per_class])
+
+    for c in unknown_classes:
+        pool = np.where(targets == c)[0]
+        pool = rng.permutation(pool)
+        if len(pool) < probe_unknown_per_class:
+            raise ValueError(f"Not enough MNIST test unknown samples for class {c}")
+        probe_unknown.extend(pool[:probe_unknown_per_class])
+
+    probe_known = np.asarray(probe_known, dtype=int)
+    probe_unknown = np.asarray(probe_unknown, dtype=int)
+
+    corrupt_known_n = int(round(corrupt_known_frac * len(probe_known)))
+    corrupt_unknown_n = int(round(corrupt_unknown_frac * len(probe_unknown)))
+
+    corrupt = []
+    if corrupt_known_n > 0:
+        corrupt.extend(rng.choice(probe_known, size=corrupt_known_n, replace=False))
+    if corrupt_unknown_n > 0:
+        corrupt.extend(rng.choice(probe_unknown, size=corrupt_unknown_n, replace=False))
+
+    return ProtocolIndices(
+        gallery=np.asarray(gallery, dtype=int),
+        probe_known=probe_known,
+        probe_unknown=probe_unknown,
+        corrupt_probe=np.asarray(corrupt, dtype=int),
+    )
+
+
+# ---------------------------------------------------------------------
+# Training
+# ---------------------------------------------------------------------
+
+
+def train_arcface(
+    model: TinyArcFaceMNIST,
+    train_ds: Dataset,
+    device: torch.device,
+    epochs: int,
+    batch_size: int,
+    lr: float,
+    seed: int,
+) -> None:
+    model.to(device)
+    model.train()
+
+    generator = torch.Generator()
+    generator.manual_seed(seed)
+
+    loader = DataLoader(
+        train_ds,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=0,
+        drop_last=False,
+        generator=generator,
+    )
+
+    criterion = ArcFaceLoss(s=16.0, m=0.30)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+
+    for epoch in range(1, epochs + 1):
+        losses = []
+        accs = []
+
+        for imgs, labels in loader:
+            imgs = imgs.to(device)
+            labels = labels.to(device)
+
+            optimizer.zero_grad(set_to_none=True)
+            _, logits = model(imgs)
+            loss = criterion(logits, labels)
+            loss.backward()
+            optimizer.step()
+
+            with torch.no_grad():
+                pred = logits.argmax(dim=1)
+                acc = (pred == labels).float().mean().item()
+
+            losses.append(loss.item())
+            accs.append(acc)
+
+        print(
+            f"[ArcFace] epoch {epoch:03d}/{epochs:03d} "
+            f"loss={np.mean(losses):.4f} acc={np.mean(accs):.4f}"
+        )
+
+
+def train_scf(
+    scf_model: TinySCFMNIST,
+    arc_model: TinyArcFaceMNIST,
+    train_ds: Dataset,
+    device: torch.device,
+    epochs: int,
+    batch_size: int,
+    lr: float,
+    seed: int,
+) -> None:
+    scf_model.to(device)
+    arc_model.to(device)
+    arc_model.eval()
+
+    for p in arc_model.parameters():
+        p.requires_grad_(False)
+
+    generator = torch.Generator()
+    generator.manual_seed(seed + 100)
+
+    loader = DataLoader(
+        train_ds,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=0,
+        drop_last=False,
+        generator=generator,
+    )
+
+    criterion = SCF2DLoss()
+    optimizer = torch.optim.AdamW(scf_model.head.parameters(), lr=lr, weight_decay=1e-4)
+
+    class_centers = arc_model.class_centers().to(device)
+
+    for epoch in range(1, epochs + 1):
+        losses = []
+        kappas = []
+        cosines = []
+
+        for imgs, labels in loader:
+            imgs = imgs.to(device)
+            labels = labels.to(device)
+
+            optimizer.zero_grad(set_to_none=True)
+            emb, log_kappa = scf_model(imgs)
+            kappa = torch.exp(log_kappa)
+            wc = class_centers[labels]
+
+            loss = criterion(emb, kappa, wc)
+            # small regularizer against always saturating at max kappa
+            loss = loss + 1e-4 * kappa.mean()
+
+            loss.backward()
+            optimizer.step()
+
+            with torch.no_grad():
+                cos = torch.sum(emb * wc, dim=1).mean().item()
+                losses.append(loss.item())
+                kappas.append(kappa.mean().item())
+                cosines.append(cos)
+
+        print(
+            f"[SCF]     epoch {epoch:03d}/{epochs:03d} "
+            f"loss={np.mean(losses):.4f} kappa={np.mean(kappas):.2f} "
+            f"cos={np.mean(cosines):.3f}"
+        )
+
+
+# ---------------------------------------------------------------------
+# Feature extraction
+# ---------------------------------------------------------------------
+
+
+@torch.no_grad()
+def extract_arc_embeddings(
+    model: TinyArcFaceMNIST,
+    base_ds: datasets.MNIST,
+    indices: np.ndarray,
+    device: torch.device,
+    batch_size: int,
+    corrupt_indices: Optional[Iterable[int]] = None,
+    corrupt_seed: int = 777,
+) -> Tuple[np.ndarray, np.ndarray]:
+    view = IndexedMNISTView(
+        base_ds,
+        indices=indices,
+        corrupt_indices=corrupt_indices,
+        corrupt_seed=corrupt_seed,
+    )
+    loader = DataLoader(view, batch_size=batch_size, shuffle=False, num_workers=0)
+
+    model.to(device)
+    model.eval()
+
+    embs = []
+    labels = []
+    for imgs, y in loader:
+        imgs = imgs.to(device)
+        emb, _ = model(imgs)
+        embs.append(emb.detach().cpu().numpy())
+        labels.append(np.asarray(y, dtype=int))
+
+    return np.concatenate(embs, axis=0), np.concatenate(labels, axis=0)
+
+
+@torch.no_grad()
+def extract_scf_embeddings(
+    model: TinySCFMNIST,
+    base_ds: datasets.MNIST,
+    indices: np.ndarray,
+    device: torch.device,
+    batch_size: int,
+    corrupt_indices: Optional[Iterable[int]] = None,
+    corrupt_seed: int = 777,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    view = IndexedMNISTView(
+        base_ds,
+        indices=indices,
+        corrupt_indices=corrupt_indices,
+        corrupt_seed=corrupt_seed,
+    )
+    loader = DataLoader(view, batch_size=batch_size, shuffle=False, num_workers=0)
+
+    model.to(device)
+    model.eval()
+
+    embs = []
+    kappas = []
+    labels = []
+    for imgs, y in loader:
+        imgs = imgs.to(device)
+        emb, log_kappa = model(imgs)
+        kappa = torch.exp(log_kappa)
+        embs.append(emb.detach().cpu().numpy())
+        kappas.append(kappa.detach().cpu().numpy().reshape(-1))
+        labels.append(np.asarray(y, dtype=int))
+
+    return (
+        np.concatenate(embs, axis=0),
+        np.concatenate(kappas, axis=0),
+        np.concatenate(labels, axis=0),
+    )
+
+
+def normalize_np(x: np.ndarray, eps: float = 1e-12) -> np.ndarray:
+    return x / np.maximum(np.linalg.norm(x, axis=1, keepdims=True), eps)
+
+
+def build_gallery_prototypes(
+    gallery_embs: np.ndarray,
+    gallery_labels: np.ndarray,
+    known_classes: List[int],
+) -> np.ndarray:
+    protos = []
+    for c in known_classes:
+        mask = gallery_labels == c
+        if not np.any(mask):
+            raise ValueError(f"No gallery samples for known class {c}")
+        proto = gallery_embs[mask].mean(axis=0, keepdims=True)
+        proto = normalize_np(proto)[0]
+        protos.append(proto)
+    return np.asarray(protos, dtype=np.float64)
+
+
+# ---------------------------------------------------------------------
+# Open-set prediction and HolUE/GalUE scores
+# ---------------------------------------------------------------------
+
+
+def stable_softmax_np(x: np.ndarray, axis: int = -1) -> np.ndarray:
+    x = np.asarray(x, dtype=np.float64)
+    x = x - np.max(x, axis=axis, keepdims=True)
+    e = np.exp(x)
+    return e / np.sum(e, axis=axis, keepdims=True)
+
+
+def entropy_normalized(p: np.ndarray, eps: float = 1e-12) -> np.ndarray:
+    p = np.asarray(p, dtype=np.float64)
+    p = np.clip(p, eps, 1.0)
+    h = -np.sum(p * np.log(p), axis=1)
+    return h / math.log(p.shape[1])
+
+
+def threshold_at_fpir(scores_unknown: np.ndarray, target_fpir: float) -> float:
+    """
+    Rule: accept if max_similarity >= tau.
+    """
+    scores = np.asarray(scores_unknown, dtype=np.float64).reshape(-1)
+    if len(scores) == 0:
+        raise ValueError("Need unknown validation scores to set FPIR threshold.")
+
+    target_fpir = float(target_fpir)
+    if target_fpir <= 0:
+        return float(np.nextafter(scores.max(), np.inf))
+    if target_fpir >= 1:
+        return float(np.nextafter(scores.min(), -np.inf))
+
+    n_accept = int(np.floor(target_fpir * len(scores)))
+    if n_accept <= 0:
+        return float(np.nextafter(scores.max(), np.inf))
+
+    idx = len(scores) - n_accept
+    idx = int(np.clip(idx, 0, len(scores) - 1))
+    return float(np.partition(scores, idx)[idx])
+
+
+def posterior_from_z(
+    z: np.ndarray,
+    gallery_mu: np.ndarray,
+    tau: float,
+    gallery_kappa: float,
+    temperature: float = 1.0,
+) -> np.ndarray:
+    """
+    Gallery-aware posterior p(c|z) on K known classes + one out-of-gallery class.
+
+    We use a threshold-aligned Bayesian softmax:
+      known logits = k_g * <z, m_c>
+      OOG logit   = k_g * tau
+
+    Therefore:
+      argmax known > OOG  iff max_c <z,m_c> > tau
+
+    This keeps the OSR decision rule exactly aligned with the standard
+    cosine-threshold OSR pipeline, while still providing a smooth posterior.
+    """
+    z = np.asarray(z, dtype=np.float64)
+    gallery_mu = np.asarray(gallery_mu, dtype=np.float64)
+
+    known_logits = gallery_kappa * (z @ gallery_mu.T)
+    oog_logits = np.full((z.shape[0], 1), gallery_kappa * tau, dtype=np.float64)
+    logits = np.concatenate([known_logits, oog_logits], axis=1)
+    logits = logits / float(temperature)
+    return stable_softmax_np(logits, axis=1)
+
+
+def holue_posterior_quadrature(
+    mu: np.ndarray,
+    kappa: np.ndarray,
+    gallery_mu: np.ndarray,
+    tau: float,
+    gallery_kappa: float,
+    n_grid: int = 720,
+    batch_size: int = 512,
+) -> np.ndarray:
+    """
+    Deterministic computation of:
+      p(c|x) = ∫ p(c|z) p(z|x) dz
+
+    Because embeddings are 2D on the unit circle, we integrate by a dense angle grid.
+    p(z|x) is vMF on S^1 with mean direction mu and concentration kappa.
+    """
+    mu = normalize_np(np.asarray(mu, dtype=np.float64))
+    kappa = np.asarray(kappa, dtype=np.float64).reshape(-1)
+    gallery_mu = normalize_np(np.asarray(gallery_mu, dtype=np.float64))
+
+    angles = np.linspace(0.0, 2.0 * math.pi, n_grid, endpoint=False)
+    grid_z = np.stack([np.cos(angles), np.sin(angles)], axis=1)
+
+    post_grid = posterior_from_z(
+        grid_z,
+        gallery_mu=gallery_mu,
+        tau=tau,
+        gallery_kappa=gallery_kappa,
+    )  # (G, K+1)
+
+    out = []
+    for start in range(0, len(mu), batch_size):
+        end = min(start + batch_size, len(mu))
+        mu_b = mu[start:end]
+        kappa_b = kappa[start:end]
+
+        cos_to_mu = mu_b @ grid_z.T  # (B, G)
+        log_w = kappa_b[:, None] * cos_to_mu
+        w = stable_softmax_np(log_w, axis=1)
+        post = w @ post_grid
+        out.append(post)
+
+    return np.concatenate(out, axis=0)
+
+
+def discrete_kl_components(p: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    KL to uniform prior, split into known-class and OOG terms.
+    This is used as a simple calibration feature.
+    """
+    p = np.asarray(p, dtype=np.float64)
+    n_classes = p.shape[1]
+    prior = 1.0 / n_classes
+    p_safe = np.clip(p, 1e-12, 1.0)
+
+    kl_terms = p_safe * (np.log(p_safe) - math.log(prior))
+    kl_known = np.sum(kl_terms[:, :-1], axis=1)
+    kl_oog = kl_terms[:, -1]
+    kl_total = kl_known + kl_oog
+    return kl_known, kl_oog, kl_total
+
+
+@dataclass
+class OSRStats:
+    labels: np.ndarray
+    sim: np.ndarray
+    max_sim: np.ndarray
+    pred_idx: np.ndarray
+    rejected: np.ndarray
+    scf_kappa: np.ndarray
+    gal_posterior: np.ndarray
+    holue_posterior: np.ndarray
+    gal_entropy: np.ndarray
+    holue_entropy: np.ndarray
+    kl_known: np.ndarray
+    kl_oog: np.ndarray
+    kl_total: np.ndarray
+
+
+def compute_osr_stats(
+    probe_mu: np.ndarray,
+    probe_kappa: np.ndarray,
+    probe_labels: np.ndarray,
+    gallery_mu: np.ndarray,
+    tau: float,
+    gallery_kappa: float,
+    n_grid: int,
+) -> OSRStats:
+    probe_mu = normalize_np(probe_mu.astype(np.float64))
+    gallery_mu = normalize_np(gallery_mu.astype(np.float64))
+    probe_kappa = np.asarray(probe_kappa, dtype=np.float64).reshape(-1)
+
+    sim = probe_mu @ gallery_mu.T
+    max_sim = np.max(sim, axis=1)
+    pred_idx = np.argmax(sim, axis=1)
+    rejected = max_sim < tau
+
+    gal_post = posterior_from_z(
+        probe_mu,
+        gallery_mu=gallery_mu,
+        tau=tau,
+        gallery_kappa=gallery_kappa,
+    )
+    hol_post = holue_posterior_quadrature(
+        mu=probe_mu,
+        kappa=probe_kappa,
+        gallery_mu=gallery_mu,
+        tau=tau,
+        gallery_kappa=gallery_kappa,
+        n_grid=n_grid,
+    )
+
+    gal_entropy = entropy_normalized(gal_post)
+    hol_entropy = entropy_normalized(hol_post)
+
+    kl_known, kl_oog, kl_total = discrete_kl_components(hol_post)
+
+    return OSRStats(
+        labels=np.asarray(probe_labels, dtype=int),
+        sim=sim,
+        max_sim=max_sim,
+        pred_idx=pred_idx,
+        rejected=rejected,
+        scf_kappa=probe_kappa,
+        gal_posterior=gal_post,
+        holue_posterior=hol_post,
+        gal_entropy=gal_entropy,
+        holue_entropy=hol_entropy,
+        kl_known=kl_known,
+        kl_oog=kl_oog,
+        kl_total=kl_total,
+    )
+
+
+# ---------------------------------------------------------------------
+# Metrics and rejection curves
+# ---------------------------------------------------------------------
+
+
+def safe_div(a: float, b: float, default: float = 0.0) -> float:
+    if b == 0 or not np.isfinite(b):
+        return default
+    return float(a) / float(b)
+
+
+def osr_error_mask(
+    pred_idx: np.ndarray,
+    rejected: np.ndarray,
+    labels: np.ndarray,
+    known_classes: List[int],
+) -> np.ndarray:
+    known_classes_arr = np.asarray(known_classes, dtype=int)
+    pred_digit = known_classes_arr[pred_idx]
+
+    labels = np.asarray(labels, dtype=int)
+    seen = np.isin(labels, known_classes_arr)
+
+    correct = np.zeros(len(labels), dtype=bool)
+    correct[seen] = (~rejected[seen]) & (pred_digit[seen] == labels[seen])
+    correct[~seen] = rejected[~seen]
+
+    return ~correct
+
+
+def compute_osr_metrics(
+    pred_idx: np.ndarray,
+    rejected: np.ndarray,
+    labels: np.ndarray,
+    known_classes: List[int],
+) -> Dict[str, float]:
+    known_classes_arr = np.asarray(known_classes, dtype=int)
+    pred_digit = known_classes_arr[pred_idx]
+
+    labels = np.asarray(labels, dtype=int)
+    seen = np.isin(labels, known_classes_arr)
+
+    correct_seen_accept = seen & (~rejected) & (pred_digit == labels)
+    false_accept = (~seen) & (~rejected)
+
+    tp = int(np.sum(correct_seen_accept))
+    fp = int(np.sum(false_accept))
+    fn = int(np.sum(seen)) - tp
+
+    precision = safe_div(tp, tp + fp)
+    recall = safe_div(tp, tp + fn)
+    f1 = safe_div(2.0 * precision * recall, precision + recall)
+
+    fpir = safe_div(fp, np.sum(~seen))
+    fnir = 1.0 - safe_div(tp, np.sum(seen))
+
+    misid = seen & (~rejected) & (pred_digit != labels)
+    false_reject = seen & rejected
+
+    return {
+        "tp": tp,
+        "fp": fp,
+        "fn": fn,
+        "f1": f1,
+        "fpir": fpir,
+        "fnir": fnir,
+        "error_rate": float(np.mean(osr_error_mask(pred_idx, rejected, labels, known_classes))),
+        "false_accept_count": int(np.sum(false_accept)),
+        "false_reject_count": int(np.sum(false_reject)),
+        "misidentification_count": int(np.sum(misid)),
+    }
+
+
+def rejection_curve(
+    uncertainty: np.ndarray,
+    pred_idx: np.ndarray,
+    rejected: np.ndarray,
+    labels: np.ndarray,
+    known_classes: List[int],
+    fractions: np.ndarray,
+) -> pd.DataFrame:
+    """
+    Higher uncertainty means rejected earlier.
+    """
+    uncertainty = np.asarray(uncertainty, dtype=np.float64)
+    order = np.argsort(-uncertainty)
+    n = len(uncertainty)
+
+    rows = []
+    for frac in fractions:
+        n_drop = int(round(float(frac) * n))
+        keep = np.ones(n, dtype=bool)
+        if n_drop > 0:
+            keep[order[:n_drop]] = False
+
+        m = compute_osr_metrics(
+            pred_idx=pred_idx[keep],
+            rejected=rejected[keep],
+            labels=labels[keep],
+            known_classes=known_classes,
+        )
+        rows.append({"fraction": float(frac), **m})
+
+    return pd.DataFrame(rows)
+
+
+def compute_prr(
+    curve: pd.DataFrame,
+    random_curve: pd.DataFrame,
+    oracle_curve: pd.DataFrame,
+    metric: str = "f1",
+) -> float:
+    x = curve["fraction"].values
+    a = np.trapezoid(curve[metric].values, x)
+    r = np.trapezoid(random_curve[metric].values, x)
+    o = np.trapezoid(oracle_curve[metric].values, x)
+
+    denom = o - r
+    if abs(denom) < 1e-12:
+        return float("nan")
+    return float((a - r) / denom)
+
+
+# ---------------------------------------------------------------------
+# Plotting
+# ---------------------------------------------------------------------
+
+
+def plot_rejection_curves(
+    curves: Dict[str, pd.DataFrame],
+    out_dir: Path,
+    metric: str = "f1",
+) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    plt.figure(figsize=(8, 5))
+    for name, df in curves.items():
+        lw = 2.6 if "HolUE" in name else 1.6
+        alpha = 1.0 if name not in {"Random", "Oracle"} else 0.8
+        plt.plot(
+            df["fraction"],
+            df[metric],
+            label=name,
+            linewidth=lw,
+            alpha=alpha,
+        )
+
+    plt.xlabel("Filtered-out probe fraction")
+    plt.ylabel(metric.upper())
+    plt.title("MNIST toy OSR: uncertainty-based filtering")
+    plt.grid(True, linestyle="--", alpha=0.5)
+    plt.legend(fontsize=9)
+    plt.tight_layout()
+
+    plt.savefig(out_dir / "rejection_curves.png", dpi=300)
+    plt.savefig(out_dir / "rejection_curves.pdf", dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+def plot_teaser_circle(
+    stats: OSRStats,
+    gallery_mu: np.ndarray,
+    known_classes: List[int],
+    tau: float,
+    gallery_kappa: float,
+    uncertainty: np.ndarray,
+    out_dir: Path,
+    seed: int,
+    max_points: int = 900,
+) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    rng = np.random.default_rng(seed)
+    labels = stats.labels
+    err = osr_error_mask(stats.pred_idx, stats.rejected, labels, known_classes)
+
+    # For positions we use probe mean directions.
+    # Recover mean direction approximately from similarities is impossible, so caller stores
+    # them by putting sim only. We infer positions for plotting from nearest class? Instead,
+    # use a projection from sim to a display circle by taking actual direction stored in
+    # stats via extra attribute if present.
+    if not hasattr(stats, "probe_mu_for_plot"):
+        raise RuntimeError("stats.probe_mu_for_plot must be attached before teaser plotting.")
+    probe_mu = getattr(stats, "probe_mu_for_plot")
+
+    probe_mu = normalize_np(probe_mu)
+    gallery_mu = normalize_np(gallery_mu)
+
+    n = len(labels)
+    if n > max_points:
+        # Always keep all errors if possible, fill the rest with random correct points.
+        error_idx = np.where(err)[0]
+        correct_idx = np.where(~err)[0]
+        remaining = max(0, max_points - len(error_idx))
+        if remaining > 0 and len(correct_idx) > remaining:
+            correct_idx = rng.choice(correct_idx, size=remaining, replace=False)
+        selected = np.concatenate([error_idx, correct_idx])
+    else:
+        selected = np.arange(n)
+
+    unc = np.asarray(uncertainty, dtype=np.float64)
+    unc_norm = (unc - np.nanmin(unc)) / (np.nanmax(unc) - np.nanmin(unc) + 1e-12)
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+
+    # Background GalUE uncertainty ring.
+    angles = np.linspace(0, 2 * math.pi, 720, endpoint=False)
+    z_grid = np.stack([np.cos(angles), np.sin(angles)], axis=1)
+    post_grid = posterior_from_z(
+        z_grid,
+        gallery_mu=gallery_mu,
+        tau=tau,
+        gallery_kappa=gallery_kappa,
+    )
+    ring_unc = entropy_normalized(post_grid)
+
+    sc_bg = ax.scatter(
+        1.12 * z_grid[:, 0],
+        1.12 * z_grid[:, 1],
+        c=ring_unc,
+        cmap="Blues",
+        s=18,
+        alpha=0.75,
+        linewidths=0,
+        label="gallery ambiguity ring",
+    )
+
+    # Acceptance arcs around gallery centers.
+    width = math.acos(float(np.clip(tau, -1.0, 1.0)))
+    colors = plt.cm.tab10(np.linspace(0, 1, len(known_classes)))
+    for i, (c, proto) in enumerate(zip(known_classes, gallery_mu)):
+        a = math.atan2(proto[1], proto[0])
+        arc = np.linspace(a - width, a + width, 120)
+        ax.plot(
+            1.24 * np.cos(arc),
+            1.24 * np.sin(arc),
+            color=colors[i],
+            linewidth=4,
+            alpha=0.65,
+        )
+
+    # Probe points: radial jitter by uncertainty for readability.
+    selected = np.asarray(selected, dtype=int)
+    correct_sel = selected[~err[selected]]
+    error_sel = selected[err[selected]]
+
+    def point_xy(idx: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        r = 0.88 + 0.16 * unc_norm[idx]
+        return r * probe_mu[idx, 0], r * probe_mu[idx, 1]
+
+    if len(correct_sel) > 0:
+        x, y = point_xy(correct_sel)
+        ax.scatter(
+            x,
+            y,
+            c=unc[correct_sel],
+            cmap="magma",
+            s=22,
+            alpha=0.45,
+            linewidths=0,
+            marker="o",
+            label="correct probes",
+        )
+
+    if len(error_sel) > 0:
+        x, y = point_xy(error_sel)
+        sc = ax.scatter(
+            x,
+            y,
+            c=unc[error_sel],
+            cmap="magma",
+            s=60,
+            alpha=0.95,
+            linewidths=1.6,
+            marker="x",
+            label="OSR errors",
+        )
+    else:
+        sc = ax.scatter([], [], c=[], cmap="magma")
+
+    # Gallery prototypes.
+    for i, (c, proto) in enumerate(zip(known_classes, gallery_mu)):
+        ax.scatter(
+            proto[0],
+            proto[1],
+            s=260,
+            marker="*",
+            color=colors[i],
+            edgecolor="black",
+            linewidth=1.2,
+            zorder=5,
+        )
+        ax.text(
+            1.36 * proto[0],
+            1.36 * proto[1],
+            f"digit {c}",
+            color=colors[i],
+            fontsize=12,
+            fontweight="bold",
+            ha="center",
+            va="center",
+        )
+
+    # Unit circle.
+    circle = plt.Circle((0, 0), 1.0, color="black", fill=False, linewidth=1.0, alpha=0.6)
+    ax.add_artist(circle)
+
+    ax.axhline(0, color="gray", linewidth=0.5, alpha=0.5)
+    ax.axvline(0, color="gray", linewidth=0.5, alpha=0.5)
+    ax.set_aspect("equal")
+    ax.set_xlim(-1.55, 1.55)
+    ax.set_ylim(-1.55, 1.55)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_title(
+        "HolUE on MNIST OSR: high uncertainty concentrates near real errors",
+        fontsize=14,
+    )
+
+    cb = fig.colorbar(sc, ax=ax, fraction=0.046, pad=0.04)
+    cb.set_label("HolUE no-calibration uncertainty", rotation=90)
+
+    ax.legend(loc="lower left", frameon=True, fontsize=9)
+    plt.tight_layout()
+
+    plt.savefig(out_dir / "teaser_holue_mnist_circle.png", dpi=300)
+    plt.savefig(out_dir / "teaser_holue_mnist_circle.pdf", dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+# ---------------------------------------------------------------------
+# Main experiment
+# ---------------------------------------------------------------------
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--out-dir", type=str, default="toy_outputs")
+    parser.add_argument("--seed", type=int, default=777)
+    parser.add_argument("--device", type=str, default="auto")
+
+    parser.add_argument("--known-classes", type=str, default="0,1,2,3,4")
+    parser.add_argument("--unknown-classes", type=str, default="5,6,7,8,9")
+
+    parser.add_argument("--train-per-known-class", type=int, default=2500)
+    parser.add_argument("--val-gallery-per-class", type=int, default=30)
+    parser.add_argument("--val-probe-known-per-class", type=int, default=250)
+    parser.add_argument("--val-probe-unknown-per-class", type=int, default=250)
+
+    parser.add_argument("--test-gallery-per-class", type=int, default=30)
+    parser.add_argument("--test-probe-known-per-class", type=int, default=180)
+    parser.add_argument("--test-probe-unknown-per-class", type=int, default=180)
+
+    parser.add_argument("--corrupt-known-frac", type=float, default=0.35)
+    parser.add_argument("--corrupt-unknown-frac", type=float, default=0.05)
+
+    parser.add_argument("--arcface-epochs", type=int, default=12)
+    parser.add_argument("--scf-epochs", type=int, default=6)
+    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--lr-arcface", type=float, default=1e-3)
+    parser.add_argument("--lr-scf", type=float, default=2e-3)
+
+    parser.add_argument("--target-fpir", type=float, default=0.10)
+    parser.add_argument("--gallery-kappa", type=float, default=25.0)
+    parser.add_argument("--circle-grid", type=int, default=720)
+
+    parser.add_argument("--force-train", action="store_true")
+    parser.add_argument("--teaser-points", type=int, default=900)
+
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    seed_everything(args.seed)
+
+    out_dir = Path(args.out_dir)
+    data_dir = out_dir / "mnist_data"
+    model_dir = out_dir / "models"
+    protocol_dir = out_dir / "protocols"
+    result_dir = out_dir / "results"
+    figure_dir = out_dir / "figures"
+
+    for d in [data_dir, model_dir, protocol_dir, result_dir, figure_dir]:
+        d.mkdir(parents=True, exist_ok=True)
+
+    if args.device == "auto":
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(args.device)
+
+    known_classes = [int(x) for x in args.known_classes.split(",") if x.strip()]
+    unknown_classes = [int(x) for x in args.unknown_classes.split(",") if x.strip()]
+    class_to_idx = {c: i for i, c in enumerate(known_classes)}
+
+    print(f"Output dir:      {out_dir.resolve()}")
+    print(f"Device:          {device}")
+    print(f"Known classes:   {known_classes}")
+    print(f"Unknown classes: {unknown_classes}")
+
+    transform = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.Normalize(mean=(0.5,), std=(0.5,)),
+        ]
+    )
+
+    mnist_train = datasets.MNIST(
+        root=str(data_dir),
+        train=True,
+        download=True,
+        transform=transform,
+    )
+    mnist_test = datasets.MNIST(
+        root=str(data_dir),
+        train=False,
+        download=True,
+        transform=transform,
+    )
+
+    rng = np.random.default_rng(args.seed)
+
+    train_indices, val_protocol = build_train_val_indices(
+        train_ds=mnist_train,
+        known_classes=known_classes,
+        unknown_classes=unknown_classes,
+        train_per_known_class=args.train_per_known_class,
+        val_gallery_per_class=args.val_gallery_per_class,
+        val_probe_known_per_class=args.val_probe_known_per_class,
+        val_probe_unknown_per_class=args.val_probe_unknown_per_class,
+        corrupt_known_frac=args.corrupt_known_frac,
+        corrupt_unknown_frac=args.corrupt_unknown_frac,
+        rng=rng,
+    )
+
+    test_protocol = build_test_indices(
+        test_ds=mnist_test,
+        known_classes=known_classes,
+        unknown_classes=unknown_classes,
+        gallery_per_class=args.test_gallery_per_class,
+        probe_known_per_class=args.test_probe_known_per_class,
+        probe_unknown_per_class=args.test_probe_unknown_per_class,
+        corrupt_known_frac=args.corrupt_known_frac,
+        corrupt_unknown_frac=args.corrupt_unknown_frac,
+        rng=rng,
+    )
+
+    np.savez(
+        protocol_dir / "mnist_open_set_protocol_indices.npz",
+        train_indices=train_indices,
+        val_gallery=val_protocol.gallery,
+        val_probe_known=val_protocol.probe_known,
+        val_probe_unknown=val_protocol.probe_unknown,
+        val_corrupt_probe=val_protocol.corrupt_probe,
+        test_gallery=test_protocol.gallery,
+        test_probe_known=test_protocol.probe_known,
+        test_probe_unknown=test_protocol.probe_unknown,
+        test_corrupt_probe=test_protocol.corrupt_probe,
+        known_classes=np.asarray(known_classes, dtype=int),
+        unknown_classes=np.asarray(unknown_classes, dtype=int),
+    )
+
+    # ---------------------------
+    # Train / load ArcFace
+    # ---------------------------
+
+    arc_ckpt = model_dir / "tiny_arcface_mnist_2d.pt"
+    arc_model = TinyArcFaceMNIST(num_classes=len(known_classes), embedding_dim=2)
+
+    if arc_ckpt.is_file() and not args.force_train:
+        ckpt = torch.load(arc_ckpt, map_location=device, weights_only=False)
+        arc_model.load_state_dict(ckpt["state_dict"])
+        print(f"Loaded ArcFace checkpoint: {arc_ckpt}")
+    else:
+        train_ds = KnownMNISTDataset(
+            base=mnist_train,
+            indices=train_indices,
+            class_to_idx=class_to_idx,
+        )
+        train_arcface(
+            model=arc_model,
+            train_ds=train_ds,
+            device=device,
+            epochs=args.arcface_epochs,
+            batch_size=args.batch_size,
+            lr=args.lr_arcface,
+            seed=args.seed,
+        )
+        torch.save(
+            {
+                "state_dict": arc_model.state_dict(),
+                "known_classes": known_classes,
+                "args": vars(args),
+            },
+            arc_ckpt,
+        )
+        print(f"Saved ArcFace checkpoint: {arc_ckpt}")
+
+    # ---------------------------
+    # Train / load SCF
+    # ---------------------------
+
+    scf_ckpt = model_dir / "tiny_scf_mnist_2d.pt"
+    scf_model = TinySCFMNIST(arc_model=arc_model)
+
+    if scf_ckpt.is_file() and not args.force_train:
+        ckpt = torch.load(scf_ckpt, map_location=device, weights_only=False)
+        scf_model.load_state_dict(ckpt["state_dict"])
+        print(f"Loaded SCF checkpoint: {scf_ckpt}")
+    else:
+        train_ds = KnownMNISTDataset(
+            base=mnist_train,
+            indices=train_indices,
+            class_to_idx=class_to_idx,
+        )
+        train_scf(
+            scf_model=scf_model,
+            arc_model=arc_model,
+            train_ds=train_ds,
+            device=device,
+            epochs=args.scf_epochs,
+            batch_size=args.batch_size,
+            lr=args.lr_scf,
+            seed=args.seed,
+        )
+        torch.save(
+            {
+                "state_dict": scf_model.state_dict(),
+                "known_classes": known_classes,
+                "args": vars(args),
+            },
+            scf_ckpt,
+        )
+        print(f"Saved SCF checkpoint: {scf_ckpt}")
+
+    # ---------------------------
+    # Extract validation/test embeddings
+    # ---------------------------
+
+    print("Extracting validation gallery embeddings...")
+    val_gallery_emb, val_gallery_labels = extract_arc_embeddings(
+        arc_model,
+        mnist_train,
+        val_protocol.gallery,
+        device,
+        args.batch_size,
+        corrupt_indices=[],
+        corrupt_seed=args.seed,
+    )
+    val_gallery_mu = build_gallery_prototypes(
+        val_gallery_emb,
+        val_gallery_labels,
+        known_classes,
+    )
+
+    print("Extracting validation probe embeddings + SCF kappa...")
+    val_probe_mu, val_probe_kappa, val_probe_labels = extract_scf_embeddings(
+        scf_model,
+        mnist_train,
+        val_protocol.probe,
+        device,
+        args.batch_size,
+        corrupt_indices=val_protocol.corrupt_probe,
+        corrupt_seed=args.seed + 10000,
+    )
+
+    print("Extracting test gallery embeddings...")
+    test_gallery_emb, test_gallery_labels = extract_arc_embeddings(
+        arc_model,
+        mnist_test,
+        test_protocol.gallery,
+        device,
+        args.batch_size,
+        corrupt_indices=[],
+        corrupt_seed=args.seed,
+    )
+    test_gallery_mu = build_gallery_prototypes(
+        test_gallery_emb,
+        test_gallery_labels,
+        known_classes,
+    )
+
+    print("Extracting test probe embeddings + SCF kappa...")
+    test_probe_mu, test_probe_kappa, test_probe_labels = extract_scf_embeddings(
+        scf_model,
+        mnist_test,
+        test_protocol.probe,
+        device,
+        args.batch_size,
+        corrupt_indices=test_protocol.corrupt_probe,
+        corrupt_seed=args.seed + 20000,
+    )
+
+    np.savez(
+        result_dir / "mnist_embeddings_for_toy_osr.npz",
+        val_gallery_mu=val_gallery_mu,
+        val_probe_mu=val_probe_mu,
+        val_probe_kappa=val_probe_kappa,
+        val_probe_labels=val_probe_labels,
+        test_gallery_mu=test_gallery_mu,
+        test_probe_mu=test_probe_mu,
+        test_probe_kappa=test_probe_kappa,
+        test_probe_labels=test_probe_labels,
+    )
+
+    # ---------------------------
+    # Choose OSR threshold on validation unknown probes
+    # ---------------------------
+
+    val_sim = val_probe_mu @ val_gallery_mu.T
+    val_max_sim = val_sim.max(axis=1)
+    val_seen = np.isin(val_probe_labels, np.asarray(known_classes))
+    tau = threshold_at_fpir(val_max_sim[~val_seen], args.target_fpir)
+
+    print(f"Validation-selected cosine threshold tau={tau:.6f} for target FPIR={args.target_fpir}")
+
+    # ---------------------------
+    # Compute GalUE/HolUE stats
+    # ---------------------------
+
+    print("Computing validation HolUE/GalUE posteriors...")
+    val_stats = compute_osr_stats(
+        probe_mu=val_probe_mu,
+        probe_kappa=val_probe_kappa,
+        probe_labels=val_probe_labels,
+        gallery_mu=val_gallery_mu,
+        tau=tau,
+        gallery_kappa=args.gallery_kappa,
+        n_grid=args.circle_grid,
+    )
+    setattr(val_stats, "probe_mu_for_plot", val_probe_mu)
+
+    print("Computing test HolUE/GalUE posteriors...")
+    test_stats = compute_osr_stats(
+        probe_mu=test_probe_mu,
+        probe_kappa=test_probe_kappa,
+        probe_labels=test_probe_labels,
+        gallery_mu=test_gallery_mu,
+        tau=tau,
+        gallery_kappa=args.gallery_kappa,
+        n_grid=args.circle_grid,
+    )
+    setattr(test_stats, "probe_mu_for_plot", test_probe_mu)
+
+    np.savez(
+        result_dir / "posteriors_and_osr_stats.npz",
+        tau=tau,
+        gallery_kappa=args.gallery_kappa,
+        known_classes=np.asarray(known_classes, dtype=int),
+        unknown_classes=np.asarray(unknown_classes, dtype=int),
+        val_labels=val_stats.labels,
+        val_max_sim=val_stats.max_sim,
+        val_pred_idx=val_stats.pred_idx,
+        val_rejected=val_stats.rejected,
+        val_scf_kappa=val_stats.scf_kappa,
+        val_gal_posterior=val_stats.gal_posterior,
+        val_holue_posterior=val_stats.holue_posterior,
+        val_gal_entropy=val_stats.gal_entropy,
+        val_holue_entropy=val_stats.holue_entropy,
+        val_kl_known=val_stats.kl_known,
+        val_kl_oog=val_stats.kl_oog,
+        val_kl_total=val_stats.kl_total,
+        test_labels=test_stats.labels,
+        test_max_sim=test_stats.max_sim,
+        test_pred_idx=test_stats.pred_idx,
+        test_rejected=test_stats.rejected,
+        test_scf_kappa=test_stats.scf_kappa,
+        test_gal_posterior=test_stats.gal_posterior,
+        test_holue_posterior=test_stats.holue_posterior,
+        test_gal_entropy=test_stats.gal_entropy,
+        test_holue_entropy=test_stats.holue_entropy,
+        test_kl_known=test_stats.kl_known,
+        test_kl_oog=test_stats.kl_oog,
+        test_kl_total=test_stats.kl_total,
+    )
+
+    # ---------------------------
+    # Base OSR quality
+    # ---------------------------
+
+    val_error = osr_error_mask(
+        pred_idx=val_stats.pred_idx,
+        rejected=val_stats.rejected,
+        labels=val_stats.labels,
+        known_classes=known_classes,
+    )
+    test_error = osr_error_mask(
+        pred_idx=test_stats.pred_idx,
+        rejected=test_stats.rejected,
+        labels=test_stats.labels,
+        known_classes=known_classes,
+    )
+
+    val_base_metrics = compute_osr_metrics(
+        pred_idx=val_stats.pred_idx,
+        rejected=val_stats.rejected,
+        labels=val_stats.labels,
+        known_classes=known_classes,
+    )
+    test_base_metrics = compute_osr_metrics(
+        pred_idx=test_stats.pred_idx,
+        rejected=test_stats.rejected,
+        labels=test_stats.labels,
+        known_classes=known_classes,
+    )
+
+    print("\nValidation OSR metrics:")
+    for k, v in val_base_metrics.items():
+        print(f"  {k}: {v}")
+
+    print("\nTest OSR metrics:")
+    for k, v in test_base_metrics.items():
+        print(f"  {k}: {v}")
+
+    with open(result_dir / "base_osr_metrics.json", "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "tau": tau,
+                "target_fpir": args.target_fpir,
+                "gallery_kappa": args.gallery_kappa,
+                "val": val_base_metrics,
+                "test": test_base_metrics,
+            },
+            f,
+            indent=2,
+        )
+
+    # ---------------------------
+    # HolUE validation calibration
+    # ---------------------------
+
+    def make_calibration_features(stats: OSRStats) -> np.ndarray:
+        """
+        Small feature vector for calibrated HolUE.
+
+        Important:
+          This is only for comparison. The dissertation teaser and the main
+          no-calibration claim use stats.holue_entropy directly.
+        """
+        return np.column_stack(
+            [
+                stats.holue_entropy,
+                stats.gal_entropy,
+                np.log(stats.scf_kappa + 1e-8),
+                np.abs(stats.max_sim - tau),
+                stats.kl_known,
+                stats.kl_oog,
+                stats.kl_total,
+                stats.max_sim,
+            ]
+        ).astype(np.float64)
+
+    X_val = make_calibration_features(val_stats)
+    y_val = val_error.astype(int)
+    X_test = make_calibration_features(test_stats)
+
+    calibration_info: Dict[str, object] = {
+        "used": False,
+        "reason": "",
+        "feature_names": [
+            "holue_entropy",
+            "galue_entropy",
+            "log_scf_kappa",
+            "abs_maxsim_minus_tau",
+            "kl_known",
+            "kl_oog",
+            "kl_total",
+            "max_sim",
+        ],
+    }
+
+    if len(np.unique(y_val)) < 2:
+        print(
+            "[Calibration] Validation set has a single error label. "
+            "Falling back to no-calibration HolUE entropy."
+        )
+        holue_calibrated_unc = test_stats.holue_entropy.copy()
+        calibration_info["reason"] = "single_class_validation_error_labels"
+    else:
+        scaler = StandardScaler()
+        X_val_scaled = scaler.fit_transform(X_val)
+        X_test_scaled = scaler.transform(X_test)
+
+        clf = LogisticRegression(
+            class_weight="balanced",
+            random_state=args.seed,
+            max_iter=2000,
+            solver="lbfgs",
+        )
+        clf.fit(X_val_scaled, y_val)
+
+        # Probability of OSR error. Higher means more uncertain.
+        holue_calibrated_unc = clf.predict_proba(X_test_scaled)[:, 1]
+
+        calibration_info.update(
+            {
+                "used": True,
+                "reason": "ok",
+                "intercept": clf.intercept_.tolist(),
+                "coef": clf.coef_.tolist(),
+                "scaler_mean": scaler.mean_.tolist(),
+                "scaler_scale": scaler.scale_.tolist(),
+                "val_error_rate": float(np.mean(y_val)),
+            }
+        )
+
+    with open(result_dir / "holue_calibration_info.json", "w", encoding="utf-8") as f:
+        json.dump(calibration_info, f, indent=2)
+
+    # ---------------------------
+    # Uncertainty methods
+    # ---------------------------
+
+    rng_eval = np.random.default_rng(args.seed + 12345)
+    random_unc = rng_eval.random(len(test_stats.labels))
+
+    # Oracle: all erroneous predictions first, ties random.
+    oracle_unc = test_error.astype(float) + 1e-6 * rng_eval.random(len(test_error))
+
+    uncertainties: Dict[str, np.ndarray] = {
+        # Main method for the no-validation-calibration claim.
+        "HolUE no calibration": test_stats.holue_entropy,
+
+        # Validation-calibrated comparison.
+        "HolUE calibrated": holue_calibrated_unc,
+
+        # Ablations / baselines.
+        "HolUE raw KL": -test_stats.kl_total,
+        "GalUE": test_stats.gal_entropy,
+        "SCF": -np.log(test_stats.scf_kappa + 1e-8),
+        "AccScr": -np.abs(test_stats.max_sim - tau),
+        "MaxSim": -test_stats.max_sim,
+        "Random": random_unc,
+        "Oracle": oracle_unc,
+    }
+
+    np.savez(
+        result_dir / "uncertainty_scores.npz",
+        **{k.replace(" ", "_").replace("-", "_"): v for k, v in uncertainties.items()},
+    )
+
+    # ---------------------------
+    # Rejection curves and PRR
+    # ---------------------------
+
+    fractions = np.linspace(0.0, 0.5, 21)
+
+    def slugify(name: str) -> str:
+        out = name.lower()
+        for ch in [" ", "-", "/", "(", ")", "[", "]", "{", "}", "."]:
+            out = out.replace(ch, "_")
+        while "__" in out:
+            out = out.replace("__", "_")
+        return out.strip("_")
+
+    curves: Dict[str, pd.DataFrame] = {}
+    for name, unc in uncertainties.items():
+        df = rejection_curve(
+            uncertainty=unc,
+            pred_idx=test_stats.pred_idx,
+            rejected=test_stats.rejected,
+            labels=test_stats.labels,
+            known_classes=known_classes,
+            fractions=fractions,
+        )
+        curves[name] = df
+        df.to_csv(result_dir / f"rejection_curve_{slugify(name)}.csv", index=False)
+
+    random_curve = curves["Random"]
+    oracle_curve = curves["Oracle"]
+
+    try:
+        from sklearn.metrics import average_precision_score, roc_auc_score
+    except Exception:
+        average_precision_score = None
+        roc_auc_score = None
+
+    rows = []
+    for name, unc in uncertainties.items():
+        df = curves[name]
+        prr_f1 = compute_prr(
+            curve=df,
+            random_curve=random_curve,
+            oracle_curve=oracle_curve,
+            metric="f1",
+        )
+
+        if roc_auc_score is not None and len(np.unique(test_error)) == 2:
+            error_auc = float(roc_auc_score(test_error.astype(int), unc))
+            error_ap = float(average_precision_score(test_error.astype(int), unc))
+        else:
+            error_auc = float("nan")
+            error_ap = float("nan")
+
+        rows.append(
+            {
+                "method": name,
+                "base_f1": test_base_metrics["f1"],
+                "base_fpir": test_base_metrics["fpir"],
+                "base_fnir": test_base_metrics["fnir"],
+                "base_error_rate": test_base_metrics["error_rate"],
+                "prr_f1": prr_f1,
+                "error_roc_auc": error_auc,
+                "error_average_precision": error_ap,
+                "f1_after_50pct_filter": float(df.iloc[-1]["f1"]),
+                "fpir_after_50pct_filter": float(df.iloc[-1]["fpir"]),
+                "fnir_after_50pct_filter": float(df.iloc[-1]["fnir"]),
+            }
+        )
+
+    summary_df = pd.DataFrame(rows)
+
+    method_order = [
+        "HolUE no calibration",
+        "HolUE calibrated",
+        "HolUE raw KL",
+        "GalUE",
+        "SCF",
+        "AccScr",
+        "MaxSim",
+        "Random",
+        "Oracle",
+    ]
+    summary_df["method"] = pd.Categorical(
+        summary_df["method"],
+        categories=method_order,
+        ordered=True,
+    )
+    summary_df = summary_df.sort_values("method").reset_index(drop=True)
+
+    summary_df.to_csv(result_dir / "method_summary.csv", index=False)
+
+    print("\nMethod summary:")
+    print(summary_df.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+
+    # ---------------------------
+    # Figures
+    # ---------------------------
+
+    print("Saving rejection-curve figure...")
+    plot_rejection_curves(curves, figure_dir, metric="f1")
+
+    print("Saving teaser circle figure...")
+    plot_teaser_circle(
+        stats=test_stats,
+        gallery_mu=test_gallery_mu,
+        known_classes=known_classes,
+        tau=tau,
+        gallery_kappa=args.gallery_kappa,
+        uncertainty=test_stats.holue_entropy,
+        out_dir=figure_dir,
+        seed=args.seed,
+        max_points=args.teaser_points,
+    )
+
+    # Additional compact diagnostic scatter: error vs uncertainty.
+    plt.figure(figsize=(7, 4.5))
+    plot_df = pd.DataFrame(
+        {
+            "HolUE no calibration": test_stats.holue_entropy,
+            "SCF uncertainty": -np.log(test_stats.scf_kappa + 1e-8),
+            "is_error": test_error.astype(int),
+        }
+    )
+    plt.scatter(
+        plot_df["SCF uncertainty"],
+        plot_df["HolUE no calibration"],
+        c=plot_df["is_error"],
+        cmap="coolwarm",
+        s=20,
+        alpha=0.75,
+        linewidths=0,
+    )
+    plt.xlabel("SCF uncertainty: -log kappa")
+    plt.ylabel("HolUE no-calibration entropy")
+    plt.title("MNIST toy OSR: errors are high-HolUE-uncertainty probes")
+    cb = plt.colorbar()
+    cb.set_label("OSR error")
+    plt.grid(True, linestyle="--", alpha=0.35)
+    plt.tight_layout()
+    plt.savefig(figure_dir / "holue_vs_scf_error_scatter.png", dpi=300)
+    plt.savefig(figure_dir / "holue_vs_scf_error_scatter.pdf", dpi=300, bbox_inches="tight")
+    plt.close()
+
+    # Save a tiny markdown report.
+    report = f"""# Toy MNIST HolUE OSR experiment
+
+This directory was generated by `toy_mnist_holue.py`.
+
+## Protocol
+
+- Known MNIST classes: `{known_classes}`
+- Unknown MNIST classes: `{unknown_classes}`
+- OSR threshold selected on validation unknown probes.
+- Target validation FPIR: `{args.target_fpir}`
+- Selected cosine threshold tau: `{tau:.6f}`
+- Gallery posterior sharpness kappa: `{args.gallery_kappa}`
+
+## Test OSR metrics before filtering
+
+```json
+{json.dumps(test_base_metrics, indent=2)}
+```
+
+## Main files
+
+- `models/tiny_arcface_mnist_2d.pt`
+- `models/tiny_scf_mnist_2d.pt`
+- `protocols/mnist_open_set_protocol_indices.npz`
+- `results/method_summary.csv`
+- `results/rejection_curve_*.csv`
+- `figures/teaser_holue_mnist_circle.pdf`
+- `figures/rejection_curves.pdf`
+
+## Intended dissertation message
+
+The method `HolUE no calibration` uses no validation-set calibration for
+uncertainty. It is simply the entropy of the predictive posterior
+
+`p(c|x) = ∫ p(c|z) p(z|x) dz`
+
+computed exactly by deterministic quadrature on the 2D unit circle. The
+validation-calibrated variant is included only as an extra comparison.
+"""
+
+    with open(out_dir / "README_toy_results.md", "w", encoding="utf-8") as f:
+        f.write(report)
+
+    with open(out_dir / "run_config.json", "w", encoding="utf-8") as f:
+        json.dump(vars(args), f, indent=2)
+
+    print("\nDone.")
+    print(f"All outputs saved to: {out_dir.resolve()}")
+    print(f"Main summary:         {(result_dir / 'method_summary.csv').resolve()}")
+    print(f"Teaser figure:        {(figure_dir / 'teaser_holue_mnist_circle.pdf').resolve()}")
+
+
+if __name__ == "__main__":
+    main()

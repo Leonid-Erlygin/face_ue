@@ -64,7 +64,7 @@ class Recognition_test:
         # pool templates
 
         if self.task_type == "open_set_identification":
-            self.pool_templates_osfr(cache_dir="/app/cache/template_cache_new")
+            self.pool_templates_osfr(cache_dir="/app/cache/template_cache_new_v2")
         elif self.task_type == "verification":
             self.pool_templates_verification(
                 cache_dir="/app/cache/template_cache_verif"

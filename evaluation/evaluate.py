@@ -9,6 +9,7 @@ from hydra.utils import instantiate
 import numpy as np
 from itertools import product
 from evaluation.recognition_test import Recognition_test
+from evaluation.reproducibility import seed_everything
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -102,6 +103,10 @@ def multiply_methods(cfg, methods, method_task_type):
     version_base="1.2",
 )
 def main(cfg):
+    seed_everything(
+      seed=int(cfg.get("seed", 777)),
+      deterministic=bool(cfg.get("deterministic", True)),
+  )
     # 0. Define methods
     methods, method_task_type = init_methods(cfg)
     tasks_names = list(set(method_task_type))

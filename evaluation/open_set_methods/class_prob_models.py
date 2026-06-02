@@ -15,7 +15,13 @@ from evaluation.confidence_functions import MaxSimilarity_confidence
 from evaluation.open_set_methods.uncertainty_functions import BernoulliVariance
 from evaluation.open_set_methods.calibration_utils import prepare_calibration_dataset
 from pathlib import Path
-
+import torch.nn.functional as F
+from evaluation.open_set_methods.kappa_utils import (
+    threshold_at_far,
+    solve_kappa_for_tau,
+    log_uniform_density,
+    vmf_log_normalizer_np,
+)
 
 class GalleryMeans(torch.nn.Module):
     def __init__(self, init_means, device):
@@ -106,6 +112,9 @@ class MonteCarloPredictiveProb:
         emb_unc_model -- form of p(z|x)
         """
         self.M = M
+        if not (0.0 < beta < 1.0):
+            raise ValueError(f"beta must be in (0, 1), got {beta}")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.gallery_kappa = gallery_kappa
         self.kappa_scale = kappa_scale
         self.kappa_input_scale = kappa_input_scale
@@ -116,7 +125,7 @@ class MonteCarloPredictiveProb:
         if self.train_predict_T:
             # Learnable scalar. float64 matches the rest of the function.
             self.predict_T = torch.nn.Parameter(
-                torch.tensor(float(predict_T), dtype=torch.float64, device="cuda:0"),
+                torch.tensor(float(predict_T), dtype=torch.float64, device=self.device),
                 requires_grad=True,
             )
         else:
@@ -172,37 +181,31 @@ class MonteCarloPredictiveProb:
                 probe_unique_ids,
                 dataset_name,
             )
-        probe_unc_scaled = probe_unc * self.kappa_input_scale
         dtype = np.float64
         probe_feats = probe_feats.astype(dtype)
         probe_unc = probe_unc.astype(dtype)
+        probe_unc_scaled = probe_unc * self.kappa_input_scale
         gallery_feats = gallery_feats.astype(dtype)
         gallery_unc = gallery_unc.astype(dtype)
         self.g_unique_ids = g_unique_ids
         self.probe_unique_ids = probe_unique_ids
         self.dataset_name = dataset_name
         if g_unique_ids is not None and self.gallery_kappa == None:
-            # find kappa
             is_seen = np.isin(probe_unique_ids, g_unique_ids)
-            kappa_low = 300
-            kappa_high = 1000000
-            max_iter = 50
-            eps = 0.0005
-            far_loss_func = FarLossCalc(
-                probe_feats,
-                probe_unc_scaled,
-                gallery_feats,
-                gallery_unc,
-                self.predict_T,
-                self.far,
-                is_seen,
-                self,
-                verbose=True,
-            )
-            self.gallery_kappa = golden_selection_search(
-                kappa_high, kappa_low, eps, max_iter, far_loss_func
-            )
+            max_scores = np.max(probe_feats @ gallery_feats.T, axis=1)
+            tau = threshold_at_far(max_scores[~is_seen], self.far)
+            self.gallery_kappa = solve_kappa_for_tau(
+                tau=tau,
+                beta=self.beta,
+                K=gallery_feats.shape[0],
+                d=probe_feats.shape[1],
+                class_model=self.gallery_prior,
+             )
             print(f"Found kappa {np.round(self.gallery_kappa,4)} for far {self.far}")
+            print(
+                f"Found deterministic kappa={self.gallery_kappa:.4f} "
+                f"for FPIR={self.far}, tau={tau:.6f}"
+            )
 
         gallery_unc_scaled = np.ones_like(gallery_unc) * self.gallery_kappa
 
@@ -249,29 +252,23 @@ class MonteCarloPredictiveProb:
             gallery_unc_calib = self.gallery_pooled_templates_calib["g1"][
                 "template_pooled_data_unc"
             ]
-            kappa_low = 200
-            kappa_high = 1000000
-            max_iter = 50
-            eps = 0.0005
+
             probe_unc_calib_scaled = probe_unc_calib * self.kappa_input_scale
 
-            far_loss_func_calib = FarLossCalc(
-                probe_feats_calib,
-                probe_unc_calib_scaled,
-                gallery_feats_calib,
-                gallery_unc_calib,
-                self.predict_T,
-                self.far,
-                is_seen_calib,
-                self,
-                verbose=True,
+            
+            calib_scores = np.max(probe_feats_calib @ gallery_feats_calib.T, axis=1)
+            tau_calib = threshold_at_far(calib_scores[~is_seen_calib], self.far)
+            calibratation_set_kappa = solve_kappa_for_tau(
+                tau=tau_calib,
+                beta=self.beta,
+                K=gallery_feats_calib.shape[0],
+                d=probe_feats_calib.shape[1],
+                class_model=self.gallery_prior,
+                    )
+            print(
+                f"Found deterministic calibration kappa={calibratation_set_kappa:.4f} "
+                f"for FPIR={self.far}, tau={tau_calib:.6f}"
             )
-
-            calibratation_set_kappa = golden_selection_search(
-                kappa_high, kappa_low, eps, max_iter, far_loss_func_calib, verbose=False
-            )
-            # print("hard coded kappa val!")
-            # calibratation_set_kappa = self.gallery_kappa
             gallery_unc_scaled_calib = (
                 np.ones_like(gallery_unc_calib) * calibratation_set_kappa
             )
@@ -413,161 +410,143 @@ class MonteCarloPredictiveProb:
         self,
         mean: np.ndarray,
         kappa: np.ndarray,
-        gallery_means,  # np.ndarray or torch.Tensor
-        gallery_kappas,  # np.ndarray or torch.Tensor
-        T,  # float OR torch.Tensor (possibly requires_grad)
+        gallery_means,
+        gallery_kappas,
+        T,
     ) -> Any:
-        gallery_kappas_np = (
-            gallery_kappas
-            if isinstance(gallery_kappas, np.ndarray)
-            else gallery_kappas.detach().cpu().numpy()
+        """
+        Stable log-space computation of:
+          mean_gallery_probs, KL_1, KL_2
+
+        Works for M=0 deterministic HolUE and for MC samples.
+        """
+        dtype = torch.float64
+        device = self.device
+
+        mean_np = np.asarray(mean, dtype=np.float64)
+        kappa_np = np.asarray(kappa, dtype=np.float64)
+
+        gallery_means_t = (
+            gallery_means.to(device=device, dtype=dtype)
+            if torch.is_tensor(gallery_means)
+            else torch.as_tensor(gallery_means, device=device, dtype=dtype)
+        )
+        gallery_kappas_t = (
+            gallery_kappas.to(device=device, dtype=dtype)
+            if torch.is_tensor(gallery_kappas)
+            else torch.as_tensor(gallery_kappas, device=device, dtype=dtype)
         )
 
-        cuda = torch.device("cuda:0")
-        if isinstance(gallery_means, np.ndarray):
-            gallery_means = torch.tensor(gallery_means, device=cuda)
-        if isinstance(gallery_kappas, np.ndarray):
-            gallery_kappas = torch.tensor(gallery_kappas, device=cuda)
-        # Ensure T is a tensor on the right device/dtype (lets `1/T` etc. stay differentiable).
         if not torch.is_tensor(T):
-            T = torch.tensor(
-                float(T), dtype=gallery_means.dtype, device=gallery_means.device
-            )
+            T = torch.tensor(float(T), device=device, dtype=dtype)
         else:
-            T = T.to(dtype=gallery_means.dtype, device=gallery_means.device)
+            T = T.to(device=device, dtype=dtype)
 
+        T = torch.clamp(T, min=1e-6)
         inv_T = 1.0 / T
 
-        self.K = gallery_means.shape[0]
-        zs = torch.tensor(self.sampler(mean, kappa), device=gallery_means.device)
-        d_np = mean.shape[-1]
-        d = torch.tensor([d_np], device=gallery_means.device, dtype=gallery_means.dtype)
+        K = gallery_means_t.shape[0]
+        d_int = int(mean_np.shape[-1])
+        d = torch.tensor(float(d_int), device=device, dtype=dtype)
 
-        # --- 1. Similarities -------------------------------------------------
-        similarities = torch.matmul(zs, gallery_means.T)  # (N, M, K)
+        self.K = K
 
-        log_uniform_dencity = (
-            torch.special.gammaln(d / 2) - np.log(2) - (d / 2) * np.log(np.pi)
+        # Sample or use mean embedding.
+        zs_np = self.sampler(mean_np, kappa_np)
+        zs = torch.as_tensor(zs_np, device=device, dtype=dtype)
+
+        # Defensive normalization.
+        zs = F.normalize(zs, p=2.0, dim=-1)
+        gallery_means_t = F.normalize(gallery_means_t, p=2.0, dim=-1)
+
+        similarities = torch.matmul(zs, gallery_means_t.T)
+        similarities = torch.clamp(similarities, -1.0 + 1e-9, 1.0 - 1e-9)
+
+        log_uniform = torch.tensor(
+            log_uniform_density(d_int), device=device, dtype=dtype
+        )
+        log_beta = torch.tensor(np.log(self.beta), device=device, dtype=dtype)
+        log_gallery_prior = torch.tensor(
+            np.log((1.0 - self.beta) / K), device=device, dtype=dtype
         )
 
-        # --- 2. Prior constants (do NOT depend on T, kept in numpy) ---------
+        gk = gallery_kappas_t.reshape(-1).clamp_min(1e-12)
+
         if self.gallery_prior == "power":
-            log_m_c = (
-                torch.special.gammaln(d - 1 + gallery_kappas)
-                + torch.special.gammaln(d / 2 + gallery_kappas)
-                + gallery_kappas * np.log(2)
-                - torch.special.gammaln(d / 2)
-                - torch.special.gammaln(d - 1 + 2 * gallery_kappas)
+            log_norm = (
+                torch.lgamma(d - 1.0 + gk)
+                + torch.lgamma(d / 2.0 + gk)
+                + (gk - 1.0) * np.log(2.0)
+                - (d / 2.0) * np.log(np.pi)
+                - torch.lgamma(d - 1.0 + 2.0 * gk)
             )
-            log_normalizer = log_m_c + log_uniform_dencity
-            pz_c_no_norm_log = torch.log(similarities + 1) * (
-                gallery_kappas[..., :, 0] * inv_T
-            )
+            log_kernel = gk[None, None, :] * torch.log1p(similarities)
+
         elif self.gallery_prior == "vMF":
-            log_iv = (
-                np.log(ive(d_np / 2 - 1, gallery_kappas_np, dtype=np.float64))
-                + gallery_kappas_np
+            log_norm_np = vmf_log_normalizer_np(
+                gk.detach().cpu().numpy(), d=d_int
             )
-            log_m_c_np = -np.log(
-                hyp0f1(d_np / 2, gallery_kappas_np**2 / 4, dtype=np.float64)
-            )
-            log_normalizer_np = (
-                (d_np / 2 - 1) * np.log(gallery_kappas_np)
-                - d_np / 2 * np.log(2 * np.pi)
-                - log_iv
-            )
-            log_m_c = torch.tensor(log_m_c_np, device=cuda)
-            log_normalizer = torch.tensor(log_normalizer_np, device=cuda)
-            pz_c_no_norm_log = similarities * (gallery_kappas[..., :, 0] * inv_T)
+            log_norm = torch.as_tensor(log_norm_np, device=device, dtype=dtype)
+            log_kernel = gk[None, None, :] * similarities
+
         else:
-            raise ValueError
+            raise ValueError(f"Unknown gallery_prior={self.gallery_prior}")
 
-        # --- 3. log p(z) (temperature-scaled marginal) ----------------------
-        p_c = ((1 - self.beta) / self.K) ** inv_T  # tensor if T tensor
-        beta_T = self.beta**inv_T  # tensor if T tensor
+        # Temperature-scaled unnormalized log posterior terms.
+        log_gallery_terms = inv_T * (
+            log_norm[None, None, :] + log_kernel + log_gallery_prior
+        )
+        log_oog_term = inv_T * (log_uniform + log_beta)
 
-        logit = pz_c_no_norm_log + log_m_c[..., :, 0] * inv_T
-        logit_exp = torch.exp(logit)
-        logit_sum = torch.sum(logit_exp, dim=-1) * p_c  # (N, M)
-
-        log_p_c_T = inv_T * np.log((1.0 - self.beta) / self.K)
-        log_beta_T = inv_T * np.log(self.beta)
-
-        log_gallery_terms = pz_c_no_norm_log + log_m_c[..., :, 0] * inv_T + log_p_c_T
         log_gallery_sum = torch.logsumexp(log_gallery_terms, dim=-1)
+        log_den = torch.logaddexp(log_gallery_sum, log_oog_term)
 
-        log_z_prob = inv_T * log_uniform_dencity + torch.logaddexp(
-            log_gallery_sum,
-            torch.as_tensor(
-                log_beta_T, dtype=log_gallery_sum.dtype, device=log_gallery_sum.device
-            ),
-        )
-        # --- 4. Gallery-class log-probs -------------------------------------
-        # Note: `similarities` may have been algebraically reused above, but since
-        # we never used `out=similarities`, it still holds zs @ gallery_means.T.
-        if self.gallery_prior == "power":
-            pz_c_no_norm_log2 = torch.log(similarities + 1) * (
-                gallery_kappas[..., :, 0] * inv_T
-            )
-        else:  # vMF
-            pz_c_no_norm_log2 = similarities * (gallery_kappas[..., :, 0] * inv_T)
-
-        pz_c_log = pz_c_no_norm_log2 + inv_T * log_normalizer[..., :, 0]
-
-        gallery_log_probs = (
-            pz_c_log + inv_T * np.log((1 - self.beta) / self.K) - log_z_prob[..., None]
-        )
+        gallery_log_probs = log_gallery_terms - log_den[..., None]
         gallery_probs = torch.exp(gallery_log_probs)
-        mean_gallery_probs = torch.mean(gallery_probs, dim=1)  # (N, K)
+        mean_gallery_probs = torch.mean(gallery_probs, dim=1)
 
-        # --- 5. KL_1 ---------------------------------------------------------
-        # log p_c = (1/T) * log((1 - beta)/K)— differentiable in T
-        log_p_c = torch.as_tensor(
-            np.log((1.0 - self.beta) / self.K),
-            dtype=mean_gallery_probs.dtype,
-            device=mean_gallery_probs.device,
-        )
+        # KL_1 = sum p_T(c|x) log(p_T(c|x) / p(c))
+        p_safe = mean_gallery_probs.clamp_min(1e-300)
         kl_1 = torch.sum(
-            torch.xlogy(mean_gallery_probs, mean_gallery_probs)
-            - mean_gallery_probs * log_p_c,
+            mean_gallery_probs * (torch.log(p_safe) - log_gallery_prior),
             dim=1,
         )
 
-        # --- 6. KL_2 ---------------------------------------------------------
-        if self.emb_unc_model == "vMF":
-            d_scalar = d_np
-            log_iv_x = (
-                np.log(ive(d_scalar / 2 - 1, kappa[:, 0], dtype=np.float64))
-                + kappa[:, 0]
-            )
-            log_normalizer_x = (
-                (d_scalar / 2 - 1) * np.log(kappa[:, 0])
-                - (d_scalar / 2) * np.log(2 * np.pi)
-                - log_iv_x
-            )
-            log_normalizer_x = torch.tensor(
-                log_normalizer_x, device=gallery_means.device
-            )
-            kappa_tensor = torch.tensor(kappa[:, 0], device=gallery_means.device)
-            mean_tensor = torch.tensor(mean, device=gallery_means.device)
+        # KL_2 for continuous OOG part.
+        if self.emb_unc_model != "vMF":
+            raise ValueError(f"Unsupported emb_unc_model={self.emb_unc_model}")
 
-            similarities_x = torch.sum(zs * mean_tensor[:, None, :], dim=2)  # (N, M)
-            log_p_z_given_x = (
-                log_normalizer_x[:, None] + kappa_tensor[:, None] * similarities_x
-            )
+        mean_t = torch.as_tensor(mean_np, device=device, dtype=dtype)
+        mean_t = F.normalize(mean_t, p=2.0, dim=-1)
 
-            p0 = beta_T / (logit_sum + beta_T)  # (N, M), differentiable in T
-            log_beta_over_S = np.log(self.beta) + log_uniform_dencity.item()
+        kappa_x_np = kappa_np[:, 0].astype(np.float64)
+        kappa_x_np = np.maximum(kappa_x_np, 1e-12)
+        log_norm_x_np = vmf_log_normalizer_np(kappa_x_np, d=d_int)
 
-            log_ratio = log_p_z_given_x - log_z_prob
-            log_arg = (inv_T - 1.0) * log_beta_over_S + log_ratio
+        kappa_x = torch.as_tensor(kappa_x_np, device=device, dtype=dtype)
+        log_norm_x = torch.as_tensor(log_norm_x_np, device=device, dtype=dtype)
 
-            kl_2 = torch.mean(p0 * log_arg, dim=1)
-        else:
-            raise ValueError
+        sim_x = torch.sum(zs * mean_t[:, None, :], dim=-1)
+        sim_x = torch.clamp(sim_x, -1.0 + 1e-9, 1.0 - 1e-9)
 
-        # Safety check — only trip on real NaNs (avoid breaking autograd with .numpy())
-        if torch.isnan(kl_1).any() or torch.isnan(kl_2).any():
-            raise ValueError("NaN in KL computation")
+        log_p_z_given_x = log_norm_x[:, None] + kappa_x[:, None] * sim_x
+
+        p0 = torch.exp(log_oog_term - log_den)
+
+        log_beta_over_sphere = log_beta + log_uniform
+        log_arg = (
+            (inv_T - 1.0) * log_beta_over_sphere
+            + log_p_z_given_x
+            - log_den
+        )
+
+        kl_2 = torch.mean(p0 * log_arg, dim=1)
+
+        if (
+            not torch.isfinite(mean_gallery_probs).all()
+            or not torch.isfinite(kl_1).all()
+            or not torch.isfinite(kl_2).all()
+        ):
+            raise FloatingPointError("Non-finite value in HolUE probability/KL computation.")
 
         return mean_gallery_probs, kl_1, kl_2

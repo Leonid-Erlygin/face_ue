@@ -7,6 +7,7 @@ from evaluation.open_set_methods.posterior_prob_based import (
     prepare_calibration_dataset,
     PosteriorProbability,
 )
+from evaluation.open_set_methods.kappa_utils import threshold_at_far
 from evaluation.metrics import FrrFarIdent
 from evaluation.distance_functions.open_set_identification import CosineSim
 from sklearn.metrics import roc_auc_score, average_precision_score
@@ -50,19 +51,8 @@ class SimilarityBasedPrediction(OpenSetMethod):
         assert self.calib_strategy in ["norm_val", "norm_test"]
     @staticmethod
     def _threshold_at_far(scores: np.ndarray, far: float) -> float:
-        scores = np.asarray(scores)
-        if scores.size == 0:
-            raise ValueError("Cannot compute FAR threshold: no out-of-gallery probes.")
-
-        if far <= 0:
-            return np.nextafter(scores.max(), np.inf)
-        if far >= 1:
-            return np.nextafter(scores.min(), -np.inf)
-
-        sorted_scores = np.sort(scores)
-        idx = int(np.ceil((1.0 - far) * scores.size))
-        idx = np.clip(idx, 0, scores.size - 1)
-        return sorted_scores[idx]
+        return threshold_at_far(scores, far)
+    
     def setup(
         self,
         probe_feats: np.ndarray,
@@ -164,9 +154,7 @@ class SimilarityBasedPrediction(OpenSetMethod):
                     raise ValueError(
                         "Calibration set contains no unseen probes for tau computation."
                     )
-                tau_calib = np.sort(ood_scores_calib)[
-                    int(ood_scores_calib.shape[0] * (1 - self.far))
-                ]
+                tau_calib = self._threshold_at_far(ood_scores_calib, self.far)
 
                 # 2. Run calibration with the correctly computed tau_calib
                 T_opt, info = self.calibrate_msp_temperature(

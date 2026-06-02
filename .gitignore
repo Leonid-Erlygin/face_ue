@@ -19,6 +19,7 @@ unsorted_data
 downloads_torrent
 combined.txt
 wandb
+toy_outputs
 # happy_whale
 *.bin
 *.pkl

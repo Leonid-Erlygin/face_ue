@@ -570,6 +570,7 @@ class NNcalibration:
         vis: bool = True,
         max_plot_points: int = 5000,
         grid_size: int = 300,
+        random_state: int = 777,
         # Backward-compatible legacy arguments for old configs that created
         # NNcalibration without a nested `model`.
         hidden_size: Optional[int] = None,
@@ -605,7 +606,18 @@ class NNcalibration:
         self.vis = vis
         self.max_plot_points = max_plot_points
         self.grid_size = grid_size
-
+        self.random_state = random_state
+        if self.random_state is not None:
+            np.random.seed(self.random_state)
+            torch.manual_seed(self.random_state)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(self.random_state)
+            # Hydra constructs nested model before this object. Reset here so
+            # calibration does not depend on previous methods/datasets.
+            def _reset(m):
+                if hasattr(m, "reset_parameters"):
+                    m.reset_parameters()
+            self.model.apply(_reset)
         self.val_ds_name = "unknown_val"
 
         if self.train_weight and (self.balanced_loss or self.weight_loss_types):

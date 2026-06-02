@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 from evaluation.embedding_utils import get_template_subsets
 
-CACHE_ROOT = Path("/app/cache/template_cache_new")
+CACHE_ROOT = Path("/app/cache/template_cache_new_v2")
 
 
 def prepare_calibration_dataset(calibration_set, embs_name):
