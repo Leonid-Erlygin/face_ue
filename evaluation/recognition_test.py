@@ -7,9 +7,6 @@ from .test_datasets import FaceRecogntionDataset
 from .embedding_utils import get_template_subsets
 
 
-
-
-
 class Recognition_test:
     def __init__(
         self,
@@ -72,6 +69,7 @@ class Recognition_test:
 
         assert self.image_input_feats.shape[0] == self.unc.shape[0]
         assert self.image_input_feats.shape[0] == self.test_dataset.medias.shape[0]
+
     def _decode_uncertainty(self, unc: np.ndarray) -> np.ndarray:
         name = self.embedding_type.lower()
 
@@ -89,6 +87,7 @@ class Recognition_test:
 
         # Safe default for older saved SCF/PFE-like files.
         return np.exp(unc)
+
     def pool_templates_verification(self, cache_dir: str):
         cache_dir = Path(cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)

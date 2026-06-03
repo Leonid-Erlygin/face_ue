@@ -23,6 +23,7 @@ from evaluation.open_set_methods.kappa_utils import (
     vmf_log_normalizer_np,
 )
 
+
 class GalleryMeans(torch.nn.Module):
     def __init__(self, init_means, device):
         super(GalleryMeans, self).__init__()
@@ -200,7 +201,7 @@ class MonteCarloPredictiveProb:
                 K=gallery_feats.shape[0],
                 d=probe_feats.shape[1],
                 class_model=self.gallery_prior,
-             )
+            )
             print(f"Found kappa {np.round(self.gallery_kappa,4)} for far {self.far}")
             print(
                 f"Found deterministic kappa={self.gallery_kappa:.4f} "
@@ -255,7 +256,6 @@ class MonteCarloPredictiveProb:
 
             probe_unc_calib_scaled = probe_unc_calib * self.kappa_input_scale
 
-            
             calib_scores = np.max(probe_feats_calib @ gallery_feats_calib.T, axis=1)
             tau_calib = threshold_at_far(calib_scores[~is_seen_calib], self.far)
             calibratation_set_kappa = solve_kappa_for_tau(
@@ -264,7 +264,7 @@ class MonteCarloPredictiveProb:
                 K=gallery_feats_calib.shape[0],
                 d=probe_feats_calib.shape[1],
                 class_model=self.gallery_prior,
-                    )
+            )
             print(
                 f"Found deterministic calibration kappa={calibratation_set_kappa:.4f} "
                 f"for FPIR={self.far}, tau={tau_calib:.6f}"
@@ -483,9 +483,7 @@ class MonteCarloPredictiveProb:
             log_kernel = gk[None, None, :] * torch.log1p(similarities)
 
         elif self.gallery_prior == "vMF":
-            log_norm_np = vmf_log_normalizer_np(
-                gk.detach().cpu().numpy(), d=d_int
-            )
+            log_norm_np = vmf_log_normalizer_np(gk.detach().cpu().numpy(), d=d_int)
             log_norm = torch.as_tensor(log_norm_np, device=device, dtype=dtype)
             log_kernel = gk[None, None, :] * similarities
 
@@ -534,11 +532,7 @@ class MonteCarloPredictiveProb:
         p0 = torch.exp(log_oog_term - log_den)
 
         log_beta_over_sphere = log_beta + log_uniform
-        log_arg = (
-            (inv_T - 1.0) * log_beta_over_sphere
-            + log_p_z_given_x
-            - log_den
-        )
+        log_arg = (inv_T - 1.0) * log_beta_over_sphere + log_p_z_given_x - log_den
 
         kl_2 = torch.mean(p0 * log_arg, dim=1)
 
@@ -547,6 +541,8 @@ class MonteCarloPredictiveProb:
             or not torch.isfinite(kl_1).all()
             or not torch.isfinite(kl_2).all()
         ):
-            raise FloatingPointError("Non-finite value in HolUE probability/KL computation.")
+            raise FloatingPointError(
+                "Non-finite value in HolUE probability/KL computation."
+            )
 
         return mean_gallery_probs, kl_1, kl_2

@@ -15,8 +15,6 @@ from scipy.special import softmax
 from typing import Tuple
 
 
-
-
 class SimilarityBasedPrediction(OpenSetMethod):
     def __init__(
         self,
@@ -49,10 +47,11 @@ class SimilarityBasedPrediction(OpenSetMethod):
             return
         self.calib_strategy = calib_strategy
         assert self.calib_strategy in ["norm_val", "norm_test"]
+
     @staticmethod
     def _threshold_at_far(scores: np.ndarray, far: float) -> float:
         return threshold_at_far(scores, far)
-    
+
     def setup(
         self,
         probe_feats: np.ndarray,

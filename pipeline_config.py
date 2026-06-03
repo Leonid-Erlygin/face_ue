@@ -86,7 +86,9 @@ def parse_scalar(value: str) -> Any:
         return value
 
 
-def set_plain_dotted(container: Union[Dict[str, Any], List[Any]], dotted: str, value: Any) -> None:
+def set_plain_dotted(
+    container: Union[Dict[str, Any], List[Any]], dotted: str, value: Any
+) -> None:
     """Set key like 'vars.dataset_root=/data' in a plain dict/list config."""
     parts = dotted.split(".")
     cur: Any = container
@@ -282,7 +284,9 @@ def merged_env(cfg: Mapping[str, Any], stage: Mapping[str, Any]) -> Dict[str, st
     return env
 
 
-def run_command_stage(stage: Mapping[str, Any], cfg: Mapping[str, Any], log_path: Path) -> None:
+def run_command_stage(
+    stage: Mapping[str, Any], cfg: Mapping[str, Any], log_path: Path
+) -> None:
     command = stage.get("command")
     if command is None:
         raise PipelineError(f"Stage '{stage['name']}' has no command.")
@@ -340,7 +344,9 @@ def run_command_stage(stage: Mapping[str, Any], cfg: Mapping[str, Any], log_path
         log_f.flush()
 
     if ret != 0:
-        raise PipelineError(f"Command stage '{stage['name']}' failed with return code {ret}.")
+        raise PipelineError(
+            f"Command stage '{stage['name']}' failed with return code {ret}."
+        )
 
 
 def run_check_paths_stage(stage: Mapping[str, Any], cfg: Mapping[str, Any]) -> None:
@@ -362,7 +368,9 @@ def run_check_paths_stage(stage: Mapping[str, Any], cfg: Mapping[str, Any]) -> N
 
     if missing_required:
         msg = "\n".join(f"  - {p}" for p in missing_required)
-        raise FileNotFoundError(f"Required paths are missing for stage '{stage['name']}':\n{msg}")
+        raise FileNotFoundError(
+            f"Required paths are missing for stage '{stage['name']}':\n{msg}"
+        )
 
     print(f"[{stage['name']}] All required paths exist.")
 
@@ -396,7 +404,11 @@ def run_collect_csvs_stage(stage: Mapping[str, Any], cfg: Mapping[str, Any]) -> 
     project_root = Path(cfg["project_root"])
 
     for pattern in patterns:
-        pat = str(as_path(pattern, cfg["project_root"])) if not Path(str(pattern)).is_absolute() else str(pattern)
+        pat = (
+            str(as_path(pattern, cfg["project_root"]))
+            if not Path(str(pattern)).is_absolute()
+            else str(pattern)
+        )
         for src_str in glob.glob(pat, recursive=True):
             src = Path(src_str)
             if not src.is_file():
@@ -446,7 +458,9 @@ def set_omegaconf_dotted(cfg: Any, dotted: str, value: Any) -> None:
         cur[last] = value
 
 
-def find_lightning_last_checkpoint(trainer: Any, cfg_obj: Any, project_root: Union[str, Path]) -> Optional[Path]:
+def find_lightning_last_checkpoint(
+    trainer: Any, cfg_obj: Any, project_root: Union[str, Path]
+) -> Optional[Path]:
     candidates: List[Path] = []
 
     for cb in getattr(trainer, "callbacks", []) or []:
@@ -516,11 +530,15 @@ def run_lightning_stage(stage: Mapping[str, Any], cfg: Mapping[str, Any]) -> Non
         if not weights_path.is_file():
             raise FileNotFoundError(f"weights_path does not exist: {weights_path}")
 
-        checkpoint = torch.load(str(weights_path), map_location="cpu", weights_only=False)
+        checkpoint = torch.load(
+            str(weights_path), map_location="cpu", weights_only=False
+        )
         state_dict = checkpoint.get("state_dict", checkpoint)
         strict = bool(stage.get("strict_load", True))
         model.load_state_dict(state_dict, strict=strict)
-        print(f"[{stage['name']}] Loaded weights from {weights_path} with strict={strict}")
+        print(
+            f"[{stage['name']}] Loaded weights from {weights_path} with strict={strict}"
+        )
 
     datamodule = instantiate(pl_cfg.data)
     mode = str(pl_cfg.mode)
@@ -530,7 +548,9 @@ def run_lightning_stage(stage: Mapping[str, Any], cfg: Mapping[str, Any]) -> Non
         if resume_ckpt:
             resume_ckpt = as_path(resume_ckpt, cfg["project_root"])
         else:
-            resume_ckpt = find_lightning_last_checkpoint(trainer, pl_cfg, cfg["project_root"])
+            resume_ckpt = find_lightning_last_checkpoint(
+                trainer, pl_cfg, cfg["project_root"]
+            )
 
         if bool(stage.get("resume", True)) and resume_ckpt and resume_ckpt.is_file():
             print(f"[{stage['name']}] Resuming Lightning training from {resume_ckpt}")
@@ -546,7 +566,9 @@ def run_lightning_stage(stage: Mapping[str, Any], cfg: Mapping[str, Any]) -> Non
         raise PipelineError(f"Unknown Lightning mode: {mode}")
 
 
-def run_stage_payload(stage: Mapping[str, Any], cfg: Mapping[str, Any], log_path: Path) -> None:
+def run_stage_payload(
+    stage: Mapping[str, Any], cfg: Mapping[str, Any], log_path: Path
+) -> None:
     stage_type = stage.get("type", "command")
 
     if stage_type == "command":
@@ -560,7 +582,9 @@ def run_stage_payload(stage: Mapping[str, Any], cfg: Mapping[str, Any], log_path
     elif stage_type == "lightning":
         run_lightning_stage(stage, cfg)
     else:
-        raise PipelineError(f"Unsupported stage type '{stage_type}' in stage '{stage['name']}'.")
+        raise PipelineError(
+            f"Unsupported stage type '{stage_type}' in stage '{stage['name']}'."
+        )
 
 
 # ---------------------------------------------------------------------
@@ -678,7 +702,9 @@ def run_one_stage(
             missing = missing_paths(outputs, cfg["project_root"])
             if missing:
                 msg = "\n".join(f"  - {p}" for p in missing)
-                raise PipelineError(f"Stage '{name}' finished but outputs are missing:\n{msg}")
+                raise PipelineError(
+                    f"Stage '{name}' finished but outputs are missing:\n{msg}"
+                )
 
         elapsed = time.time() - started
         write_marker(
@@ -686,7 +712,9 @@ def run_one_stage(
             {
                 "stage": name,
                 "status": "complete",
-                "started_at": _dt.datetime.fromtimestamp(started).isoformat(timespec="seconds"),
+                "started_at": _dt.datetime.fromtimestamp(started).isoformat(
+                    timespec="seconds"
+                ),
                 "finished_at": now_iso(),
                 "duration_sec": round(elapsed, 3),
                 "log_path": str(log_path),
@@ -704,7 +732,9 @@ def run_one_stage(
             {
                 "stage": name,
                 "status": "failed",
-                "started_at": _dt.datetime.fromtimestamp(started).isoformat(timespec="seconds"),
+                "started_at": _dt.datetime.fromtimestamp(started).isoformat(
+                    timespec="seconds"
+                ),
                 "failed_at": now_iso(),
                 "duration_sec": round(elapsed, 3),
                 "log_path": str(log_path),
@@ -718,19 +748,31 @@ def run_one_stage(
         raise
 
 
-def print_stage_list(stages: Sequence[Mapping[str, Any]], cfg: Mapping[str, Any]) -> None:
+def print_stage_list(
+    stages: Sequence[Mapping[str, Any]], cfg: Mapping[str, Any]
+) -> None:
     print("Enabled stages:")
     for i, st in enumerate(stages):
         status = "complete" if stage_is_complete(st, cfg) else "pending"
-        print(f"{i:02d}. {st['name']:<35} type={st.get('type', 'command'):<12} status={status}")
+        print(
+            f"{i:02d}. {st['name']:<35} type={st.get('type', 'command'):<12} status={status}"
+        )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="pipeline_config.yaml", help="Pipeline YAML file.")
-    parser.add_argument("--list", action="store_true", help="List enabled stages and exit.")
-    parser.add_argument("--dry-run", action="store_true", help="Print stages without executing.")
-    parser.add_argument("--force", action="store_true", help="Rerun all selected stages.")
+    parser.add_argument(
+        "--config", default="pipeline_config.yaml", help="Pipeline YAML file."
+    )
+    parser.add_argument(
+        "--list", action="store_true", help="List enabled stages and exit."
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print stages without executing."
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="Rerun all selected stages."
+    )
     parser.add_argument(
         "--force-stage",
         action="append",
@@ -761,15 +803,22 @@ def main() -> None:
 
     for assignment in args.set:
         if "=" not in assignment:
-            raise PipelineError(f"Bad --set override '{assignment}', expected KEY=VALUE.")
+            raise PipelineError(
+                f"Bad --set override '{assignment}', expected KEY=VALUE."
+            )
         key, value = assignment.split("=", 1)
         set_plain_dotted(raw_cfg, key, parse_scalar(value))
 
     ctx = build_context(raw_cfg, config_path)
     cfg = render_placeholders(raw_cfg, ctx)
     cfg["project_root"] = ctx["project_root"]
-    cfg["checkpoint_dir"] = cfg.get("checkpoint_dir", str(Path(ctx["project_root"]) / "outputs/pipeline/checkpoints"))
-    cfg["log_dir"] = cfg.get("log_dir", str(Path(ctx["project_root"]) / "outputs/pipeline/logs"))
+    cfg["checkpoint_dir"] = cfg.get(
+        "checkpoint_dir",
+        str(Path(ctx["project_root"]) / "outputs/pipeline/checkpoints"),
+    )
+    cfg["log_dir"] = cfg.get(
+        "log_dir", str(Path(ctx["project_root"]) / "outputs/pipeline/logs")
+    )
 
     Path(cfg["checkpoint_dir"]).mkdir(parents=True, exist_ok=True)
     Path(cfg["log_dir"]).mkdir(parents=True, exist_ok=True)

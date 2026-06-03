@@ -104,9 +104,9 @@ def multiply_methods(cfg, methods, method_task_type):
 )
 def main(cfg):
     seed_everything(
-      seed=int(cfg.get("seed", 777)),
-      deterministic=bool(cfg.get("deterministic", True)),
-  )
+        seed=int(cfg.get("seed", 777)),
+        deterministic=bool(cfg.get("deterministic", True)),
+    )
     # 0. Define methods
     methods, method_task_type = init_methods(cfg)
     tasks_names = list(set(method_task_type))
@@ -283,12 +283,16 @@ def main(cfg):
                     "uncertainty"
                 ].items():
                     if "random" in pretty_names[task_type][method_name]:
-                        random_area = np.trapezoid(metrics[metric_name], metrics["fractions"])
+                        random_area = np.trapezoid(
+                            metrics[metric_name], metrics["fractions"]
+                        )
                         far_to_random_oracle_areas[far][0] = random_area
                         if cfg.display_oracle_curve is False:
                             continue
                     elif "oracle" in pretty_names[task_type][method_name]:
-                        oracle_area = np.trapezoid(metrics[metric_name], metrics["fractions"])
+                        oracle_area = np.trapezoid(
+                            metrics[metric_name], metrics["fractions"]
+                        )
                         far_to_random_oracle_areas[far][1] = oracle_area
                         if cfg.display_oracle_curve is False:
                             continue
@@ -360,12 +364,16 @@ def main(cfg):
                 "uncertainty"
             ].items():
                 if "Random" in pretty_names[task_type][method_name]:
-                    random_area = np.trapezoid(metrics[metric_name], metrics["fractions"])
+                    random_area = np.trapezoid(
+                        metrics[metric_name], metrics["fractions"]
+                    )
                     far_to_random_oracle_areas[far][0] = random_area
                     if cfg.display_oracle_curve is False:
                         continue
                 elif "Oracle" in pretty_names[task_type][method_name]:
-                    oracle_area = np.trapezoid(metrics[metric_name], metrics["fractions"])
+                    oracle_area = np.trapezoid(
+                        metrics[metric_name], metrics["fractions"]
+                    )
                     far_to_random_oracle_areas[far][1] = oracle_area
                     if cfg.display_oracle_curve is False:
                         continue

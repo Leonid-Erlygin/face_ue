@@ -102,9 +102,7 @@ def _true_prediction_labels_from_error_calc(error_calc: Any) -> np.ndarray:
     n = is_seen.shape[0]
 
     true_pred_label = np.zeros(n, dtype=bool)
-    true_pred_label[is_seen] = np.asarray(
-        error_calc.true_accept_true_ident, dtype=bool
-    )
+    true_pred_label[is_seen] = np.asarray(error_calc.true_accept_true_ident, dtype=bool)
     true_pred_label[~is_seen] = np.asarray(error_calc.true_reject, dtype=bool)
 
     return true_pred_label
@@ -159,7 +157,9 @@ def _subset_masks(
     return {key: value[indices] for key, value in masks.items()}
 
 
-def _mean_if_nonempty(values: torch.Tensor, mask: torch.Tensor) -> Optional[torch.Tensor]:
+def _mean_if_nonempty(
+    values: torch.Tensor, mask: torch.Tensor
+) -> Optional[torch.Tensor]:
     if bool(mask.any()):
         return values[mask].mean()
     return None
@@ -207,7 +207,9 @@ class BoostingCalibration:
     ) -> None:
         from sklearn.ensemble import GradientBoostingClassifier
 
-        x = np.stack([np.asarray(kl_1).reshape(-1), np.asarray(kl_2).reshape(-1)], axis=1)
+        x = np.stack(
+            [np.asarray(kl_1).reshape(-1), np.asarray(kl_2).reshape(-1)], axis=1
+        )
         y = np.asarray(true_pred_label).astype(bool)
 
         self.x_mean_val = x.mean(axis=0)
@@ -236,7 +238,9 @@ class BoostingCalibration:
         if self.clf is None:
             raise RuntimeError("BoostingCalibration must be trained before use.")
 
-        x = np.stack([np.asarray(kl_1).reshape(-1), np.asarray(kl_2).reshape(-1)], axis=1)
+        x = np.stack(
+            [np.asarray(kl_1).reshape(-1), np.asarray(kl_2).reshape(-1)], axis=1
+        )
 
         if self.normalize_kl_by_test:
             x_mean = x.mean(axis=0)
@@ -253,7 +257,9 @@ class BoostingCalibration:
         p_correct = self.clf.predict_proba(x_norm)[:, 1]
         return -p_correct
 
-    def draw_density_plot(self, x_norm: np.ndarray, y: np.ndarray, image_name: str) -> None:
+    def draw_density_plot(
+        self, x_norm: np.ndarray, y: np.ndarray, image_name: str
+    ) -> None:
         if self.log_dir is None or self.clf is None:
             return
 
@@ -292,7 +298,9 @@ class BoostingCalibration:
         plt.close(fig)
 
     # Backward-compatible typo alias.
-    def draw_dencity_plot(self, x_norm: np.ndarray, y: np.ndarray, image_name: str) -> None:
+    def draw_dencity_plot(
+        self, x_norm: np.ndarray, y: np.ndarray, image_name: str
+    ) -> None:
         self.draw_density_plot(x_norm, y, image_name)
 
 
@@ -612,11 +620,13 @@ class NNcalibration:
             torch.manual_seed(self.random_state)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(self.random_state)
+
             # Hydra constructs nested model before this object. Reset here so
             # calibration does not depend on previous methods/datasets.
             def _reset(m):
                 if hasattr(m, "reset_parameters"):
                     m.reset_parameters()
+
             self.model.apply(_reset)
         self.val_ds_name = "unknown_val"
 
@@ -712,7 +722,9 @@ class NNcalibration:
             components = []
 
             correct_loss = _mean_if_nonempty(loss_elementwise, masks["correct"])
-            false_accept_loss = _mean_if_nonempty(loss_elementwise, masks["false_accept"])
+            false_accept_loss = _mean_if_nonempty(
+                loss_elementwise, masks["false_accept"]
+            )
             false_reject_or_ident_loss = _mean_if_nonempty(
                 loss_elementwise,
                 masks["false_reject_or_ident"],
@@ -804,7 +816,9 @@ class NNcalibration:
         x_norm = self._fit_normalization(x)
 
         y_np = _true_prediction_labels_from_error_calc(error_calc)
-        y = torch.tensor(y_np.astype(np.float32), dtype=torch.float32, device=self.device)
+        y = torch.tensor(
+            y_np.astype(np.float32), dtype=torch.float32, device=self.device
+        )
 
         masks_np = _error_group_masks_from_error_calc(error_calc)
         masks = _to_torch_masks(masks_np, self.device)
@@ -812,11 +826,7 @@ class NNcalibration:
         loss_fn = self._loss_fn()
 
         legacy_weight_param = None
-        if (
-            self.train_weight
-            and not self.balanced_loss
-            and not self.weight_loss_types
-        ):
+        if self.train_weight and not self.balanced_loss and not self.weight_loss_types:
             init_weight = 0.5 if self.weight is None else float(self.weight)
             legacy_weight_param = torch.nn.Parameter(
                 torch.tensor(init_weight, dtype=torch.float32, device=self.device),
@@ -909,7 +919,9 @@ class NNcalibration:
         self.val_ds_name = str(dataset_name)
 
         y_np = _true_prediction_labels_from_error_calc(error_calc)
-        y = torch.tensor(y_np.astype(np.float32), dtype=torch.float32, device=self.device)
+        y = torch.tensor(
+            y_np.astype(np.float32), dtype=torch.float32, device=self.device
+        )
 
         masks_np = _error_group_masks_from_error_calc(error_calc)
         masks = _to_torch_masks(masks_np, self.device)
@@ -936,11 +948,7 @@ class NNcalibration:
         extra_params = list(extra_params)
 
         legacy_weight_param = None
-        if (
-            self.train_weight
-            and not self.balanced_loss
-            and not self.weight_loss_types
-        ):
+        if self.train_weight and not self.balanced_loss and not self.weight_loss_types:
             init_weight = 0.5 if self.weight is None else float(self.weight)
             legacy_weight_param = torch.nn.Parameter(
                 torch.tensor(init_weight, dtype=torch.float32, device=self.device),
@@ -1226,7 +1234,9 @@ class NNcalibration:
         ax.set_ylabel("KL2 (normalized)")
         ax.set_title(f"{model_name} calibration: {dataset_name}, FPIR={far}")
 
-        log_dir = Path(self.log_dir) / "calibration_images" / self.val_ds_name / str(far)
+        log_dir = (
+            Path(self.log_dir) / "calibration_images" / self.val_ds_name / str(far)
+        )
         log_dir.mkdir(parents=True, exist_ok=True)
 
         prefix = "val" if is_val else str(dataset_name)
@@ -1247,7 +1257,9 @@ class NNcalibration:
         is_val: bool,
         model_name: str,
     ) -> None:
-        self.draw_density_plot(x_norm, error_calc, dataset_name, far, is_val, model_name)
+        self.draw_density_plot(
+            x_norm, error_calc, dataset_name, far, is_val, model_name
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1454,11 +1466,15 @@ class Standartization:
         ax.set_ylabel("KL2 (normalized)")
         ax.set_title(f"KL sum: {dataset_name}, FPIR={far}")
 
-        log_dir = Path(self.log_dir) / "calibration_images" / self.val_ds_name / str(far)
+        log_dir = (
+            Path(self.log_dir) / "calibration_images" / self.val_ds_name / str(far)
+        )
         log_dir.mkdir(parents=True, exist_ok=True)
 
         prefix = "val" if is_val else str(dataset_name)
-        fig.savefig(log_dir / f"{prefix}_standardization.png", dpi=300, bbox_inches="tight")
+        fig.savefig(
+            log_dir / f"{prefix}_standardization.png", dpi=300, bbox_inches="tight"
+        )
         plt.close(fig)
 
     # Backward-compatible typo alias.

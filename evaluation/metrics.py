@@ -20,6 +20,7 @@ def _safe_div(num, den, default=0.0):
         return default
     return float(num) / den
 
+
 class F1:
     @staticmethod
     def __call__(
@@ -66,9 +67,7 @@ class F1_classic:
         precision = _safe_div(tp, tp + fp)
         recall = _safe_div(tp, np.sum(is_seen))
         f1 = _safe_div(2 * precision * recall, precision + recall)
-        result_metrics = {
-           "osr_metric:f1_class": f1
-        }
+        result_metrics = {"osr_metric:f1_class": f1}
         return result_metrics
 
 
@@ -345,11 +344,11 @@ class FnirFpir:
         is_seen = np.isin(probe_unique_ids, g_unique_ids)
         similar_gallery_class = g_unique_ids[predicted_id[is_seen]]
         correct_seen = np.sum(
-             np.logical_and(
-                 probe_unique_ids[is_seen] == similar_gallery_class,
-                 was_rejected[is_seen] == False,
-             )
-         )
+            np.logical_and(
+                probe_unique_ids[is_seen] == similar_gallery_class,
+                was_rejected[is_seen] == False,
+            )
+        )
         dir = _safe_div(correct_seen, np.sum(is_seen))
         far = _safe_div(np.sum(was_rejected[~is_seen] == False), np.sum(~is_seen))
         result_metrics = {

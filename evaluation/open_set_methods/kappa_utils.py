@@ -71,11 +71,7 @@ def vmf_log_normalizer_np(kappa: np.ndarray | float, d: int) -> np.ndarray:
         corr = 1.0 - (mu - 1.0) / (8.0 * kk)
         corr = np.maximum(corr, np.finfo(np.float64).tiny)
         log_iv_asympt = kk - 0.5 * np.log(2.0 * math.pi * kk) + np.log(corr)
-        out[bad] = (
-            v * np.log(kk)
-            - (d / 2.0) * math.log(2.0 * math.pi)
-            - log_iv_asympt
-        )
+        out[bad] = v * np.log(kk) - (d / 2.0) * math.log(2.0 * math.pi) - log_iv_asympt
 
     return out
 
