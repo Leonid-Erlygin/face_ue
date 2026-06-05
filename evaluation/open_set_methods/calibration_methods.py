@@ -762,11 +762,9 @@ class NNcalibration:
             return torch.stack(components).mean()
 
         # Legacy behavior: `weight` controls the relative contribution of errors.
-        correct_mask = y > 0.5
-        error_mask = ~correct_mask
 
-        correct_loss = _mean_if_nonempty(loss_elementwise, correct_mask)
-        error_loss = _mean_if_nonempty(loss_elementwise, error_mask)
+        correct_loss = loss_elementwise[masks["correct"]].sum()
+        error_loss = loss_elementwise[masks["error"]].sum()
 
         if correct_loss is None and error_loss is None:
             return loss_elementwise.mean()
@@ -784,7 +782,7 @@ class NNcalibration:
         else:
             w_error = torch.sigmoid(legacy_weight)
 
-        return correct_loss * (1.0 - w_error) + error_loss * w_error
+        return (correct_loss * (1.0 - w_error) + error_loss * w_error) / loss_elementwise.shape[0]
 
     # ------------------------------------------------------------------
     # Training
