@@ -84,47 +84,6 @@ class FarLossCalc:
             print(f"Found kappa {np.round(kappa,4)} for far {far}")
         return -np.abs(far - self.target_far) / self.target_far
 
-class FarLossCalc:
-    def __init__(
-        self,
-        probe_feats,
-        probe_unc_scaled,
-        gallery_feats,
-        gallery_unc,
-        predict_T,
-        target_far,
-        is_seen,
-        env,
-        verbose=False,
-    ) -> None:
-        self.probe_feats = probe_feats
-        self.probe_unc_scaled = probe_unc_scaled
-        self.gallery_feats = gallery_feats
-        self.gallery_unc = gallery_unc
-        self.predict_T = predict_T
-        self.target_far = target_far
-        self.is_seen = is_seen
-        self.env = env
-        self.verbose = verbose
-
-    def __call__(self, kappa: float) -> float:
-        gallery_unc_scaled = np.ones_like(self.gallery_unc) * kappa
-        out = self.env.compute_mean_probs_and_kl(
-            self.probe_feats,
-            self.probe_unc_scaled,
-            self.gallery_feats,
-            gallery_unc_scaled,
-            self.predict_T,
-        )
-        mean_probs, kl_1, kl_2 = [x.cpu().detach().numpy() for x in out]
-
-        oog_prob = 1 - np.sum(mean_probs, axis=-1, keepdims=True)
-        all_prob = np.concatenate([mean_probs, oog_prob], axis=-1)
-        was_rejected = np.argmax(all_prob, axis=-1) == (all_prob.shape[-1] - 1)
-        far = np.mean(was_rejected[~self.is_seen] == False)
-        if self.verbose:
-            print(f"Found kappa {np.round(kappa,4)} for far {far}")
-        return -np.abs(far - self.target_far) / self.target_far
 
 class MonteCarloPredictiveProb:
     def __init__(

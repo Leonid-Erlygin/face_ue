@@ -744,12 +744,12 @@ class NNcalibration:
             return torch.stack(components).mean()
 
         if self.balanced_loss:
-            correct_mask = y > 0.5
-            error_mask = ~correct_mask
+            # correct_mask = y > 0.5
+            # error_mask = ~correct_mask
 
             components = []
-            correct_loss = _mean_if_nonempty(loss_elementwise, correct_mask)
-            error_loss = _mean_if_nonempty(loss_elementwise, error_mask)
+            correct_loss = _mean_if_nonempty(loss_elementwise, masks["correct"])
+            error_loss = _mean_if_nonempty(loss_elementwise, masks["error"])
 
             if correct_loss is not None:
                 components.append(correct_loss)

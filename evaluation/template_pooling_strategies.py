@@ -37,11 +37,12 @@ class PoolingDefault(AbstractTemplatePooling):
         unique_templates, indices = np.unique(templates, return_index=True)
         templates_kappa = np.zeros((len(unique_templates), raw_unc.shape[1]))
         template_feats = np.zeros((len(unique_templates), img_feats.shape[1]))
-        for count_template, uqt in tqdm(
-            enumerate(unique_templates),
-            "Extract template feature",
-            total=len(unique_templates),
-        ):
+        for count_template, uqt in enumerate(unique_templates): 
+        #tqdm(
+        #     enumerate(unique_templates),
+        #     "Extract template feature",
+        #     total=len(unique_templates),
+        # ):
             (ind_t,) = np.where(templates == uqt)
             face_norm_feats = img_feats[ind_t]
             face_medias = medias[ind_t]
