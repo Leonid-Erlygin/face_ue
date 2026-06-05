@@ -48,7 +48,7 @@ import random
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
-from scipy.special import iv, gamma
+from scipy.special import iv, ive, gamma, logsumexp
 import matplotlib
 import matplotlib.colors as mcolors
 
@@ -263,7 +263,16 @@ def flatten_toy_config(raw: dict) -> SimpleNamespace:
     # OSR and integration
     flat["target_fpir"] = float(osr["target_fpir"])
     flat["gallery_kappa"] = float(osr["gallery_kappa"])
+    beta_raw = osr.get("beta", "auto")
+    if beta_raw is None or str(beta_raw).lower() == "auto":
+        flat["osr_beta"] = None
+    else:
+        flat["osr_beta"] = float(beta_raw)
 
+    # If true, use the paper-style continuous OOG prior for HolUE KL.
+    # If false, fall back to the old collapsed K+1 discrete posterior.
+    flat["continuous_oog"] = bool(osr.get("continuous_oog", True))
+    
     flat["circle_grid"] = int(integration["circle_grid"])
     flat["sphere_theta_grid"] = int(integration["sphere_theta_grid"])
     flat["sphere_phi_grid"] = int(integration["sphere_phi_grid"])
@@ -739,54 +748,103 @@ def compute_osr_stats_nd(
     circle_grid: int = 720,
     sphere_theta_grid: int = 96,
     sphere_phi_grid: int = 48,
+    beta: Optional[float] = None,
+    continuous_oog: bool = True,
 ) -> OSRStats:
     """
     Same as compute_osr_stats, but supports embedding_dim=2 and embedding_dim=3.
+
+    If continuous_oog=True, this uses the paper-style mixed
+    discrete-continuous prior over identities.
     """
     probe_mu = normalize_np(probe_mu.astype(np.float64))
     gallery_mu = normalize_np(gallery_mu.astype(np.float64))
     probe_kappa = np.asarray(probe_kappa, dtype=np.float64).reshape(-1)
 
     dim = probe_mu.shape[1]
+    K = gallery_mu.shape[0]
+
+    if beta is None:
+        beta = beta_from_tau_mixed_prior(
+            dim=dim,
+            tau=tau,
+            gallery_kappa=gallery_kappa,
+            K=K,
+        )
 
     sim = probe_mu @ gallery_mu.T
     max_sim = np.max(sim, axis=1)
     pred_idx = np.argmax(sim, axis=1)
     rejected = max_sim < tau
 
-    gal_post = posterior_from_z(
-        probe_mu,
-        gallery_mu=gallery_mu,
-        tau=tau,
-        gallery_kappa=gallery_kappa,
-    )
+    if continuous_oog:
+        gal_post = posterior_from_z_mixed_prior(
+            probe_mu,
+            gallery_mu=gallery_mu,
+            gallery_kappa=gallery_kappa,
+            beta=beta,
+        )
 
-    if dim == 2:
-        hol_post = holue_posterior_quadrature(
-            mu=probe_mu,
-            kappa=probe_kappa,
-            gallery_mu=gallery_mu,
-            tau=tau,
-            gallery_kappa=gallery_kappa,
-            n_grid=circle_grid,
-        )
-    elif dim == 3:
-        hol_post = holue_posterior_sphere_quadrature(
-            mu=probe_mu,
-            kappa=probe_kappa,
-            gallery_mu=gallery_mu,
-            tau=tau,
-            gallery_kappa=gallery_kappa,
-            n_theta=sphere_theta_grid,
-            n_phi=sphere_phi_grid,
-        )
+        if dim == 2:
+            hol_post, kl_known, kl_oog, kl_total = mixed_holue_posterior_circle_quadrature(
+                mu=probe_mu,
+                kappa=probe_kappa,
+                gallery_mu=gallery_mu,
+                gallery_kappa=gallery_kappa,
+                beta=beta,
+                n_grid=circle_grid,
+            )
+
+        elif dim == 3:
+            hol_post, kl_known, kl_oog, kl_total = mixed_holue_posterior_sphere_quadrature(
+                mu=probe_mu,
+                kappa=probe_kappa,
+                gallery_mu=gallery_mu,
+                gallery_kappa=gallery_kappa,
+                beta=beta,
+                n_theta=sphere_theta_grid,
+                n_phi=sphere_phi_grid,
+            )
+
+        else:
+            raise ValueError(f"Only 2D and 3D toy embeddings are supported, got dim={dim}")
+
     else:
-        raise ValueError(f"Only 2D and 3D toy embeddings are supported, got dim={dim}")
+        gal_post = posterior_from_z(
+            probe_mu,
+            gallery_mu=gallery_mu,
+            tau=tau,
+            gallery_kappa=gallery_kappa,
+        )
+
+        if dim == 2:
+            hol_post = holue_posterior_quadrature(
+                mu=probe_mu,
+                kappa=probe_kappa,
+                gallery_mu=gallery_mu,
+                tau=tau,
+                gallery_kappa=gallery_kappa,
+                n_grid=circle_grid,
+            )
+
+        elif dim == 3:
+            hol_post = holue_posterior_sphere_quadrature(
+                mu=probe_mu,
+                kappa=probe_kappa,
+                gallery_mu=gallery_mu,
+                tau=tau,
+                gallery_kappa=gallery_kappa,
+                n_theta=sphere_theta_grid,
+                n_phi=sphere_phi_grid,
+            )
+
+        else:
+            raise ValueError(f"Only 2D and 3D toy embeddings are supported, got dim={dim}")
+
+        kl_known, kl_oog, kl_total = discrete_kl_components(hol_post)
 
     gal_entropy = entropy_normalized(gal_post)
     hol_entropy = entropy_normalized(hol_post)
-
-    kl_known, kl_oog, kl_total = discrete_kl_components(hol_post)
 
     return OSRStats(
         labels=np.asarray(probe_labels, dtype=int),
@@ -803,7 +861,6 @@ def compute_osr_stats_nd(
         kl_oog=kl_oog,
         kl_total=kl_total,
     )
-
 
 class KnownMNISTDataset(Dataset):
     """
@@ -1330,6 +1387,451 @@ def stable_softmax_np(x: np.ndarray, axis: int = -1) -> np.ndarray:
     e = np.exp(x)
     return e / np.sum(e, axis=axis, keepdims=True)
 
+# ---------------------------------------------------------------------
+# Paper-style mixed discrete-continuous OOG prior for HolUE
+# ---------------------------------------------------------------------
+
+
+def sphere_area_np(dim: int) -> float:
+    """
+    Surface area of S^{dim-1} embedded in R^dim.
+    For dim=2: circumference of unit circle = 2*pi.
+    For dim=3: area of unit sphere = 4*pi.
+    """
+    return float(2.0 * math.pi ** (dim / 2.0) / gamma(dim / 2.0))
+
+
+def log_vmf_normalizer_np(kappa, dim: int):
+    """
+    log C_d(kappa) for vMF on S^{dim-1}.
+
+    Supports dim=2 and dim=3, matching this toy script.
+    """
+    scalar_input = np.isscalar(kappa)
+    k = np.atleast_1d(np.asarray(kappa, dtype=np.float64))
+
+    if dim == 2:
+        # C_2(kappa) = 1 / (2*pi*I_0(kappa)).
+        # Use exponentially scaled Bessel for stability:
+        # I_0(k) = ive(0,k) * exp(k), k >= 0.
+        log_i0 = np.log(np.maximum(ive(0, k), 1e-300)) + k
+        out = -math.log(2.0 * math.pi) - log_i0
+
+    elif dim == 3:
+        # C_3(kappa) = kappa / (4*pi*sinh(kappa)).
+        out = np.empty_like(k)
+        small = k < 1e-8
+
+        out[small] = -math.log(4.0 * math.pi)
+
+        ks = k[~small]
+        if len(ks) > 0:
+            log_sinh = (
+                ks
+                - math.log(2.0)
+                + np.log1p(-np.exp(-2.0 * ks))
+            )
+            out[~small] = np.log(ks) - math.log(4.0 * math.pi) - log_sinh
+
+    else:
+        raise ValueError(f"Only dim=2 and dim=3 are supported, got dim={dim}")
+
+    if scalar_input:
+        return float(out[0])
+    return out.reshape(np.shape(kappa))
+
+
+def beta_from_tau_mixed_prior(
+    dim: int,
+    tau: float,
+    gallery_kappa: float,
+    K: int,
+) -> float:
+    """
+    Derive beta so that the continuous-OOG Bayesian accept/reject boundary
+    matches the cosine threshold tau.
+
+    Boundary condition:
+
+        ((1-beta)/K) * C_d(kappa) * exp(kappa * tau)
+        =
+        beta / S_{d-1}
+
+    Therefore:
+
+        beta / (1-beta)
+        =
+        S_{d-1} * C_d(kappa) * exp(kappa*tau) / K.
+    """
+    S = sphere_area_np(dim)
+    log_C = log_vmf_normalizer_np(gallery_kappa, dim=dim)
+
+    log_A = (
+        math.log(S)
+        + log_C
+        + float(gallery_kappa) * float(tau)
+        - math.log(K)
+    )
+
+    # beta = sigmoid(log_A)
+    if log_A >= 0:
+        beta = 1.0 / (1.0 + math.exp(-log_A))
+    else:
+        A = math.exp(log_A)
+        beta = A / (1.0 + A)
+
+    return float(np.clip(beta, 1e-8, 1.0 - 1e-8))
+
+
+def tau_from_beta_mixed_prior(
+    dim: int,
+    beta: float,
+    gallery_kappa: float,
+    K: int,
+) -> float:
+    """
+    Inverse of beta_from_tau_mixed_prior.
+
+    Useful for the oracle circle experiment, where beta is fixed first.
+    """
+    beta = float(np.clip(beta, 1e-8, 1.0 - 1e-8))
+    S = sphere_area_np(dim)
+    log_C = log_vmf_normalizer_np(gallery_kappa, dim=dim)
+
+    tau = (
+        math.log(beta)
+        - math.log1p(-beta)
+        + math.log(K)
+        - math.log(S)
+        - log_C
+    ) / float(gallery_kappa)
+
+    return float(tau)
+
+
+def posterior_from_z_mixed_prior(
+    z: np.ndarray,
+    gallery_mu: np.ndarray,
+    gallery_kappa: float,
+    beta: float,
+) -> np.ndarray:
+    """
+    Paper-style GalUE posterior for deterministic embeddings z.
+
+    Known classes:
+        c = 1,...,K
+
+    Unknown identities:
+        psi in S^{d-1}, with uniform continuous prior density beta / S.
+
+    This returns the collapsed action posterior:
+
+        [P(c=1|z), ..., P(c=K|z), P(OOG|z)]
+
+    but the OOG term is induced by a continuous identity prior, not by
+    one discrete unknown class.
+    """
+    z = normalize_np(np.asarray(z, dtype=np.float64))
+    gallery_mu = normalize_np(np.asarray(gallery_mu, dtype=np.float64))
+
+    dim = z.shape[1]
+    K = gallery_mu.shape[0]
+    S = sphere_area_np(dim)
+
+    beta = float(np.clip(beta, 1e-8, 1.0 - 1e-8))
+
+    log_prior_known = math.log1p(-beta) - math.log(K)
+    log_prior_oog_density = math.log(beta) - math.log(S)
+    log_Cg = log_vmf_normalizer_np(gallery_kappa, dim=dim)
+
+    known_log = (
+        log_prior_known
+        + log_Cg
+        + float(gallery_kappa) * (z @ gallery_mu.T)
+    )  # (N,K)
+
+    oog_log = np.full((z.shape[0], 1), log_prior_oog_density, dtype=np.float64)
+
+    logits = np.concatenate([known_log, oog_log], axis=1)
+    log_norm = logsumexp(logits, axis=1, keepdims=True)
+
+    return np.exp(logits - log_norm)
+
+
+def circle_quadrature_grid_with_log_dS(n_grid: int) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Uniform quadrature grid on S^1.
+
+    Returns:
+        grid_z: (G,2)
+        log_dS: (G,), log arc-length weight
+    """
+    S = 2.0 * math.pi
+    angles = np.linspace(0.0, S, int(n_grid), endpoint=False)
+    grid_z = np.stack([np.cos(angles), np.sin(angles)], axis=1).astype(np.float64)
+
+    dS = S / int(n_grid)
+    log_dS = np.full(int(n_grid), math.log(dS), dtype=np.float64)
+
+    return grid_z, log_dS
+
+
+def sphere_quadrature_grid_with_log_dS(
+    n_theta: int,
+    n_phi: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Midpoint quadrature grid on S^2 with true surface weights.
+
+    dS = sin(phi) dphi dtheta.
+    """
+    n_theta = int(n_theta)
+    n_phi = int(n_phi)
+
+    dtheta = 2.0 * math.pi / n_theta
+    dphi = math.pi / n_phi
+
+    theta = (np.arange(n_theta) + 0.5) * dtheta
+    phi = (np.arange(n_phi) + 0.5) * dphi
+
+    theta_grid, phi_grid = np.meshgrid(theta, phi)
+
+    x = np.sin(phi_grid) * np.cos(theta_grid)
+    y = np.sin(phi_grid) * np.sin(theta_grid)
+    z = np.cos(phi_grid)
+
+    grid_z = np.stack([x, y, z], axis=-1).reshape(-1, 3).astype(np.float64)
+
+    dS = np.sin(phi_grid).reshape(-1) * dtheta * dphi
+    log_dS = np.log(np.maximum(dS, 1e-300)).astype(np.float64)
+
+    return grid_z, log_dS
+
+
+def mixed_holue_posterior_grid_quadrature(
+    mu: np.ndarray,
+    kappa: np.ndarray,
+    gallery_mu: np.ndarray,
+    gallery_kappa: float,
+    beta: float,
+    grid_z: np.ndarray,
+    log_dS: np.ndarray,
+    batch_size: int = 512,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Correct paper-style HolUE computation with continuous OOG identities.
+
+    It computes:
+
+        p(C|x) = ∫ p(C|z) p(z|x) dz
+
+    where C is mixed:
+
+        C in {1,...,K} union S^{d-1}.
+
+    Returned action_post collapses the continuous OOG posterior density only
+    for the OSR decision:
+
+        action_post[:, :K] = known identity posterior masses
+        action_post[:, K]  = total OOG posterior mass
+
+    But KL is computed against the full mixed prior:
+
+        KL = sum_known P_i log(P_i / prior_i)
+             + ∫ rho(psi|x) log(rho(psi|x) / prior_oog_density) dpsi
+
+    This is the key difference from the old K+1 discrete entropy/KL.
+    """
+    mu = normalize_np(np.asarray(mu, dtype=np.float64))
+    kappa = np.asarray(kappa, dtype=np.float64).reshape(-1)
+    gallery_mu = normalize_np(np.asarray(gallery_mu, dtype=np.float64))
+    grid_z = normalize_np(np.asarray(grid_z, dtype=np.float64))
+    log_dS = np.asarray(log_dS, dtype=np.float64).reshape(-1)
+
+    dim = mu.shape[1]
+    K = gallery_mu.shape[0]
+    S = sphere_area_np(dim)
+
+    beta = float(np.clip(beta, 1e-8, 1.0 - 1e-8))
+
+    log_prior_known = math.log1p(-beta) - math.log(K)
+    log_prior_oog_density = math.log(beta) - math.log(S)
+    log_Cg = log_vmf_normalizer_np(gallery_kappa, dim=dim)
+
+    # log p(c=i) p(z|c=i), for all grid points and known classes.
+    cos_grid_gallery = grid_z @ gallery_mu.T  # (G,K)
+    log_known_joint = (
+        log_prior_known
+        + log_Cg
+        + float(gallery_kappa) * cos_grid_gallery
+    )  # (G,K)
+
+    # OOG contribution to marginal p(z) is beta / S.
+    log_oog_joint = np.full((grid_z.shape[0], 1), log_prior_oog_density)
+
+    # log p(z)
+    log_p_z = logsumexp(
+        np.concatenate([log_known_joint, log_oog_joint], axis=1),
+        axis=1,
+    )  # (G,)
+
+    action_posts = []
+    kl_known_all = []
+    kl_oog_all = []
+    kl_total_all = []
+
+    for start in range(0, len(mu), batch_size):
+        end = min(start + batch_size, len(mu))
+
+        mu_b = mu[start:end]
+        kappa_b = kappa[start:end]
+        B = len(mu_b)
+
+        # log p(z|x) on the quadrature grid.
+        cos_to_mu = mu_b @ grid_z.T  # (B,G)
+        log_Cx = log_vmf_normalizer_np(kappa_b, dim=dim).reshape(B, 1)
+        log_f_x = log_Cx + kappa_b[:, None] * cos_to_mu  # (B,G)
+
+        # Known posterior masses:
+        #
+        # P_i(x) = ∫ [p(i)p(z|i)/p(z)] p(z|x) dz.
+        log_integrand_known = (
+            log_f_x[:, :, None]
+            + log_known_joint[None, :, :]
+            - log_p_z[None, :, None]
+            + log_dS[None, :, None]
+        )  # (B,G,K)
+
+        P_known = np.exp(logsumexp(log_integrand_known, axis=1))  # (B,K)
+
+        # Continuous OOG posterior density:
+        #
+        # rho(psi|x) = (beta/S) * p(psi|x) / p(psi).
+        log_rho = (
+            log_prior_oog_density
+            + log_f_x
+            - log_p_z[None, :]
+        )  # (B,G), density wrt surface measure
+
+        rho_dS = np.exp(log_rho + log_dS[None, :])  # posterior mass per grid cell
+        P_oog = np.sum(rho_dS, axis=1)  # (B,)
+
+        total_mass = np.maximum(P_known.sum(axis=1) + P_oog, 1e-300)
+        log_total_mass = np.log(total_mass)
+
+        # Normalize tiny quadrature error away.
+        P_known_n = P_known / total_mass[:, None]
+        P_oog_n = P_oog / total_mass
+        rho_dS_n = rho_dS / total_mass[:, None]
+
+        action_post = np.concatenate([P_known_n, P_oog_n[:, None]], axis=1)
+
+        # Known KL term.
+        P_known_safe = np.clip(P_known_n, 1e-300, 1.0)
+        kl_known = np.sum(
+            P_known_safe * (np.log(P_known_safe) - log_prior_known),
+            axis=1,
+        )
+
+        # OOG continuous KL term:
+        #
+        # ∫ rho'(psi|x) log(rho'(psi|x)/(beta/S)) dpsi.
+        #
+        # Unnormalized rho/q0 = p(psi|x)/p(psi).
+        # After normalization by total_mass:
+        # log ratio = log_f_x - log_p_z - log_total_mass.
+        log_ratio_oog = (
+            log_f_x
+            - log_p_z[None, :]
+            - log_total_mass[:, None]
+        )
+
+        kl_oog = np.sum(rho_dS_n * log_ratio_oog, axis=1)
+
+        kl_total = kl_known + kl_oog
+        kl_total = np.maximum(kl_total, 0.0)
+
+        action_posts.append(action_post)
+        kl_known_all.append(kl_known)
+        kl_oog_all.append(kl_oog)
+        kl_total_all.append(kl_total)
+
+    return (
+        np.concatenate(action_posts, axis=0),
+        np.concatenate(kl_known_all, axis=0),
+        np.concatenate(kl_oog_all, axis=0),
+        np.concatenate(kl_total_all, axis=0),
+    )
+
+
+def mixed_holue_posterior_circle_quadrature(
+    mu: np.ndarray,
+    kappa: np.ndarray,
+    gallery_mu: np.ndarray,
+    gallery_kappa: float,
+    beta: float,
+    n_grid: int = 720,
+    batch_size: int = 512,
+):
+    grid_z, log_dS = circle_quadrature_grid_with_log_dS(n_grid)
+    return mixed_holue_posterior_grid_quadrature(
+        mu=mu,
+        kappa=kappa,
+        gallery_mu=gallery_mu,
+        gallery_kappa=gallery_kappa,
+        beta=beta,
+        grid_z=grid_z,
+        log_dS=log_dS,
+        batch_size=batch_size,
+    )
+
+
+def mixed_holue_posterior_sphere_quadrature(
+    mu: np.ndarray,
+    kappa: np.ndarray,
+    gallery_mu: np.ndarray,
+    gallery_kappa: float,
+    beta: float,
+    n_theta: int = 96,
+    n_phi: int = 48,
+    batch_size: int = 256,
+):
+    grid_z, log_dS = sphere_quadrature_grid_with_log_dS(
+        n_theta=n_theta,
+        n_phi=n_phi,
+    )
+    return mixed_holue_posterior_grid_quadrature(
+        mu=mu,
+        kappa=kappa,
+        gallery_mu=gallery_mu,
+        gallery_kappa=gallery_kappa,
+        beta=beta,
+        grid_z=grid_z,
+        log_dS=log_dS,
+        batch_size=batch_size,
+    )
+
+
+def action_risk_from_posterior(stats: "OSRStats") -> np.ndarray:
+    """
+    Exact collapsed-action posterior risk for the current OSR decision.
+
+    If decision is reject:
+        risk = 1 - P(OOG|x)
+
+    If decision is accept as class j:
+        risk = 1 - P(class j|x)
+
+    This is useful as an oracle diagnostic. It is not the same as the
+    mixed identity-information KL used by HolUE.
+    """
+    idx = np.arange(len(stats.labels))
+    chosen_prob = np.where(
+        stats.rejected,
+        stats.holue_posterior[:, -1],
+        stats.holue_posterior[idx, stats.pred_idx],
+    )
+    return 1.0 - chosen_prob
 
 def entropy_normalized(p: np.ndarray, eps: float = 1e-12) -> np.ndarray:
     p = np.asarray(p, dtype=np.float64)
@@ -1478,35 +1980,73 @@ def compute_osr_stats(
     tau: float,
     gallery_kappa: float,
     n_grid: int,
+    beta: Optional[float] = None,
+    continuous_oog: bool = True,
 ) -> OSRStats:
     probe_mu = normalize_np(probe_mu.astype(np.float64))
     gallery_mu = normalize_np(gallery_mu.astype(np.float64))
     probe_kappa = np.asarray(probe_kappa, dtype=np.float64).reshape(-1)
+
+    dim = probe_mu.shape[1]
+    K = gallery_mu.shape[0]
+
+    if dim != 2:
+        raise ValueError(f"compute_osr_stats is the 2D version, got dim={dim}")
+
+    if beta is None:
+        beta = beta_from_tau_mixed_prior(
+            dim=dim,
+            tau=tau,
+            gallery_kappa=gallery_kappa,
+            K=K,
+        )
 
     sim = probe_mu @ gallery_mu.T
     max_sim = np.max(sim, axis=1)
     pred_idx = np.argmax(sim, axis=1)
     rejected = max_sim < tau
 
-    gal_post = posterior_from_z(
-        probe_mu,
-        gallery_mu=gallery_mu,
-        tau=tau,
-        gallery_kappa=gallery_kappa,
-    )
-    hol_post = holue_posterior_quadrature(
-        mu=probe_mu,
-        kappa=probe_kappa,
-        gallery_mu=gallery_mu,
-        tau=tau,
-        gallery_kappa=gallery_kappa,
-        n_grid=n_grid,
-    )
+    if continuous_oog:
+        # Paper-style deterministic GalUE posterior with continuous OOG prior.
+        gal_post = posterior_from_z_mixed_prior(
+            probe_mu,
+            gallery_mu=gallery_mu,
+            gallery_kappa=gallery_kappa,
+            beta=beta,
+        )
+
+        # Paper-style HolUE mixed posterior and mixed KL.
+        hol_post, kl_known, kl_oog, kl_total = mixed_holue_posterior_circle_quadrature(
+            mu=probe_mu,
+            kappa=probe_kappa,
+            gallery_mu=gallery_mu,
+            gallery_kappa=gallery_kappa,
+            beta=beta,
+            n_grid=n_grid,
+        )
+
+    else:
+        # Old collapsed K+1-discrete OOG version.
+        gal_post = posterior_from_z(
+            probe_mu,
+            gallery_mu=gallery_mu,
+            tau=tau,
+            gallery_kappa=gallery_kappa,
+        )
+
+        hol_post = holue_posterior_quadrature(
+            mu=probe_mu,
+            kappa=probe_kappa,
+            gallery_mu=gallery_mu,
+            tau=tau,
+            gallery_kappa=gallery_kappa,
+            n_grid=n_grid,
+        )
+
+        kl_known, kl_oog, kl_total = discrete_kl_components(hol_post)
 
     gal_entropy = entropy_normalized(gal_post)
     hol_entropy = entropy_normalized(hol_post)
-
-    kl_known, kl_oog, kl_total = discrete_kl_components(hol_post)
 
     return OSRStats(
         labels=np.asarray(probe_labels, dtype=int),
@@ -1523,7 +2063,6 @@ def compute_osr_stats(
         kl_oog=kl_oog,
         kl_total=kl_total,
     )
-
 
 # ---------------------------------------------------------------------
 # Metrics and rejection curves
@@ -3214,7 +3753,19 @@ def run_3d_extension(
     tau = threshold_at_fpir(val_max_sim[~val_seen], args.target_fpir)
 
     print(f"[3D] Validation-selected tau={tau:.6f} for target FPIR={args.target_fpir}")
+    effective_beta_3d = args.osr_beta
+    if effective_beta_3d is None:
+        effective_beta_3d = beta_from_tau_mixed_prior(
+            dim=args.embedding_dim_3d,
+            tau=tau,
+            gallery_kappa=args.gallery_kappa,
+            K=len(known_classes),
+        )
 
+    print(
+        f"[3D] Continuous-OOG HolUE: enabled={args.continuous_oog}, "
+        f"effective beta={effective_beta_3d:.6g}"
+    )
     # ---------------------------
     # Compute 3D OSR stats
     # ---------------------------
@@ -3230,7 +3781,10 @@ def run_3d_extension(
         circle_grid=args.circle_grid,
         sphere_theta_grid=args.sphere_theta_grid,
         sphere_phi_grid=args.sphere_phi_grid,
+                beta=effective_beta_3d,
+        continuous_oog=args.continuous_oog,
     )
+    
     setattr(val_stats, "probe_mu_for_plot", val_probe_mu)
 
     print("[3D] Computing test HolUE/GalUE posteriors on S^2...")
@@ -3244,6 +3798,8 @@ def run_3d_extension(
         circle_grid=args.circle_grid,
         sphere_theta_grid=args.sphere_theta_grid,
         sphere_phi_grid=args.sphere_phi_grid,
+                beta=effective_beta_3d,
+        continuous_oog=args.continuous_oog,
     )
     setattr(test_stats, "probe_mu_for_plot", test_probe_mu)
 
@@ -3373,10 +3929,28 @@ def run_3d_extension(
     random_unc = rng_eval.random(len(test_stats.labels))
     oracle_unc = test_error.astype(float) + 1e-6 * rng_eval.random(len(test_error))
 
+    # Paper-style HolUE uncertainty:
+    # high KL = high identity information = low uncertainty.
+    # Therefore uncertainty is -KL.
+    holue_mixed_kl_unc = -test_stats.kl_total
+
+    # Collapsed action risk is an oracle diagnostic:
+    # it is not the same as mixed identity-information uncertainty.
+    holue_action_risk = action_risk_from_posterior(test_stats)
+
     uncertainties: Dict[str, np.ndarray] = {
-        "HolUE no calibration": test_stats.holue_entropy,
+        # Main no-calibration HolUE score matching the paper-style mixed KL.
+        "HolUE no calibration": holue_mixed_kl_unc,
+
+        # Validation-calibrated comparison.
         "HolUE calibrated": holue_calibrated_unc,
-        "HolUE raw KL": -test_stats.kl_total,
+
+        # Diagnostics / ablations.
+        "HolUE raw KL": holue_mixed_kl_unc,
+        "HolUE collapsed entropy": test_stats.holue_entropy,
+        "HolUE action risk": holue_action_risk,
+
+        # Baselines.
         "GalUE": test_stats.gal_entropy,
         "SCF": -np.log(test_stats.scf_kappa + 1e-8),
         "AccScr": -np.abs(test_stats.max_sim - tau),
@@ -3569,6 +4143,455 @@ computed by deterministic quadrature on the unit sphere.
         f"[3D] Plotly teaser: {(figure_dir / 'stylized_3d_holue_trained_teaser.html').resolve()}"
     )
 
+# ---------------------------------------------------------------------
+# Exact oracle circle experiment
+# ---------------------------------------------------------------------
+
+
+def angle_to_unit_vectors(theta: np.ndarray) -> np.ndarray:
+    theta = np.asarray(theta, dtype=np.float64)
+    return np.stack([np.cos(theta), np.sin(theta)], axis=1)
+
+
+def sample_oracle_circle_split(
+    n: int,
+    center_angles: np.ndarray,
+    beta: float,
+    gallery_kappa: float,
+    kappa_high: float,
+    kappa_low: float,
+    low_quality_prob: float,
+    rng: np.random.Generator,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Generate an exact synthetic OSR split on S^1.
+
+    Known identities:
+        c = 0,...,K-1
+        z_true | c ~ vonMises(center_c, gallery_kappa)
+
+    Unknown identities:
+        z_true ~ Uniform(S^1)
+
+    Observation/probabilistic embedding:
+        mu_obs | z_true, kappa_x ~ vonMises(z_true, kappa_x)
+
+    We then treat:
+        p(z|x) = vMF(mu_obs, kappa_x)
+
+    This is the clean toy setting where the HolUE assumptions are true by
+    construction at the embedding level.
+    """
+    K = len(center_angles)
+
+    labels = np.full(n, -1, dtype=int)
+    theta_true = np.empty(n, dtype=np.float64)
+
+    is_unknown = rng.random(n) < beta
+    is_known = ~is_unknown
+
+    known_idx = np.where(is_known)[0]
+    unknown_idx = np.where(is_unknown)[0]
+
+    if len(known_idx) > 0:
+        known_labels = rng.integers(0, K, size=len(known_idx))
+        labels[known_idx] = known_labels
+
+        for out_i, c in zip(known_idx, known_labels):
+            theta_true[out_i] = rng.vonmises(center_angles[c], gallery_kappa)
+
+    if len(unknown_idx) > 0:
+        theta_true[unknown_idx] = rng.uniform(0.0, 2.0 * math.pi, size=len(unknown_idx))
+
+    low_quality = rng.random(n) < low_quality_prob
+    kappa_x = np.where(low_quality, float(kappa_low), float(kappa_high))
+
+    theta_obs = np.empty(n, dtype=np.float64)
+    for i in range(n):
+        theta_obs[i] = rng.vonmises(theta_true[i], kappa_x[i])
+
+    mu_obs = angle_to_unit_vectors(theta_obs)
+
+    return mu_obs, kappa_x, labels, theta_true, low_quality
+
+
+def run_oracle_circle_experiment(args, out_dir: Path) -> None:
+    """
+    Synthetic exact circle experiment.
+
+    This is the experiment that should demonstrate:
+
+      - if p(c|z) and p(z|x) are correct,
+      - and the continuous OOG prior is used,
+      - then an oracle posterior score needs no MLP calibration.
+
+    It saves outputs into:
+
+        toy_outputs/oracle_circle_results/
+        toy_outputs/oracle_circle_figures/
+    """
+    ocfg = cfg_get(args.full_config, "oracle_circle", None)
+
+    if not bool(cfg_get(ocfg, "enabled", False)):
+        return
+
+    print("\n" + "=" * 80)
+    print("Running exact oracle circle HolUE experiment")
+    print("=" * 80)
+
+    result_dir = out_dir / "oracle_circle_results"
+    figure_dir = out_dir / "oracle_circle_figures"
+    result_dir.mkdir(parents=True, exist_ok=True)
+    figure_dir.mkdir(parents=True, exist_ok=True)
+
+    seed = int(cfg_get(ocfg, "seed", args.seed + 90000))
+    rng = np.random.default_rng(seed)
+
+    K = int(cfg_get(ocfg, "num_known_classes", len(args.known_classes)))
+    n_val = int(cfg_get(ocfg, "n_val", 6000))
+    n_test = int(cfg_get(ocfg, "n_test", 6000))
+
+    beta = float(cfg_get(ocfg, "beta", 0.5))
+    gallery_kappa = float(cfg_get(ocfg, "gallery_kappa", 18.0))
+    kappa_high = float(cfg_get(ocfg, "kappa_high", 80.0))
+    kappa_low = float(cfg_get(ocfg, "kappa_low", 1.5))
+    low_quality_prob = float(cfg_get(ocfg, "low_quality_prob", 0.30))
+    circle_grid = int(cfg_get(ocfg, "circle_grid", args.circle_grid))
+
+    # Equally spaced known identity centers.
+    center_angles = np.linspace(0.0, 2.0 * math.pi, K, endpoint=False)
+    gallery_mu = angle_to_unit_vectors(center_angles)
+
+    # Choose tau implied by beta, so Bayesian posterior and OSR threshold agree.
+    tau = tau_from_beta_mixed_prior(
+        dim=2,
+        beta=beta,
+        gallery_kappa=gallery_kappa,
+        K=K,
+    )
+
+    known_classes_oracle = list(range(K))
+
+    print(f"[Oracle circle] K={K}")
+    print(f"[Oracle circle] beta={beta}")
+    print(f"[Oracle circle] gallery_kappa={gallery_kappa}")
+    print(f"[Oracle circle] implied tau={tau:.6f}")
+    print(f"[Oracle circle] kappa_high={kappa_high}, kappa_low={kappa_low}")
+    print(f"[Oracle circle] low_quality_prob={low_quality_prob}")
+
+    val_mu, val_kappa, val_labels, _, val_lowq = sample_oracle_circle_split(
+        n=n_val,
+        center_angles=center_angles,
+        beta=beta,
+        gallery_kappa=gallery_kappa,
+        kappa_high=kappa_high,
+        kappa_low=kappa_low,
+        low_quality_prob=low_quality_prob,
+        rng=rng,
+    )
+
+    test_mu, test_kappa, test_labels, _, test_lowq = sample_oracle_circle_split(
+        n=n_test,
+        center_angles=center_angles,
+        beta=beta,
+        gallery_kappa=gallery_kappa,
+        kappa_high=kappa_high,
+        kappa_low=kappa_low,
+        low_quality_prob=low_quality_prob,
+        rng=rng,
+    )
+
+    val_stats = compute_osr_stats(
+        probe_mu=val_mu,
+        probe_kappa=val_kappa,
+        probe_labels=val_labels,
+        gallery_mu=gallery_mu,
+        tau=tau,
+        gallery_kappa=gallery_kappa,
+        n_grid=circle_grid,
+        beta=beta,
+        continuous_oog=True,
+    )
+    setattr(val_stats, "probe_mu_for_plot", val_mu)
+
+    test_stats = compute_osr_stats(
+        probe_mu=test_mu,
+        probe_kappa=test_kappa,
+        probe_labels=test_labels,
+        gallery_mu=gallery_mu,
+        tau=tau,
+        gallery_kappa=gallery_kappa,
+        n_grid=circle_grid,
+        beta=beta,
+        continuous_oog=True,
+    )
+    setattr(test_stats, "probe_mu_for_plot", test_mu)
+
+    val_error = osr_error_mask(
+        pred_idx=val_stats.pred_idx,
+        rejected=val_stats.rejected,
+        labels=val_stats.labels,
+        known_classes=known_classes_oracle,
+    )
+
+    test_error = osr_error_mask(
+        pred_idx=test_stats.pred_idx,
+        rejected=test_stats.rejected,
+        labels=test_stats.labels,
+        known_classes=known_classes_oracle,
+    )
+
+    test_base_metrics = compute_osr_metrics(
+        pred_idx=test_stats.pred_idx,
+        rejected=test_stats.rejected,
+        labels=test_stats.labels,
+        known_classes=known_classes_oracle,
+    )
+
+    print("\n[Oracle circle] Test OSR metrics:")
+    for k, v in test_base_metrics.items():
+        print(f"  {k}: {v}")
+
+    # Exact posterior action risk for the current OSR decision.
+    val_action_risk = action_risk_from_posterior(val_stats)
+    test_action_risk = action_risk_from_posterior(test_stats)
+
+    # Main HolUE mixed identity-information uncertainty.
+    val_mixed_kl_unc = -val_stats.kl_total
+    test_mixed_kl_unc = -test_stats.kl_total
+
+    # Logistic calibration comparison.
+    X_val = np.column_stack(
+        [
+            val_mixed_kl_unc,
+            val_stats.holue_entropy,
+            val_stats.gal_entropy,
+            np.log(val_stats.scf_kappa + 1e-8),
+            np.abs(val_stats.max_sim - tau),
+            val_stats.kl_known,
+            val_stats.kl_oog,
+            val_stats.kl_total,
+            val_stats.max_sim,
+        ]
+    ).astype(np.float64)
+
+    X_test = np.column_stack(
+        [
+            test_mixed_kl_unc,
+            test_stats.holue_entropy,
+            test_stats.gal_entropy,
+            np.log(test_stats.scf_kappa + 1e-8),
+            np.abs(test_stats.max_sim - tau),
+            test_stats.kl_known,
+            test_stats.kl_oog,
+            test_stats.kl_total,
+            test_stats.max_sim,
+        ]
+    ).astype(np.float64)
+
+    y_val = val_error.astype(int)
+
+    if len(np.unique(y_val)) < 2:
+        calibrated_unc = test_mixed_kl_unc.copy()
+        calibration_info = {
+            "used": False,
+            "reason": "single_class_validation_error_labels",
+        }
+    else:
+        scaler = StandardScaler()
+        X_val_scaled = scaler.fit_transform(X_val)
+        X_test_scaled = scaler.transform(X_test)
+
+        clf = LogisticRegression(
+            class_weight=args.calibration_class_weight,
+            random_state=args.calibration_random_state,
+            max_iter=args.calibration_max_iter,
+            solver=args.calibration_solver,
+        )
+        clf.fit(X_val_scaled, y_val)
+        calibrated_unc = clf.predict_proba(X_test_scaled)[:, 1]
+
+        calibration_info = {
+            "used": True,
+            "reason": "ok",
+            "intercept": clf.intercept_.tolist(),
+            "coef": clf.coef_.tolist(),
+            "scaler_mean": scaler.mean_.tolist(),
+            "scaler_scale": scaler.scale_.tolist(),
+            "val_error_rate": float(np.mean(y_val)),
+        }
+
+    with open(result_dir / "oracle_circle_calibration_info.json", "w", encoding="utf-8") as f:
+        json.dump(calibration_info, f, indent=2)
+
+    rng_eval = np.random.default_rng(seed + 123)
+    random_unc = rng_eval.random(len(test_labels))
+    oracle_unc = test_error.astype(float) + 1e-6 * rng_eval.random(len(test_error))
+
+    uncertainties = {
+        # Exact Bayes risk of the current collapsed OSR action.
+        # This is the true no-MLP oracle score for OSR error probability.
+        "Bayes action risk": test_action_risk,
+
+        # Paper-style mixed identity-information uncertainty.
+        "HolUE mixed KL": test_mixed_kl_unc,
+
+        # Validation-calibrated comparison.
+        "LogReg calibrated": calibrated_unc,
+
+        # Diagnostics.
+        "Collapsed action entropy": test_stats.holue_entropy,
+        "GalUE": test_stats.gal_entropy,
+        "SCF": -np.log(test_stats.scf_kappa + 1e-8),
+        "AccScr": -np.abs(test_stats.max_sim - tau),
+        "MaxSim": -test_stats.max_sim,
+
+        "Random": random_unc,
+        "Oracle": oracle_unc,
+    }
+
+    np.savez(
+        result_dir / "oracle_circle_arrays.npz",
+        gallery_mu=gallery_mu,
+        tau=tau,
+        beta=beta,
+        gallery_kappa=gallery_kappa,
+        val_mu=val_mu,
+        val_kappa=val_kappa,
+        val_labels=val_labels,
+        val_error=val_error,
+        val_low_quality=val_lowq,
+        val_holue_posterior=val_stats.holue_posterior,
+        val_kl_total=val_stats.kl_total,
+        test_mu=test_mu,
+        test_kappa=test_kappa,
+        test_labels=test_labels,
+        test_error=test_error,
+        test_low_quality=test_lowq,
+        test_holue_posterior=test_stats.holue_posterior,
+        test_kl_total=test_stats.kl_total,
+        test_action_risk=test_action_risk,
+    )
+
+    fractions = np.linspace(
+        args.rejection_fraction_start,
+        args.rejection_fraction_stop,
+        args.rejection_fraction_num,
+    )
+
+    def slugify_local(name: str) -> str:
+        out = name.lower()
+        for ch in [" ", "-", "/", "(", ")", "[", "]", "{", "}", "."]:
+            out = out.replace(ch, "_")
+        while "__" in out:
+            out = out.replace("__", "_")
+        return out.strip("_")
+
+    curves = {}
+    for name, unc in uncertainties.items():
+        df = rejection_curve(
+            uncertainty=unc,
+            pred_idx=test_stats.pred_idx,
+            rejected=test_stats.rejected,
+            labels=test_stats.labels,
+            known_classes=known_classes_oracle,
+            fractions=fractions,
+        )
+        curves[name] = df
+        df.to_csv(result_dir / f"rejection_curve_{slugify_local(name)}.csv", index=False)
+
+    random_curve = curves["Random"]
+    oracle_curve = curves["Oracle"]
+
+    try:
+        from sklearn.metrics import average_precision_score, roc_auc_score
+    except Exception:
+        average_precision_score = None
+        roc_auc_score = None
+
+    rows = []
+    for name, unc in uncertainties.items():
+        df = curves[name]
+        prr_f1 = compute_prr(
+            curve=df,
+            random_curve=random_curve,
+            oracle_curve=oracle_curve,
+            metric="f1",
+        )
+
+        if roc_auc_score is not None and len(np.unique(test_error)) == 2:
+            error_auc = float(roc_auc_score(test_error.astype(int), unc))
+            error_ap = float(average_precision_score(test_error.astype(int), unc))
+        else:
+            error_auc = float("nan")
+            error_ap = float("nan")
+
+        rows.append(
+            {
+                "method": name,
+                "base_f1": test_base_metrics["f1"],
+                "base_fpir": test_base_metrics["fpir"],
+                "base_fnir": test_base_metrics["fnir"],
+                "base_error_rate": test_base_metrics["error_rate"],
+                "prr_f1": prr_f1,
+                "error_roc_auc": error_auc,
+                "error_average_precision": error_ap,
+                "f1_after_50pct_filter": float(df.iloc[-1]["f1"]),
+                "fpir_after_50pct_filter": float(df.iloc[-1]["fpir"]),
+                "fnir_after_50pct_filter": float(df.iloc[-1]["fnir"]),
+            }
+        )
+
+    summary_df = pd.DataFrame(rows)
+    summary_df.to_csv(result_dir / "oracle_circle_method_summary.csv", index=False)
+
+    print("\n[Oracle circle] Method summary:")
+    print(summary_df.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+
+    method_order = [
+        "Bayes action risk",
+        "HolUE mixed KL",
+        "LogReg calibrated",
+        "Collapsed action entropy",
+        "GalUE",
+        "SCF",
+        "AccScr",
+        "MaxSim",
+        "Random",
+        "Oracle",
+    ]
+
+    plot_rejection_curves(
+        curves=curves,
+        out_dir=figure_dir,
+        metric=args.plots.rejection_curves.metric,
+        plot_cfg=args.plots.rejection_curves,
+        method_order=method_order,
+    )
+
+    # Simple diagnostic scatter.
+    plt.figure(figsize=(7.0, 4.8))
+    plt.scatter(
+        test_action_risk,
+        test_mixed_kl_unc,
+        c=test_error.astype(int),
+        cmap="coolwarm",
+        s=18,
+        alpha=0.70,
+        linewidths=0,
+    )
+    plt.xlabel("Bayes action risk")
+    plt.ylabel("HolUE mixed-KL uncertainty: -KL")
+    plt.title("Oracle circle: action risk vs mixed identity-information uncertainty")
+    cb = plt.colorbar()
+    cb.set_label("OSR error")
+    plt.grid(True, linestyle="--", alpha=0.35)
+    plt.tight_layout()
+    plt.savefig(figure_dir / "oracle_circle_action_risk_vs_mixed_kl.png", dpi=300)
+    plt.savefig(figure_dir / "oracle_circle_action_risk_vs_mixed_kl.pdf", dpi=300, bbox_inches="tight")
+    plt.close()
+
+    report = f""""""
 
 def main() -> None:
     args = load_toy_config()
@@ -3861,7 +4884,20 @@ def main() -> None:
     print(
         f"Validation-selected cosine threshold tau={tau:.6f} for target FPIR={args.target_fpir}"
     )
+    effective_beta_2d = args.osr_beta
+    if effective_beta_2d is None:
+        effective_beta_2d = beta_from_tau_mixed_prior(
+            dim=args.embedding_dim_2d,
+            tau=tau,
+            gallery_kappa=args.gallery_kappa,
+            K=len(known_classes),
+        )
 
+    print(
+        f"Continuous-OOG HolUE: enabled={args.continuous_oog}, "
+        f"effective beta={effective_beta_2d:.6g}"
+    )
+    
     # ---------------------------
     # Compute GalUE/HolUE stats
     # ---------------------------
@@ -3875,6 +4911,8 @@ def main() -> None:
         tau=tau,
         gallery_kappa=args.gallery_kappa,
         n_grid=args.circle_grid,
+        beta=effective_beta_2d,
+        continuous_oog=args.continuous_oog,
     )
     setattr(val_stats, "probe_mu_for_plot", val_probe_mu)
 
@@ -3887,6 +4925,8 @@ def main() -> None:
         tau=tau,
         gallery_kappa=args.gallery_kappa,
         n_grid=args.circle_grid,
+        beta=effective_beta_2d,
+        continuous_oog=args.continuous_oog,
     )
     setattr(test_stats, "probe_mu_for_plot", test_probe_mu)
 
@@ -3920,6 +4960,8 @@ def main() -> None:
         test_kl_known=test_stats.kl_known,
         test_kl_oog=test_stats.kl_oog,
         test_kl_total=test_stats.kl_total,
+        continuous_oog=args.continuous_oog,
+        effective_beta=effective_beta_2d,
     )
 
     # ---------------------------
@@ -3968,6 +5010,8 @@ def main() -> None:
                 "gallery_kappa": args.gallery_kappa,
                 "val": val_base_metrics,
                 "test": test_base_metrics,
+                "continuous_oog": args.continuous_oog,
+                "effective_beta": effective_beta_2d,
             },
             f,
             indent=2,
@@ -3987,7 +5031,9 @@ def main() -> None:
         """
         return np.column_stack(
             [
-                stats.holue_entropy,
+                -stats.kl_total,                    # main mixed-KL uncertainty
+                stats.holue_entropy,                # collapsed action entropy diagnostic
+                action_risk_from_posterior(stats),  # posterior action-risk diagnostic
                 stats.gal_entropy,
                 np.log(stats.scf_kappa + 1e-8),
                 np.abs(stats.max_sim - tau),
@@ -4006,7 +5052,9 @@ def main() -> None:
         "used": False,
         "reason": "",
         "feature_names": [
-            "holue_entropy",
+            "negative_mixed_kl",
+            "holue_collapsed_entropy",
+            "holue_action_risk",
             "galue_entropy",
             "log_scf_kappa",
             "abs_maxsim_minus_tau",
@@ -4065,13 +5113,15 @@ def main() -> None:
     # Oracle: all erroneous predictions first, ties random.
     oracle_unc = test_error.astype(float) + 1e-6 * rng_eval.random(len(test_error))
 
+    holue_mixed_kl_unc = -test_stats.kl_total
+    holue_action_risk = action_risk_from_posterior(test_stats)
+
     uncertainties: Dict[str, np.ndarray] = {
-        # Main method for the no-validation-calibration claim.
-        "HolUE no calibration": test_stats.holue_entropy,
-        # Validation-calibrated comparison.
+        "HolUE no calibration": holue_mixed_kl_unc,
         "HolUE calibrated": holue_calibrated_unc,
-        # Ablations / baselines.
-        "HolUE raw KL": -test_stats.kl_total,
+        "HolUE raw KL": holue_mixed_kl_unc,
+        "HolUE collapsed entropy": test_stats.holue_entropy,
+        "HolUE action risk": holue_action_risk,
         "GalUE": test_stats.gal_entropy,
         "SCF": -np.log(test_stats.scf_kappa + 1e-8),
         "AccScr": -np.abs(test_stats.max_sim - tau),
@@ -4298,6 +5348,7 @@ validation-calibrated variant is included only as an extra comparison.
 
     with open(out_dir / "run_config.json", "w", encoding="utf-8") as f:
         json.dump(to_jsonable(args), f, indent=2)
+    run_oracle_circle_experiment(args, out_dir)
     if not args.skip_3d:
         run_3d_extension(
             args=args,

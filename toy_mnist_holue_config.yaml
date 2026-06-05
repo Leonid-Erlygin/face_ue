@@ -142,6 +142,34 @@ osr:
   target_fpir: 0.10
   gallery_kappa: 25.0
 
+  # Paper-style continuous OOG prior.
+  continuous_oog: true
+
+  # "auto" derives beta so that the Bayesian OOG boundary matches
+  # the validation-selected cosine threshold tau.
+  beta: auto
+
+oracle_circle:
+  enabled: true
+  seed: 12345
+
+  num_known_classes: 5
+  n_val: 6000
+  n_test: 6000
+
+  # True prior mass of continuous unknown identities.
+  beta: 0.5
+
+  # Class concentration p(z|c).
+  gallery_kappa: 18.0
+
+  # Observation concentrations p(z|x).
+  kappa_high: 80.0
+  kappa_low: 1.5
+  low_quality_prob: 0.30
+
+  circle_grid: 1440
+
 integration:
   # 2D unit-circle quadrature.
   circle_grid: 720
@@ -168,6 +196,8 @@ methods:
     - HolUE no calibration
     - HolUE calibrated
     - HolUE raw KL
+    # - HolUE collapsed entropy
+    # - HolUE action risk
     - GalUE
     - SCF
     - AccScr
