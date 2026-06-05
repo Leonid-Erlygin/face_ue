@@ -1,0 +1,283 @@
+# toy_mnist_holue_config.yaml
+# Complete YAML config for toy MNIST HolUE experiment.
+
+runtime:
+  seed: 777
+  deterministic: true
+  device: auto  # auto | cpu | cuda | cuda:0
+
+output:
+  out_dir: toy_outputs
+
+  # Paths below are relative to out_dir unless absolute.
+  data_dir: mnist_data
+  model_dir: models
+  protocol_dir: protocols
+  result_dir_2d: results
+  figure_dir_2d: figures
+  result_dir_3d: results_3d
+  figure_dir_3d: figures_3d
+
+  checkpoints:
+    arcface_2d: tiny_arcface_mnist_2d_traincorr.pt
+    scf_2d: tiny_scf_mnist_2d_traincorr.pt
+    arcface_3d: tiny_arcface_mnist_3d_traincorr.pt
+    scf_3d: tiny_scf_mnist_3d_traincorr.pt
+
+data:
+  mnist_download: true
+  known_classes: [0, 1, 2, 3, 4]
+  unknown_classes: [5, 6, 7, 8, 9]
+
+protocol:
+  train_per_known_class: 2500
+
+  val_gallery_per_class: 30
+  val_probe_known_per_class: 250
+  val_probe_unknown_per_class: 250
+
+  test_gallery_per_class: 30
+  test_probe_known_per_class: 180
+  test_probe_unknown_per_class: 180
+
+  corrupt_known_frac: 1 #0.25
+  corrupt_unknown_frac: 1 #0.25
+
+corruption:
+  # Used only for probe corruption.
+  enabled_modes:
+    #- occlusion
+    - gaussian_noise
+    #- translation
+    #- erase_noise
+
+  occlusion:
+    h_min: 8
+    h_max: 15
+    w_min: 8
+    w_max: 15
+    fill_value: 0.0
+
+  gaussian_noise:
+    std: 0.5
+
+  translation:
+    max_shift: 5
+    fill_value: 0.0
+
+  erase_noise:
+    h_min: 6
+    h_max: 12
+    w_min: 6
+    w_max: 12
+    noise_std: 0.20
+
+model:
+  # The CNN architecture is intentionally simple and fixed.
+  # These parameters control the embedding dimensionality branches.
+  embedding_dim_2d: 2
+  embedding_dim_3d: 3
+
+  scf:
+    kappa_min: 1.0
+    kappa_max: 80.0
+
+# training:
+#   force_train: false
+#   batch_size: 256
+
+#   arcface:
+#     epochs_2d: 36
+#     epochs_3d: 36
+#     lr: 0.001
+#     scale: 16.0
+#     margin: 0.30
+#     weight_decay: 0.01
+
+#   scf:
+#     epochs_2d: 12
+#     epochs_3d: 12
+#     lr: 0.002
+#     weight_decay: 0.01
+#     kappa_regularizer: 0.01
+
+
+training:
+  force_train: true
+  batch_size: 256
+
+  train_corruption:
+    # ArcFace sees mild corruption as data augmentation.
+    # This makes the embedding model less brittle but still preserves
+    # enough corrupt examples for SCF to learn low quality.
+    arcface:
+      enabled: true
+      probability: 1 #0.25
+      seed_shift: 30000
+
+    # SCF should see more corrupted samples, because it must learn that
+    # these images deserve lower kappa / lower confidence.
+    scf:
+      enabled: true
+      probability: 1 #0.25
+      seed_shift: 40000
+
+  arcface:
+    epochs_2d: 36
+    epochs_3d: 36
+    lr: 0.001
+    scale: 16.0
+    margin: 0.30
+    weight_decay: 1
+
+  scf:
+    epochs_2d: 12
+    epochs_3d: 12
+    lr: 0.002
+    weight_decay: 1
+    kappa_regularizer: 0.0001
+
+
+osr:
+  target_fpir: 0.10
+  gallery_kappa: 25.0
+
+integration:
+  # 2D unit-circle quadrature.
+  circle_grid: 720
+
+  # 3D unit-sphere quadrature.
+  sphere_theta_grid: 96
+  sphere_phi_grid: 48
+
+calibration:
+  enabled: true
+  solver: lbfgs
+  max_iter: 2000
+  class_weight: balanced
+  random_state: 777
+
+evaluation:
+  rejection_fractions:
+    start: 0.0
+    stop: 0.5
+    num: 21
+
+methods:
+  order:
+    - HolUE no calibration
+    - HolUE calibrated
+    - HolUE raw KL
+    - GalUE
+    - SCF
+    - AccScr
+    - MaxSim
+    - Random
+    - Oracle
+
+plots:
+  corruption_visualization:
+    enabled: true
+    dpi: 300
+
+    # Original-vs-corrupted pair grids.
+    num_pair_examples: 16
+    pair_grid_cols: 8
+    force_pair_corruption: true
+
+    # Actual training batch grids.
+    batch_size: 32
+    batch_grid_cols: 8
+
+    # Output files.
+    save_train_pairs: corruption_pairs_train_forced.png
+    save_val_probe_pairs: corruption_pairs_val_probe_forced.png
+    save_test_probe_pairs: corruption_pairs_test_probe_forced.png
+
+    save_arcface_train_batch: corrupted_batch_arcface_train.png
+    save_scf_train_batch: corrupted_batch_scf_train.png
+
+    # Optional title prefix.
+    title_prefix: "MNIST corruption sanity check"
+
+  rejection_curves:
+    enabled: true
+    metric: f1
+    figsize: [8.5, 5.3]
+    dpi: 300
+    title: "MNIST toy OSR: uncertainty-based filtering"
+    xlabel: "Filtered-out probe fraction"
+    ylabel: "F1"
+    grid: true
+    grid_alpha: 0.5
+    legend_fontsize: 8.5
+    show_prr_in_legend: true
+    line_width_holue: 2.8
+    line_width_default: 1.7
+    line_alpha_default: 1.0
+    line_alpha_random_oracle: 0.75
+    save_png: rejection_curves.png
+    save_pdf: rejection_curves.pdf
+    save_prr_csv: rejection_curve_prr_f1.csv
+
+  teaser_circle_2d:
+    enabled: true
+    max_points: 900
+    dpi: 300
+    figsize: [8, 8]
+    title: "HolUE on MNIST OSR: high uncertainty concentrates near real errors"
+    background_points: 720
+    cmap_background: Blues
+    cmap_probe: magma
+    correct_probe_size: 22
+    error_probe_size: 60
+    gallery_marker_size: 260
+    unit_circle_linewidth: 1.0
+    save_png: teaser_holue_mnist_circle.png
+    save_pdf: teaser_holue_mnist_circle.pdf
+
+  stylized_bayesian_circle:
+    enabled: true
+    dpi: 300
+    figsize: [5.8, 5.8]
+    kappa: 8.0
+    beta: 0.5
+    unc_type: entropy  # entropy | max_prob
+    draw_oog: true
+    title: "Gallery-aware uncertainty on the unit circle"
+    save_png: stylized_bayesian_circle_teaser.png
+    save_pdf: stylized_bayesian_circle_teaser.pdf
+
+  holue_vs_scf_scatter:
+    enabled: true
+    dpi: 300
+    figsize: [7, 4.5]
+    title: "MNIST toy OSR: errors are high-HolUE-uncertainty probes"
+    xlabel: "SCF uncertainty: -log kappa"
+    ylabel: "HolUE no-calibration entropy"
+    marker_size: 20
+    alpha: 0.75
+    cmap: coolwarm
+    save_png: holue_vs_scf_error_scatter.png
+    save_pdf: holue_vs_scf_error_scatter.pdf
+
+three_d:
+  enabled: true
+
+  plotly:
+    enabled: true
+    n_theta_surface: 120
+    n_phi_surface: 60
+    max_probe_points: 900
+    cloud_points: 500
+    width: 1000
+    height: 840
+    opacity_surface: 0.72
+    surface_colorscale: Turbo
+    probe_colorscale_correct: Viridis
+    probe_colorscale_error: Plasma
+    title: "Trained 3D MNIST HolUE teaser"
+    subtitle: "Normalized 3D embeddings on S². Surface: GalUE entropy; probes: HolUE uncertainty."
+    save_html: stylized_3d_holue_trained_teaser.html
+    save_png: stylized_3d_holue_trained_teaser.png
+    save_pdf: stylized_3d_holue_trained_teaser.pdf

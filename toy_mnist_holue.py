@@ -32,7 +32,15 @@ comparison; the teaser highlights the no-calibration HolUE behavior.
 
 from __future__ import annotations
 
-import argparse
+import sys
+from types import SimpleNamespace
+
+try:
+    import yaml
+except ImportError as exc:
+    raise ImportError(
+        "PyYAML is required for YAML config support. Install with: pip install pyyaml"
+    ) from exc
 import json
 import math
 import os
@@ -78,6 +86,246 @@ def seed_everything(seed: int = 777, deterministic: bool = True) -> None:
         torch.backends.cudnn.deterministic = True
         torch.use_deterministic_algorithms(True, warn_only=True)
 
+# ---------------------------------------------------------------------
+# YAML config
+# ---------------------------------------------------------------------
+
+
+def dict_to_namespace(obj):
+    if isinstance(obj, dict):
+        return SimpleNamespace(**{k: dict_to_namespace(v) for k, v in obj.items()})
+    if isinstance(obj, list):
+        return [dict_to_namespace(v) for v in obj]
+    return obj
+
+
+def cfg_get(obj, key: str, default=None):
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+def to_jsonable(obj):
+    """
+    Recursively convert objects to JSON-serializable Python types.
+
+    Handles:
+      - SimpleNamespace
+      - dict/list/tuple
+      - pathlib.Path
+      - NumPy scalars/arrays
+      - torch.Tensor
+      - plain Python scalars
+    """
+    if isinstance(obj, SimpleNamespace):
+        return {k: to_jsonable(v) for k, v in vars(obj).items()}
+
+    if isinstance(obj, dict):
+        return {str(k): to_jsonable(v) for k, v in obj.items()}
+
+    if isinstance(obj, (list, tuple)):
+        return [to_jsonable(v) for v in obj]
+
+    if isinstance(obj, Path):
+        return str(obj)
+
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+
+    if isinstance(obj, np.generic):
+        return obj.item()
+
+    if torch.is_tensor(obj):
+        if obj.ndim == 0:
+            return obj.detach().cpu().item()
+        return obj.detach().cpu().tolist()
+
+    if isinstance(obj, (str, int, float, bool)) or obj is None:
+        return obj
+
+    # Last-resort fallback for unusual config objects.
+    return str(obj)
+
+def resolve_under_out_dir(path_value: str, out_dir: Path) -> Path:
+    p = Path(path_value)
+    if p.is_absolute():
+        return p
+    return out_dir / p
+
+
+def load_yaml_file(path: Path) -> dict:
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Config file not found: {path}\n"
+            f"Create toy_mnist_holue_config.yaml or pass a config path as first argument."
+        )
+    with path.open("r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    if data is None:
+        raise ValueError(f"Config file is empty: {path}")
+    return data
+
+
+def flatten_toy_config(raw: dict) -> SimpleNamespace:
+    """
+    Flatten nested YAML into attributes expected by the existing script.
+
+    We keep `args.full_config` as the complete nested config, and expose
+    top-level convenience attributes for minimal changes in old code.
+    """
+    output = raw["output"]
+    runtime = raw["runtime"]
+    data = raw["data"]
+    protocol = raw["protocol"]
+    model = raw["model"]
+    training = raw["training"]
+    osr = raw["osr"]
+    integration = raw["integration"]
+    calibration = raw["calibration"]
+    evaluation = raw["evaluation"]
+    three_d = raw["three_d"]
+
+    flat = {}
+
+    # Runtime
+    flat["seed"] = int(runtime["seed"])
+    flat["deterministic"] = bool(runtime.get("deterministic", True))
+    flat["device"] = str(runtime.get("device", "auto"))
+
+    # Output paths
+    flat["out_dir"] = str(output["out_dir"])
+    flat["data_dir"] = str(output.get("data_dir", "mnist_data"))
+    flat["model_dir"] = str(output.get("model_dir", "models"))
+    flat["protocol_dir"] = str(output.get("protocol_dir", "protocols"))
+    flat["result_dir_2d"] = str(output.get("result_dir_2d", "results"))
+    flat["figure_dir_2d"] = str(output.get("figure_dir_2d", "figures"))
+    flat["result_dir_3d"] = str(output.get("result_dir_3d", "results_3d"))
+    flat["figure_dir_3d"] = str(output.get("figure_dir_3d", "figures_3d"))
+
+    checkpoints = output.get("checkpoints", {})
+    flat["arcface_checkpoint_2d"] = checkpoints.get("arcface_2d", "tiny_arcface_mnist_2d.pt")
+    flat["scf_checkpoint_2d"] = checkpoints.get("scf_2d", "tiny_scf_mnist_2d.pt")
+    flat["arcface_checkpoint_3d"] = checkpoints.get("arcface_3d", "tiny_arcface_mnist_3d.pt")
+    flat["scf_checkpoint_3d"] = checkpoints.get("scf_3d", "tiny_scf_mnist_3d.pt")
+
+    # Data
+    flat["mnist_download"] = bool(data.get("mnist_download", True))
+    flat["known_classes"] = [int(x) for x in data["known_classes"]]
+    flat["unknown_classes"] = [int(x) for x in data["unknown_classes"]]
+
+    # Protocol
+    flat["train_per_known_class"] = int(protocol["train_per_known_class"])
+    flat["val_gallery_per_class"] = int(protocol["val_gallery_per_class"])
+    flat["val_probe_known_per_class"] = int(protocol["val_probe_known_per_class"])
+    flat["val_probe_unknown_per_class"] = int(protocol["val_probe_unknown_per_class"])
+    flat["test_gallery_per_class"] = int(protocol["test_gallery_per_class"])
+    flat["test_probe_known_per_class"] = int(protocol["test_probe_known_per_class"])
+    flat["test_probe_unknown_per_class"] = int(protocol["test_probe_unknown_per_class"])
+    flat["corrupt_known_frac"] = float(protocol["corrupt_known_frac"])
+    flat["corrupt_unknown_frac"] = float(protocol["corrupt_unknown_frac"])
+
+    # Model
+    flat["embedding_dim_2d"] = int(model.get("embedding_dim_2d", 2))
+    flat["embedding_dim_3d"] = int(model.get("embedding_dim_3d", 3))
+    flat["scf_kappa_min"] = float(model["scf"].get("kappa_min", 1.0))
+    flat["scf_kappa_max"] = float(model["scf"].get("kappa_max", 80.0))
+
+    # Training
+    flat["force_train"] = bool(training.get("force_train", False))
+    flat["batch_size"] = int(training["batch_size"])
+
+    flat["arcface_epochs"] = int(training["arcface"]["epochs_2d"])
+    flat["arcface_epochs_3d"] = int(training["arcface"]["epochs_3d"])
+    flat["lr_arcface"] = float(training["arcface"]["lr"])
+    flat["arcface_s"] = float(training["arcface"].get("scale", 16.0))
+    flat["arcface_m"] = float(training["arcface"].get("margin", 0.30))
+    flat["arcface_weight_decay"] = float(training["arcface"].get("weight_decay", 1e-4))
+
+    flat["scf_epochs"] = int(training["scf"]["epochs_2d"])
+    flat["scf_epochs_3d"] = int(training["scf"]["epochs_3d"])
+    flat["lr_scf"] = float(training["scf"]["lr"])
+    flat["scf_weight_decay"] = float(training["scf"].get("weight_decay", 1e-4))
+    flat["scf_kappa_regularizer"] = float(training["scf"].get("kappa_regularizer", 1e-4))
+    
+    train_corr = training.get("train_corruption", {})
+
+    arc_corr = train_corr.get("arcface", {})
+    scf_corr = train_corr.get("scf", {})
+
+    flat["train_corrupt_arcface_enabled"] = bool(arc_corr.get("enabled", False))
+    flat["train_corrupt_arcface_probability"] = float(arc_corr.get("probability", 0.0))
+    flat["train_corrupt_arcface_seed_shift"] = int(arc_corr.get("seed_shift", 30000))
+
+    flat["train_corrupt_scf_enabled"] = bool(scf_corr.get("enabled", False))
+    flat["train_corrupt_scf_probability"] = float(scf_corr.get("probability", 0.0))
+    flat["train_corrupt_scf_seed_shift"] = int(scf_corr.get("seed_shift", 40000))
+    
+    # OSR and integration
+    flat["target_fpir"] = float(osr["target_fpir"])
+    flat["gallery_kappa"] = float(osr["gallery_kappa"])
+
+    flat["circle_grid"] = int(integration["circle_grid"])
+    flat["sphere_theta_grid"] = int(integration["sphere_theta_grid"])
+    flat["sphere_phi_grid"] = int(integration["sphere_phi_grid"])
+
+    # Calibration
+    flat["calibration_enabled"] = bool(calibration.get("enabled", True))
+    flat["calibration_solver"] = str(calibration.get("solver", "lbfgs"))
+    flat["calibration_max_iter"] = int(calibration.get("max_iter", 2000))
+    flat["calibration_class_weight"] = calibration.get("class_weight", "balanced")
+    flat["calibration_random_state"] = int(calibration.get("random_state", flat["seed"]))
+
+    # Evaluation fractions
+    frac = evaluation["rejection_fractions"]
+    flat["rejection_fraction_start"] = float(frac["start"])
+    flat["rejection_fraction_stop"] = float(frac["stop"])
+    flat["rejection_fraction_num"] = int(frac["num"])
+
+    # 3D
+    flat["skip_3d"] = not bool(three_d.get("enabled", True))
+    flat["teaser_3d_points"] = int(three_d["plotly"].get("max_probe_points", 900))
+
+    ns = SimpleNamespace(**flat)
+    ns.full_config = dict_to_namespace(raw)
+    ns.plots = ns.full_config.plots
+    ns.three_d = ns.full_config.three_d
+    ns.corruption = ns.full_config.corruption
+    ns.methods = ns.full_config.methods
+    return ns
+
+
+def load_toy_config() -> SimpleNamespace:
+    """
+    No argparse. Config path resolution:
+
+      1. first positional argument, if provided:
+           python toy_mnist_holue.py my_config.yaml
+
+      2. environment variable:
+           TOY_MNIST_HOLUE_CONFIG=my_config.yaml python toy_mnist_holue.py
+
+      3. default:
+           toy_mnist_holue_config.yaml
+    """
+    if len(sys.argv) > 2:
+        raise ValueError(
+            "This script does not use argparse. "
+            "Pass at most one positional YAML config path."
+        )
+
+    if len(sys.argv) == 2:
+        config_path = Path(sys.argv[1])
+    else:
+        config_path = Path(
+            os.environ.get("TOY_MNIST_HOLUE_CONFIG", "toy_mnist_holue_config.yaml")
+        )
+
+    raw = load_yaml_file(config_path)
+    args = flatten_toy_config(raw)
+    args.config_path = str(config_path)
+
+    print(f"Loaded config: {config_path.resolve()}")
+    return args
 
 # ---------------------------------------------------------------------
 # Simple ArcFace / SCF implementation for 2D MNIST embeddings
@@ -297,67 +545,106 @@ def get_targets(ds: datasets.MNIST) -> np.ndarray:
     return np.asarray(targets, dtype=int)
 
 
-def corrupt_tensor_mnist(img: torch.Tensor, seed: int) -> torch.Tensor:
+def corrupt_tensor_mnist(img: torch.Tensor, seed: int, corruption_cfg=None) -> torch.Tensor:
     """
-    Deterministic corruption for probe samples.
+    Deterministic corruption for MNIST tensors.
+
     Input/output tensor is normalized by mean=0.5, std=0.5.
+    Corruption parameters are YAML-controlled.
     """
     rng = np.random.default_rng(seed)
 
     x = img.clone()
-    x = x * 0.5 + 0.5  # [-1,1] -> [0,1]
+    x = x * 0.5 + 0.5
     x = x.clamp(0.0, 1.0)
 
-    mode = int(rng.integers(0, 4))
+    enabled_modes = cfg_get(
+        corruption_cfg,
+        "enabled_modes",
+        ["occlusion", "gaussian_noise", "translation", "erase_noise"],
+    )
+    enabled_modes = list(enabled_modes)
 
-    if mode == 0:
-        # black occlusion rectangle
-        h = int(rng.integers(8, 15))
-        w = int(rng.integers(8, 15))
+    if len(enabled_modes) == 0:
+        return img
+
+    mode = str(rng.choice(enabled_modes))
+
+    if mode == "occlusion":
+        ocfg = cfg_get(corruption_cfg, "occlusion", None)
+
+        h_min = int(cfg_get(ocfg, "h_min", 8))
+        h_max = int(cfg_get(ocfg, "h_max", 15))
+        w_min = int(cfg_get(ocfg, "w_min", 8))
+        w_max = int(cfg_get(ocfg, "w_max", 15))
+        fill = float(cfg_get(ocfg, "fill_value", 0.0))
+
+        h = int(rng.integers(h_min, h_max + 1))
+        w = int(rng.integers(w_min, w_max + 1))
         y = int(rng.integers(0, 28 - h + 1))
         z = int(rng.integers(0, 28 - w + 1))
-        x[:, y : y + h, z : z + w] = 0.0
 
-    elif mode == 1:
-        # additive Gaussian noise
+        x[:, y : y + h, z : z + w] = fill
+
+    elif mode == "gaussian_noise":
+        ncfg = cfg_get(corruption_cfg, "gaussian_noise", None)
+        std = float(cfg_get(ncfg, "std", 0.35))
+
         noise = torch.tensor(
-            rng.normal(0.0, 0.35, size=tuple(x.shape)),
+            rng.normal(0.0, std, size=tuple(x.shape)),
             dtype=x.dtype,
             device=x.device,
         )
         x = (x + noise).clamp(0.0, 1.0)
 
-    elif mode == 2:
-        # roll/translation with blank borders
-        dy = int(rng.integers(-5, 6))
-        dx = int(rng.integers(-5, 6))
+    elif mode == "translation":
+        tcfg = cfg_get(corruption_cfg, "translation", None)
+
+        max_shift = int(cfg_get(tcfg, "max_shift", 5))
+        fill = float(cfg_get(tcfg, "fill_value", 0.0))
+
+        dy = int(rng.integers(-max_shift, max_shift + 1))
+        dx = int(rng.integers(-max_shift, max_shift + 1))
+
         x = torch.roll(x, shifts=(dy, dx), dims=(1, 2))
+
         if dy > 0:
-            x[:, :dy, :] = 0.0
+            x[:, :dy, :] = fill
         elif dy < 0:
-            x[:, dy:, :] = 0.0
+            x[:, dy:, :] = fill
+
         if dx > 0:
-            x[:, :, :dx] = 0.0
+            x[:, :, :dx] = fill
         elif dx < 0:
-            x[:, :, dx:] = 0.0
+            x[:, :, dx:] = fill
+
+    elif mode == "erase_noise":
+        ecfg = cfg_get(corruption_cfg, "erase_noise", None)
+
+        h_min = int(cfg_get(ecfg, "h_min", 6))
+        h_max = int(cfg_get(ecfg, "h_max", 12))
+        w_min = int(cfg_get(ecfg, "w_min", 6))
+        w_max = int(cfg_get(ecfg, "w_max", 12))
+        noise_std = float(cfg_get(ecfg, "noise_std", 0.20))
+
+        h = int(rng.integers(h_min, h_max + 1))
+        w = int(rng.integers(w_min, w_max + 1))
+        y = int(rng.integers(0, 28 - h + 1))
+        z = int(rng.integers(0, 28 - w + 1))
+
+        x[:, y : y + h, z : z + w] = float(rng.uniform(0.0, 1.0))
+
+        noise = torch.tensor(
+            rng.normal(0.0, noise_std, size=tuple(x.shape)),
+            dtype=x.dtype,
+            device=x.device,
+        )
+        x = (x + noise).clamp(0.0, 1.0)
 
     else:
-        # partial erasing + noise
-        h = int(rng.integers(6, 12))
-        w = int(rng.integers(6, 12))
-        y = int(rng.integers(0, 28 - h + 1))
-        z = int(rng.integers(0, 28 - w + 1))
-        x[:, y : y + h, z : z + w] = float(rng.uniform(0.0, 1.0))
-        noise = torch.tensor(
-            rng.normal(0.0, 0.20, size=tuple(x.shape)),
-            dtype=x.dtype,
-            device=x.device,
-        )
-        x = (x + noise).clamp(0.0, 1.0)
+        raise ValueError(f"Unknown corruption mode: {mode}")
 
     return (x - 0.5) / 0.5
-
-
 # ---------------------------------------------------------------------
 # 3D HolUE support on S^2
 # ---------------------------------------------------------------------
@@ -519,28 +806,108 @@ def compute_osr_stats_nd(
 
 
 class KnownMNISTDataset(Dataset):
-    """Training dataset containing only known classes with labels remapped to 0..K-1."""
+    """
+    Training dataset containing only known classes with labels remapped to 0..K-1.
+
+    It optionally applies deterministic corruption with probability p. This is used
+    as train-time augmentation for both ArcFace and SCF.
+
+    Important:
+      - ArcFace can use smaller corruption probability.
+      - SCF can use larger corruption probability so it learns lower kappa on
+        degraded samples.
+    """
 
     def __init__(
         self,
         base: datasets.MNIST,
         indices: np.ndarray,
         class_to_idx: Dict[int, int],
+        corruption_cfg=None,
+        corruption_prob: float = 0.0,
+        corrupt_seed: int = 777,
     ):
         self.base = base
         self.indices = np.asarray(indices, dtype=int)
         self.class_to_idx = class_to_idx
+        self.corruption_cfg = corruption_cfg
+        self.corruption_prob = float(corruption_prob)
+        self.corrupt_seed = int(corrupt_seed)
+
+        if not (0.0 <= self.corruption_prob <= 1.0):
+            raise ValueError(
+                f"corruption_prob must be in [0, 1], got {self.corruption_prob}"
+            )
 
     def __len__(self) -> int:
         return len(self.indices)
 
+    def _should_corrupt(self, orig_idx: int) -> bool:
+        if self.corruption_prob <= 0.0:
+            return False
+        if self.corruption_prob >= 1.0:
+            return True
+
+        # Deterministic per sample.
+        rng = np.random.default_rng(self.corrupt_seed + int(orig_idx) * 1000003)
+        return bool(rng.random() < self.corruption_prob)
+
     def __getitem__(self, i: int):
         orig_idx = int(self.indices[i])
         img, label = self.base[orig_idx]
+
+        if self._should_corrupt(orig_idx):
+            img = corrupt_tensor_mnist(
+                img,
+                seed=self.corrupt_seed + orig_idx,
+                corruption_cfg=self.corruption_cfg,
+            )
+
         label = self.class_to_idx[int(label)]
         return img, torch.tensor(label, dtype=torch.long)
+    
+    
+def make_known_training_dataset(
+    args,
+    base: datasets.MNIST,
+    train_indices: np.ndarray,
+    class_to_idx: Dict[int, int],
+    stage: str,
+) -> KnownMNISTDataset:
+    """
+    Create known-class training dataset with stage-specific corruption.
 
+    stage:
+      - "arcface"
+      - "scf"
+    """
+    if stage == "arcface":
+        enabled = args.train_corrupt_arcface_enabled
+        prob = args.train_corrupt_arcface_probability if enabled else 0.0
+        seed = args.seed + args.train_corrupt_arcface_seed_shift
 
+    elif stage == "scf":
+        enabled = args.train_corrupt_scf_enabled
+        prob = args.train_corrupt_scf_probability if enabled else 0.0
+        seed = args.seed + args.train_corrupt_scf_seed_shift
+
+    else:
+        raise ValueError(f"Unknown training stage: {stage}")
+
+    print(
+        f"[Train dataset] stage={stage}, "
+        f"corruption_enabled={enabled}, corruption_prob={prob}, seed={seed}"
+    )
+
+    return KnownMNISTDataset(
+        base=base,
+        indices=train_indices,
+        class_to_idx=class_to_idx,
+        corruption_cfg=args.corruption,
+        corruption_prob=prob,
+        corrupt_seed=seed,
+    )
+    
 class IndexedMNISTView(Dataset):
     """
     View of MNIST by original indices. Optionally corrupts selected original indices.
@@ -552,21 +919,18 @@ class IndexedMNISTView(Dataset):
         indices: np.ndarray,
         corrupt_indices: Optional[Iterable[int]] = None,
         corrupt_seed: int = 777,
+        corruption_cfg=None,
     ):
         self.base = base
         self.indices = np.asarray(indices, dtype=int)
 
-        # Important: corrupt_indices can be a NumPy array.
-        # Never use `corrupt_indices or []` because NumPy arrays do not have
-        # a scalar truth value.
         if corrupt_indices is None:
             self.corrupt_set = set()
         else:
-            self.corrupt_set = set(
-                map(int, np.asarray(list(corrupt_indices)).reshape(-1))
-            )
+            self.corrupt_set = set(map(int, np.asarray(list(corrupt_indices)).reshape(-1)))
 
         self.corrupt_seed = int(corrupt_seed)
+        self.corruption_cfg = corruption_cfg
 
     def __len__(self) -> int:
         return len(self.indices)
@@ -574,10 +938,15 @@ class IndexedMNISTView(Dataset):
     def __getitem__(self, i: int):
         orig_idx = int(self.indices[i])
         img, label = self.base[orig_idx]
-        if orig_idx in self.corrupt_set:
-            img = corrupt_tensor_mnist(img, seed=self.corrupt_seed + orig_idx)
-        return img, int(label)
 
+        if orig_idx in self.corrupt_set:
+            img = corrupt_tensor_mnist(
+                img,
+                seed=self.corrupt_seed + orig_idx,
+                corruption_cfg=self.corruption_cfg,
+            )
+
+        return img, int(label)
 
 @dataclass
 class ProtocolIndices:
@@ -727,6 +1096,9 @@ def train_arcface(
     batch_size: int,
     lr: float,
     seed: int,
+    arcface_s: float = 16.0,
+    arcface_m: float = 0.30,
+    weight_decay: float = 1e-4,
 ) -> None:
     model.to(device)
     model.train()
@@ -743,8 +1115,8 @@ def train_arcface(
         generator=generator,
     )
 
-    criterion = ArcFaceLoss(s=16.0, m=0.30)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    criterion = ArcFaceLoss(s=arcface_s, m=arcface_m)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     for epoch in range(1, epochs + 1):
         losses = []
@@ -782,6 +1154,8 @@ def train_scf(
     batch_size: int,
     lr: float,
     seed: int,
+    weight_decay: float = 1e-4,
+    kappa_regularizer: float = 1e-4,
 ) -> None:
     scf_model.to(device)
     arc_model.to(device)
@@ -803,7 +1177,11 @@ def train_scf(
     )
 
     criterion = SCFVMFLoss(embedding_dim=arc_model.embedding_dim)
-    optimizer = torch.optim.AdamW(scf_model.head.parameters(), lr=lr, weight_decay=1e-4)
+    optimizer = torch.optim.AdamW(
+    scf_model.head.parameters(),
+    lr=lr,
+    weight_decay=weight_decay,
+)
 
     class_centers = arc_model.class_centers().to(device)
 
@@ -823,7 +1201,7 @@ def train_scf(
 
             loss = criterion(emb, kappa, wc)
             # small regularizer against always saturating at max kappa
-            loss = loss + 1e-4 * kappa.mean()
+            loss = loss + kappa_regularizer * kappa.mean()
 
             loss.backward()
             optimizer.step()
@@ -855,12 +1233,14 @@ def extract_arc_embeddings(
     batch_size: int,
     corrupt_indices: Optional[Iterable[int]] = None,
     corrupt_seed: int = 777,
+    corruption_cfg=None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     view = IndexedMNISTView(
         base_ds,
         indices=indices,
         corrupt_indices=corrupt_indices,
         corrupt_seed=corrupt_seed,
+        corruption_cfg=corruption_cfg,
     )
     loader = DataLoader(view, batch_size=batch_size, shuffle=False, num_workers=0)
 
@@ -887,12 +1267,14 @@ def extract_scf_embeddings(
     batch_size: int,
     corrupt_indices: Optional[Iterable[int]] = None,
     corrupt_seed: int = 777,
+    corruption_cfg=None,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     view = IndexedMNISTView(
         base_ds,
         indices=indices,
         corrupt_indices=corrupt_indices,
         corrupt_seed=corrupt_seed,
+        corruption_cfg=corruption_cfg,
     )
     loader = DataLoader(view, batch_size=batch_size, shuffle=False, num_workers=0)
 
@@ -1277,19 +1659,38 @@ def plot_rejection_curves(
     curves: Dict[str, pd.DataFrame],
     out_dir: Path,
     metric: str = "f1",
+    plot_cfg=None,
+    method_order: Optional[List[str]] = None,
 ) -> None:
     """
-    Plot rejection curves and report PRR in the legend.
+    Config-driven rejection curves with PRR in legend.
 
-    PRR is computed using Random and Oracle curves:
-        PRR = (AUC_method - AUC_random) / (AUC_oracle - AUC_random)
+    PRR:
+        (AUC_method - AUC_random) / (AUC_oracle - AUC_random)
     """
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if "Random" not in curves or "Oracle" not in curves:
-        raise ValueError(
-            "Curves dictionary must contain 'Random' and 'Oracle' for PRR."
-        )
+        raise ValueError("Curves dictionary must contain 'Random' and 'Oracle' for PRR.")
+
+    figsize = tuple(cfg_get(plot_cfg, "figsize", [8.5, 5.3]))
+    dpi = int(cfg_get(plot_cfg, "dpi", 300))
+    title = cfg_get(plot_cfg, "title", "Uncertainty-based filtering")
+    xlabel = cfg_get(plot_cfg, "xlabel", "Filtered-out probe fraction")
+    ylabel = cfg_get(plot_cfg, "ylabel", metric.upper())
+    grid = bool(cfg_get(plot_cfg, "grid", True))
+    grid_alpha = float(cfg_get(plot_cfg, "grid_alpha", 0.5))
+    legend_fontsize = float(cfg_get(plot_cfg, "legend_fontsize", 8.5))
+    show_prr = bool(cfg_get(plot_cfg, "show_prr_in_legend", True))
+
+    lw_holue = float(cfg_get(plot_cfg, "line_width_holue", 2.8))
+    lw_default = float(cfg_get(plot_cfg, "line_width_default", 1.7))
+    alpha_default = float(cfg_get(plot_cfg, "line_alpha_default", 1.0))
+    alpha_random_oracle = float(cfg_get(plot_cfg, "line_alpha_random_oracle", 0.75))
+
+    save_png = cfg_get(plot_cfg, "save_png", "rejection_curves.png")
+    save_pdf = cfg_get(plot_cfg, "save_pdf", "rejection_curves.pdf")
+    save_prr_csv = cfg_get(plot_cfg, "save_prr_csv", f"rejection_curve_prr_{metric}.csv")
 
     random_curve = curves["Random"]
     oracle_curve = curves["Oracle"]
@@ -1303,34 +1704,35 @@ def plot_rejection_curves(
             metric=metric,
         )
 
-    plt.figure(figsize=(8.5, 5.3))
+    if method_order is None:
+        method_order = [
+            "HolUE no calibration",
+            "HolUE calibrated",
+            "HolUE raw KL",
+            "GalUE",
+            "SCF",
+            "AccScr",
+            "MaxSim",
+            "Random",
+            "Oracle",
+        ]
 
-    preferred_order = [
-        "HolUE no calibration",
-        "HolUE calibrated",
-        "HolUE raw KL",
-        "GalUE",
-        "SCF",
-        "AccScr",
-        "MaxSim",
-        "Random",
-        "Oracle",
-    ]
-
-    names_to_plot = [n for n in preferred_order if n in curves]
+    names_to_plot = [n for n in method_order if n in curves]
     names_to_plot += [n for n in curves.keys() if n not in names_to_plot]
+
+    plt.figure(figsize=figsize)
 
     for name in names_to_plot:
         df = curves[name]
 
-        lw = 2.8 if "HolUE" in name else 1.7
-        alpha = 1.0 if name not in {"Random", "Oracle"} else 0.75
+        lw = lw_holue if "HolUE" in name else lw_default
+        alpha = alpha_random_oracle if name in {"Random", "Oracle"} else alpha_default
 
-        prr = prr_values[name]
-        if np.isfinite(prr):
-            label = f"{name} (PRR={prr:.2f})"
+        if show_prr:
+            prr = prr_values[name]
+            label = f"{name} (PRR={prr:.2f})" if np.isfinite(prr) else f"{name} (PRR=nan)"
         else:
-            label = f"{name} (PRR=nan)"
+            label = name
 
         plt.plot(
             df["fraction"],
@@ -1340,24 +1742,30 @@ def plot_rejection_curves(
             alpha=alpha,
         )
 
-    plt.xlabel("Filtered-out probe fraction")
-    plt.ylabel(metric.upper())
-    plt.title("MNIST toy OSR: uncertainty-based filtering")
-    plt.grid(True, linestyle="--", alpha=0.5)
-    plt.legend(fontsize=8.5)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.title(title)
+
+    if grid:
+        plt.grid(True, linestyle="--", alpha=grid_alpha)
+
+    plt.legend(fontsize=legend_fontsize)
     plt.tight_layout()
 
-    plt.savefig(out_dir / "rejection_curves.png", dpi=300)
-    plt.savefig(out_dir / "rejection_curves.pdf", dpi=300, bbox_inches="tight")
+    if save_png:
+        plt.savefig(out_dir / save_png, dpi=dpi)
+    if save_pdf:
+        plt.savefig(out_dir / save_pdf, dpi=dpi, bbox_inches="tight")
+
     plt.close()
 
-    # Save PRR values as a small table too.
     prr_df = pd.DataFrame(
         [{"method": name, f"PRR_{metric}": prr_values[name]} for name in names_to_plot]
     )
-    prr_df.to_csv(out_dir / f"rejection_curve_prr_{metric}.csv", index=False)
-
-
+    if save_prr_csv:
+        prr_df.to_csv(out_dir / save_prr_csv, index=False)
+        
+        
 def plot_teaser_circle(
     stats: OSRStats,
     gallery_mu: np.ndarray,
@@ -1532,6 +1940,269 @@ def plot_teaser_circle(
     plt.savefig(out_dir / "teaser_holue_mnist_circle.pdf", dpi=300, bbox_inches="tight")
     plt.close()
 
+# ---------------------------------------------------------------------
+# Corruption sanity-check visualizations
+# ---------------------------------------------------------------------
+
+
+def mnist_tensor_to_numpy_img(x: torch.Tensor) -> np.ndarray:
+    """
+    Convert normalized MNIST tensor [1,28,28] from [-1,1] to display image [0,1].
+    """
+    x = x.detach().cpu().clone()
+    x = x * 0.5 + 0.5
+    x = x.clamp(0.0, 1.0)
+    return x.squeeze(0).numpy()
+
+
+def save_original_vs_corrupted_grid(
+    base: datasets.MNIST,
+    indices: np.ndarray,
+    out_path: Path,
+    corruption_cfg,
+    seed: int,
+    num_examples: int = 16,
+    ncols: int = 8,
+    title: str = "Original vs corrupted",
+    force_corruption: bool = True,
+    corruption_prob: float = 1.0,
+) -> None:
+    """
+    Save a compact grid:
+
+      row 0: original images
+      row 1: corrupted images
+      row 2: original images
+      row 3: corrupted images
+      ...
+
+    If force_corruption=True, every displayed sample is corrupted so that the
+    corruption modes can be inspected visually.
+    """
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    indices = np.asarray(indices, dtype=int).reshape(-1)
+    if len(indices) == 0:
+        print(f"[Corruption vis] No indices for {out_path}; skipping.")
+        return
+
+    rng = np.random.default_rng(seed)
+
+    n = min(int(num_examples), len(indices))
+    chosen = rng.choice(indices, size=n, replace=False)
+
+    ncols = min(int(ncols), n)
+    nblocks = int(math.ceil(n / ncols))
+    nrows = 2 * nblocks
+
+    fig, axes = plt.subplots(
+        nrows=nrows,
+        ncols=ncols,
+        figsize=(1.55 * ncols, 1.75 * nrows),
+        squeeze=False,
+    )
+
+    for ax in axes.reshape(-1):
+        ax.axis("off")
+
+    for j, idx in enumerate(chosen):
+        block = j // ncols
+        col = j % ncols
+
+        img, label = base[int(idx)]
+
+        if force_corruption:
+            do_corrupt = True
+        else:
+            do_corrupt = bool(rng.random() < corruption_prob)
+
+        if do_corrupt:
+            img_corr = corrupt_tensor_mnist(
+                img,
+                seed=seed + int(idx),
+                corruption_cfg=corruption_cfg,
+            )
+        else:
+            img_corr = img.clone()
+
+        ax_orig = axes[2 * block, col]
+        ax_corr = axes[2 * block + 1, col]
+
+        ax_orig.imshow(mnist_tensor_to_numpy_img(img), cmap="gray", vmin=0, vmax=1)
+        ax_corr.imshow(mnist_tensor_to_numpy_img(img_corr), cmap="gray", vmin=0, vmax=1)
+
+        ax_orig.set_title(f"orig {int(label)}", fontsize=8)
+        ax_corr.set_title("corrupt", fontsize=8)
+
+    fig.suptitle(title, fontsize=13)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"[Corruption vis] Saved: {out_path}")
+
+
+def save_training_batch_grid(
+    dataset: Dataset,
+    out_path: Path,
+    seed: int,
+    batch_size: int = 32,
+    ncols: int = 8,
+    title: str = "Corrupted training batch",
+    dpi: int = 300,
+) -> None:
+    """
+    Save one actual batch from a training dataset. This shows what the model
+    really sees during ArcFace/SCF training.
+    """
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    generator = torch.Generator()
+    generator.manual_seed(seed)
+
+    loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=0,
+        drop_last=False,
+        generator=generator,
+    )
+
+    imgs, labels = next(iter(loader))
+    n = imgs.shape[0]
+
+    ncols = min(int(ncols), n)
+    nrows = int(math.ceil(n / ncols))
+
+    fig, axes = plt.subplots(
+        nrows=nrows,
+        ncols=ncols,
+        figsize=(1.55 * ncols, 1.75 * nrows),
+        squeeze=False,
+    )
+
+    for ax in axes.reshape(-1):
+        ax.axis("off")
+
+    for i in range(n):
+        row = i // ncols
+        col = i % ncols
+
+        axes[row, col].imshow(
+            mnist_tensor_to_numpy_img(imgs[i]),
+            cmap="gray",
+            vmin=0,
+            vmax=1,
+        )
+        axes[row, col].set_title(f"y={int(labels[i])}", fontsize=8)
+
+    fig.suptitle(title, fontsize=13)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"[Corruption vis] Saved: {out_path}")
+
+
+def save_corruption_visualizations(
+    args,
+    mnist_train: datasets.MNIST,
+    mnist_test: datasets.MNIST,
+    train_indices: np.ndarray,
+    val_protocol: ProtocolIndices,
+    test_protocol: ProtocolIndices,
+    train_ds_arcface: Dataset,
+    train_ds_scf: Dataset,
+    figure_dir: Path,
+) -> None:
+    """
+    Create visual sanity checks for corrupted images and actual train batches.
+    """
+    vis_cfg = args.plots.corruption_visualization
+
+    if not bool(cfg_get(vis_cfg, "enabled", True)):
+        return
+
+    figure_dir.mkdir(parents=True, exist_ok=True)
+
+    dpi = int(cfg_get(vis_cfg, "dpi", 300))
+    num_pair_examples = int(cfg_get(vis_cfg, "num_pair_examples", 16))
+    pair_grid_cols = int(cfg_get(vis_cfg, "pair_grid_cols", 8))
+    batch_size = int(cfg_get(vis_cfg, "batch_size", 32))
+    batch_grid_cols = int(cfg_get(vis_cfg, "batch_grid_cols", 8))
+    force_pair = bool(cfg_get(vis_cfg, "force_pair_corruption", True))
+    title_prefix = str(cfg_get(vis_cfg, "title_prefix", "MNIST corruption sanity check"))
+
+    # 1. Forced corruption pairs from training indices.
+    save_original_vs_corrupted_grid(
+        base=mnist_train,
+        indices=train_indices,
+        out_path=figure_dir / cfg_get(vis_cfg, "save_train_pairs", "corruption_pairs_train_forced.png"),
+        corruption_cfg=args.corruption,
+        seed=args.seed + 111,
+        num_examples=num_pair_examples,
+        ncols=pair_grid_cols,
+        title=f"{title_prefix}: train original vs corrupted",
+        force_corruption=force_pair,
+        corruption_prob=1.0,
+    )
+
+    # 2. Forced corruption pairs from validation corrupted probe indices.
+    save_original_vs_corrupted_grid(
+        base=mnist_train,
+        indices=val_protocol.corrupt_probe,
+        out_path=figure_dir / cfg_get(vis_cfg, "save_val_probe_pairs", "corruption_pairs_val_probe_forced.png"),
+        corruption_cfg=args.corruption,
+        seed=args.seed + 222,
+        num_examples=num_pair_examples,
+        ncols=pair_grid_cols,
+        title=f"{title_prefix}: validation probe original vs corrupted",
+        force_corruption=force_pair,
+        corruption_prob=1.0,
+    )
+
+    # 3. Forced corruption pairs from test corrupted probe indices.
+    save_original_vs_corrupted_grid(
+        base=mnist_test,
+        indices=test_protocol.corrupt_probe,
+        out_path=figure_dir / cfg_get(vis_cfg, "save_test_probe_pairs", "corruption_pairs_test_probe_forced.png"),
+        corruption_cfg=args.corruption,
+        seed=args.seed + 333,
+        num_examples=num_pair_examples,
+        ncols=pair_grid_cols,
+        title=f"{title_prefix}: test probe original vs corrupted",
+        force_corruption=force_pair,
+        corruption_prob=1.0,
+    )
+
+    # 4. Actual ArcFace training batch.
+    save_training_batch_grid(
+        dataset=train_ds_arcface,
+        out_path=figure_dir / cfg_get(vis_cfg, "save_arcface_train_batch", "corrupted_batch_arcface_train.png"),
+        seed=args.seed + 444,
+        batch_size=batch_size,
+        ncols=batch_grid_cols,
+        title=(
+            f"{title_prefix}: actual ArcFace train batch "
+            f"(p={args.train_corrupt_arcface_probability if args.train_corrupt_arcface_enabled else 0.0})"
+        ),
+        dpi=dpi,
+    )
+
+    # 5. Actual SCF training batch.
+    save_training_batch_grid(
+        dataset=train_ds_scf,
+        out_path=figure_dir / cfg_get(vis_cfg, "save_scf_train_batch", "corrupted_batch_scf_train.png"),
+        seed=args.seed + 555,
+        batch_size=batch_size,
+        ncols=batch_grid_cols,
+        title=(
+            f"{title_prefix}: actual SCF train batch "
+            f"(p={args.train_corrupt_scf_probability if args.train_corrupt_scf_enabled else 0.0})"
+        ),
+        dpi=dpi,
+    )
 
 # ---------------------------------------------------------------------
 # Plotly 3D teaser from trained 3D MNIST embeddings
@@ -2321,52 +2992,10 @@ def plot_stylized_bayesian_circle_teaser(
 # ---------------------------------------------------------------------
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument("--out-dir", type=str, default="toy_outputs")
-    parser.add_argument("--seed", type=int, default=777)
-    parser.add_argument("--device", type=str, default="auto")
-
-    parser.add_argument("--known-classes", type=str, default="0,1,2,3,4")
-    parser.add_argument("--unknown-classes", type=str, default="5,6,7,8,9")
-
-    parser.add_argument("--train-per-known-class", type=int, default=2500)
-    parser.add_argument("--val-gallery-per-class", type=int, default=30)
-    parser.add_argument("--val-probe-known-per-class", type=int, default=250)
-    parser.add_argument("--val-probe-unknown-per-class", type=int, default=250)
-
-    parser.add_argument("--test-gallery-per-class", type=int, default=30)
-    parser.add_argument("--test-probe-known-per-class", type=int, default=180)
-    parser.add_argument("--test-probe-unknown-per-class", type=int, default=180)
-
-    parser.add_argument("--corrupt-known-frac", type=float, default=0.35)
-    parser.add_argument("--corrupt-unknown-frac", type=float, default=0.05)
-
-    parser.add_argument("--arcface-epochs", type=int, default=12)
-    parser.add_argument("--scf-epochs", type=int, default=6)
-    parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--lr-arcface", type=float, default=1e-3)
-    parser.add_argument("--lr-scf", type=float, default=2e-3)
-
-    parser.add_argument("--target-fpir", type=float, default=0.10)
-    parser.add_argument("--gallery-kappa", type=float, default=25.0)
-    parser.add_argument("--circle-grid", type=int, default=720)
-
-    parser.add_argument("--force-train", action="store_true")
-    parser.add_argument("--teaser-points", type=int, default=900)
-    parser.add_argument("--skip-3d", action="store_true")
-    parser.add_argument("--arcface-epochs-3d", type=int, default=None)
-    parser.add_argument("--scf-epochs-3d", type=int, default=None)
-    parser.add_argument("--sphere-theta-grid", type=int, default=96)
-    parser.add_argument("--sphere-phi-grid", type=int, default=48)
-    parser.add_argument("--teaser-3d-points", type=int, default=900)
-
-    return parser.parse_args()
 
 
 def run_3d_extension(
-    args: argparse.Namespace,
+    args,
     known_classes: List[int],
     unknown_classes: List[int],
     class_to_idx: Dict[int, int],
@@ -2391,9 +3020,9 @@ def run_3d_extension(
     print("Running 3D MNIST HolUE extension")
     print("=" * 80)
 
-    model_dir = out_dir / "models"
-    result_dir = out_dir / "results_3d"
-    figure_dir = out_dir / "figures_3d"
+    model_dir = resolve_under_out_dir(args.model_dir, out_dir)
+    result_dir = resolve_under_out_dir(args.result_dir_3d, out_dir)
+    figure_dir = resolve_under_out_dir(args.figure_dir_3d, out_dir)
 
     model_dir.mkdir(parents=True, exist_ok=True)
     result_dir.mkdir(parents=True, exist_ok=True)
@@ -2406,18 +3035,31 @@ def run_3d_extension(
     )
     scf_epochs = args.scf_epochs if args.scf_epochs_3d is None else args.scf_epochs_3d
 
-    train_ds = KnownMNISTDataset(
+    train_ds_arcface = make_known_training_dataset(
+        args=args,
         base=mnist_train,
-        indices=train_indices,
+        train_indices=train_indices,
         class_to_idx=class_to_idx,
+        stage="arcface",
+    )
+
+    train_ds_scf = make_known_training_dataset(
+        args=args,
+        base=mnist_train,
+        train_indices=train_indices,
+        class_to_idx=class_to_idx,
+        stage="scf",
     )
 
     # ---------------------------
     # Train/load 3D ArcFace
     # ---------------------------
 
-    arc3_ckpt = model_dir / "tiny_arcface_mnist_3d.pt"
-    arc3 = TinyArcFaceMNIST(num_classes=len(known_classes), embedding_dim=3)
+    arc3_ckpt = model_dir / args.arcface_checkpoint_3d
+    arc3 = TinyArcFaceMNIST(
+    num_classes=len(known_classes),
+    embedding_dim=args.embedding_dim_3d,
+)
 
     if arc3_ckpt.is_file() and not args.force_train:
         ckpt = torch.load(arc3_ckpt, map_location=device, weights_only=False)
@@ -2425,20 +3067,23 @@ def run_3d_extension(
         print(f"Loaded 3D ArcFace checkpoint: {arc3_ckpt}")
     else:
         train_arcface(
-            model=arc3,
-            train_ds=train_ds,
-            device=device,
-            epochs=arc_epochs,
-            batch_size=args.batch_size,
-            lr=args.lr_arcface,
-            seed=args.seed + 3000,
-        )
+    model=arc3,
+    train_ds=train_ds_arcface,
+    device=device,
+    epochs=args.arcface_epochs_3d,
+    batch_size=args.batch_size,
+    lr=args.lr_arcface,
+    seed=args.seed + 3000,
+    arcface_s=args.arcface_s,
+    arcface_m=args.arcface_m,
+    weight_decay=args.arcface_weight_decay,
+)
         torch.save(
             {
                 "state_dict": arc3.state_dict(),
                 "known_classes": known_classes,
                 "embedding_dim": 3,
-                "args": vars(args),
+                "args": to_jsonable(args),
             },
             arc3_ckpt,
         )
@@ -2448,8 +3093,12 @@ def run_3d_extension(
     # Train/load 3D SCF
     # ---------------------------
 
-    scf3_ckpt = model_dir / "tiny_scf_mnist_3d.pt"
-    scf3 = TinySCFMNIST(arc_model=arc3)
+    scf3_ckpt = model_dir / args.scf_checkpoint_3d
+    scf3 = TinySCFMNIST(
+    arc_model=arc3,
+    kappa_min=args.scf_kappa_min,
+    kappa_max=args.scf_kappa_max,
+)
 
     if scf3_ckpt.is_file() and not args.force_train:
         ckpt = torch.load(scf3_ckpt, map_location=device, weights_only=False)
@@ -2457,21 +3106,23 @@ def run_3d_extension(
         print(f"Loaded 3D SCF checkpoint: {scf3_ckpt}")
     else:
         train_scf(
-            scf_model=scf3,
-            arc_model=arc3,
-            train_ds=train_ds,
-            device=device,
-            epochs=scf_epochs,
-            batch_size=args.batch_size,
-            lr=args.lr_scf,
-            seed=args.seed + 4000,
-        )
+    scf_model=scf3,
+    arc_model=arc3,
+    train_ds=train_ds_scf,
+    device=device,
+    epochs=args.scf_epochs_3d,
+    batch_size=args.batch_size,
+    lr=args.lr_scf,
+    seed=args.seed + 4000,
+    weight_decay=args.scf_weight_decay,
+    kappa_regularizer=args.scf_kappa_regularizer,
+)
         torch.save(
             {
                 "state_dict": scf3.state_dict(),
                 "known_classes": known_classes,
                 "embedding_dim": 3,
-                "args": vars(args),
+                "args": to_jsonable(args),
             },
             scf3_ckpt,
         )
@@ -2490,6 +3141,7 @@ def run_3d_extension(
         args.batch_size,
         corrupt_indices=[],
         corrupt_seed=args.seed,
+        corruption_cfg=args.corruption,
     )
     val_gallery_mu = build_gallery_prototypes(
         val_gallery_emb,
@@ -2506,6 +3158,7 @@ def run_3d_extension(
         args.batch_size,
         corrupt_indices=val_protocol.corrupt_probe,
         corrupt_seed=args.seed + 10000,
+        corruption_cfg=args.corruption,
     )
 
     print("[3D] Extracting test gallery embeddings...")
@@ -2517,6 +3170,7 @@ def run_3d_extension(
         args.batch_size,
         corrupt_indices=[],
         corrupt_seed=args.seed,
+        corruption_cfg=args.corruption,
     )
     test_gallery_mu = build_gallery_prototypes(
         test_gallery_emb,
@@ -2533,6 +3187,7 @@ def run_3d_extension(
         args.batch_size,
         corrupt_indices=test_protocol.corrupt_probe,
         corrupt_seed=args.seed + 20000,
+        corruption_cfg=args.corruption,
     )
 
     np.savez(
@@ -2684,11 +3339,11 @@ def run_3d_extension(
         X_test_scaled = scaler.transform(X_test)
 
         clf = LogisticRegression(
-            class_weight="balanced",
-            random_state=args.seed,
-            max_iter=2000,
-            solver="lbfgs",
-        )
+    class_weight=args.calibration_class_weight,
+    random_state=args.calibration_random_state,
+    max_iter=args.calibration_max_iter,
+    solver=args.calibration_solver,
+)
         clf.fit(X_val_scaled, y_val)
 
         holue_calibrated_unc = clf.predict_proba(X_test_scaled)[:, 1]
@@ -2739,7 +3394,11 @@ def run_3d_extension(
     # Rejection curves
     # ---------------------------
 
-    fractions = np.linspace(0.0, 0.5, 21)
+    fractions = np.linspace(
+    args.rejection_fraction_start,
+    args.rejection_fraction_stop,
+    args.rejection_fraction_num,
+)
 
     def slugify(name: str) -> str:
         out = name.lower()
@@ -2834,26 +3493,33 @@ def run_3d_extension(
     print(summary_df.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
 
     # This plot_rejection_curves function is your PRR-enhanced version.
-    plot_rejection_curves(curves, figure_dir, metric="f1")
+    plot_rejection_curves(
+    curves,
+    figure_dir,
+    metric=args.plots.rejection_curves.metric,
+    plot_cfg=args.plots.rejection_curves,
+    method_order=args.methods.order,
+)
 
     # ---------------------------
     # Plotly trained 3D teaser
     # ---------------------------
 
-    plot_trained_3d_holue_teaser_plotly(
-        stats=test_stats,
-        probe_mu=test_probe_mu,
-        gallery_mu=test_gallery_mu,
-        known_classes=known_classes,
-        tau=tau,
-        gallery_kappa=args.gallery_kappa,
-        uncertainty=test_stats.holue_entropy,
-        out_dir=figure_dir,
-        seed=args.seed,
-        n_theta=120,
-        n_phi=60,
-        max_probe_points=args.teaser_3d_points,
-    )
+    if args.three_d.plotly.enabled:
+        plot_trained_3d_holue_teaser_plotly(
+            stats=test_stats,
+            probe_mu=test_probe_mu,
+            gallery_mu=test_gallery_mu,
+            known_classes=known_classes,
+            tau=tau,
+            gallery_kappa=args.gallery_kappa,
+            uncertainty=test_stats.holue_entropy,
+            out_dir=figure_dir,
+            seed=args.seed,
+            n_theta=args.three_d.plotly.n_theta_surface,
+            n_phi=args.three_d.plotly.n_phi_surface,
+            max_probe_points=args.three_d.plotly.max_probe_points,
+        )
 
     # ---------------------------
     # Report
@@ -2905,15 +3571,16 @@ computed by deterministic quadrature on the unit sphere.
 
 
 def main() -> None:
-    args = parse_args()
-    seed_everything(args.seed)
+    args = load_toy_config()
+    seed_everything(args.seed, deterministic=args.deterministic)
 
     out_dir = Path(args.out_dir)
-    data_dir = out_dir / "mnist_data"
-    model_dir = out_dir / "models"
-    protocol_dir = out_dir / "protocols"
-    result_dir = out_dir / "results"
-    figure_dir = out_dir / "figures"
+
+    data_dir = resolve_under_out_dir(args.data_dir, out_dir)
+    model_dir = resolve_under_out_dir(args.model_dir, out_dir)
+    protocol_dir = resolve_under_out_dir(args.protocol_dir, out_dir)
+    result_dir = resolve_under_out_dir(args.result_dir_2d, out_dir)
+    figure_dir = resolve_under_out_dir(args.figure_dir_2d, out_dir)
 
     for d in [data_dir, model_dir, protocol_dir, result_dir, figure_dir]:
         d.mkdir(parents=True, exist_ok=True)
@@ -2923,8 +3590,8 @@ def main() -> None:
     else:
         device = torch.device(args.device)
 
-    known_classes = [int(x) for x in args.known_classes.split(",") if x.strip()]
-    unknown_classes = [int(x) for x in args.unknown_classes.split(",") if x.strip()]
+    known_classes = list(args.known_classes)
+    unknown_classes = list(args.unknown_classes)
     class_to_idx = {c: i for i, c in enumerate(known_classes)}
 
     print(f"Output dir:      {out_dir.resolve()}")
@@ -2942,13 +3609,13 @@ def main() -> None:
     mnist_train = datasets.MNIST(
         root=str(data_dir),
         train=True,
-        download=True,
+        download=args.mnist_download,
         transform=transform,
     )
     mnist_test = datasets.MNIST(
         root=str(data_dir),
         train=False,
-        download=True,
+        download=args.mnist_download,
         transform=transform,
     )
 
@@ -2993,38 +3660,73 @@ def main() -> None:
         known_classes=np.asarray(known_classes, dtype=int),
         unknown_classes=np.asarray(unknown_classes, dtype=int),
     )
+    
+    train_ds_arcface = make_known_training_dataset(
+        args=args,
+        base=mnist_train,
+        train_indices=train_indices,
+        class_to_idx=class_to_idx,
+        stage="arcface",
+    )
+
+    train_ds_scf = make_known_training_dataset(
+        args=args,
+        base=mnist_train,
+        train_indices=train_indices,
+        class_to_idx=class_to_idx,
+        stage="scf",
+    )
+
+    if args.plots.corruption_visualization.enabled:
+        save_corruption_visualizations(
+            args=args,
+            mnist_train=mnist_train,
+            mnist_test=mnist_test,
+            train_indices=train_indices,
+            val_protocol=val_protocol,
+            test_protocol=test_protocol,
+            train_ds_arcface=train_ds_arcface,
+            train_ds_scf=train_ds_scf,
+            figure_dir=figure_dir,
+        )
 
     # ---------------------------
     # Train / load ArcFace
     # ---------------------------
 
-    arc_ckpt = model_dir / "tiny_arcface_mnist_2d.pt"
-    arc_model = TinyArcFaceMNIST(num_classes=len(known_classes), embedding_dim=2)
+    arc_ckpt = model_dir / args.arcface_checkpoint_2d
+    arc_model = TinyArcFaceMNIST(
+    num_classes=len(known_classes),
+    embedding_dim=args.embedding_dim_2d,
+)
 
     if arc_ckpt.is_file() and not args.force_train:
         ckpt = torch.load(arc_ckpt, map_location=device, weights_only=False)
         arc_model.load_state_dict(ckpt["state_dict"])
         print(f"Loaded ArcFace checkpoint: {arc_ckpt}")
     else:
-        train_ds = KnownMNISTDataset(
-            base=mnist_train,
-            indices=train_indices,
-            class_to_idx=class_to_idx,
-        )
+        # train_ds = KnownMNISTDataset(
+        #     base=mnist_train,
+        #     indices=train_indices,
+        #     class_to_idx=class_to_idx,
+        # )
         train_arcface(
-            model=arc_model,
-            train_ds=train_ds,
-            device=device,
-            epochs=args.arcface_epochs,
-            batch_size=args.batch_size,
-            lr=args.lr_arcface,
-            seed=args.seed,
-        )
+    model=arc_model,
+    train_ds=train_ds_arcface,
+    device=device,
+    epochs=args.arcface_epochs,
+    batch_size=args.batch_size,
+    lr=args.lr_arcface,
+    seed=args.seed,
+    arcface_s=args.arcface_s,
+    arcface_m=args.arcface_m,
+    weight_decay=args.arcface_weight_decay,
+)
         torch.save(
             {
                 "state_dict": arc_model.state_dict(),
                 "known_classes": known_classes,
-                "args": vars(args),
+                "args": to_jsonable(args),
             },
             arc_ckpt,
         )
@@ -3034,34 +3736,40 @@ def main() -> None:
     # Train / load SCF
     # ---------------------------
 
-    scf_ckpt = model_dir / "tiny_scf_mnist_2d.pt"
-    scf_model = TinySCFMNIST(arc_model=arc_model)
+    scf_ckpt = model_dir / args.scf_checkpoint_2d
+    scf_model = TinySCFMNIST(
+    arc_model=arc_model,
+    kappa_min=args.scf_kappa_min,
+    kappa_max=args.scf_kappa_max,
+)
 
     if scf_ckpt.is_file() and not args.force_train:
         ckpt = torch.load(scf_ckpt, map_location=device, weights_only=False)
         scf_model.load_state_dict(ckpt["state_dict"])
         print(f"Loaded SCF checkpoint: {scf_ckpt}")
     else:
-        train_ds = KnownMNISTDataset(
-            base=mnist_train,
-            indices=train_indices,
-            class_to_idx=class_to_idx,
-        )
+        # train_ds = KnownMNISTDataset(
+        #     base=mnist_train,
+        #     indices=train_indices,
+        #     class_to_idx=class_to_idx,
+        # )
         train_scf(
-            scf_model=scf_model,
-            arc_model=arc_model,
-            train_ds=train_ds,
-            device=device,
-            epochs=args.scf_epochs,
-            batch_size=args.batch_size,
-            lr=args.lr_scf,
-            seed=args.seed,
-        )
+    scf_model=scf_model,
+    arc_model=arc_model,
+    train_ds=train_ds_scf,
+    device=device,
+    epochs=args.scf_epochs,
+    batch_size=args.batch_size,
+    lr=args.lr_scf,
+    seed=args.seed,
+    weight_decay=args.scf_weight_decay,
+    kappa_regularizer=args.scf_kappa_regularizer,
+)
         torch.save(
             {
                 "state_dict": scf_model.state_dict(),
                 "known_classes": known_classes,
-                "args": vars(args),
+                "args": to_jsonable(args),
             },
             scf_ckpt,
         )
@@ -3080,6 +3788,7 @@ def main() -> None:
         args.batch_size,
         corrupt_indices=[],
         corrupt_seed=args.seed,
+        corruption_cfg=args.corruption,
     )
     val_gallery_mu = build_gallery_prototypes(
         val_gallery_emb,
@@ -3096,6 +3805,7 @@ def main() -> None:
         args.batch_size,
         corrupt_indices=val_protocol.corrupt_probe,
         corrupt_seed=args.seed + 10000,
+        corruption_cfg=args.corruption,
     )
 
     print("Extracting test gallery embeddings...")
@@ -3107,6 +3817,7 @@ def main() -> None:
         args.batch_size,
         corrupt_indices=[],
         corrupt_seed=args.seed,
+        corruption_cfg=args.corruption,
     )
     test_gallery_mu = build_gallery_prototypes(
         test_gallery_emb,
@@ -3123,6 +3834,7 @@ def main() -> None:
         args.batch_size,
         corrupt_indices=test_protocol.corrupt_probe,
         corrupt_seed=args.seed + 20000,
+        corruption_cfg=args.corruption,
     )
 
     np.savez(
@@ -3305,7 +4017,7 @@ def main() -> None:
         ],
     }
 
-    if len(np.unique(y_val)) < 2:
+    if (not args.calibration_enabled) or len(np.unique(y_val)) < 2:
         print(
             "[Calibration] Validation set has a single error label. "
             "Falling back to no-calibration HolUE entropy."
@@ -3318,11 +4030,11 @@ def main() -> None:
         X_test_scaled = scaler.transform(X_test)
 
         clf = LogisticRegression(
-            class_weight="balanced",
-            random_state=args.seed,
-            max_iter=2000,
-            solver="lbfgs",
-        )
+    class_weight=args.calibration_class_weight,
+    random_state=args.calibration_random_state,
+    max_iter=args.calibration_max_iter,
+    solver=args.calibration_solver,
+)
         clf.fit(X_val_scaled, y_val)
 
         # Probability of OSR error. Higher means more uncertain.
@@ -3377,7 +4089,11 @@ def main() -> None:
     # Rejection curves and PRR
     # ---------------------------
 
-    fractions = np.linspace(0.0, 0.5, 21)
+    fractions = np.linspace(
+    args.rejection_fraction_start,
+    args.rejection_fraction_stop,
+    args.rejection_fraction_num,
+)
 
     def slugify(name: str) -> str:
         out = name.lower()
@@ -3472,33 +4188,42 @@ def main() -> None:
     # ---------------------------
 
     print("Saving rejection-curve figure...")
-    plot_rejection_curves(curves, figure_dir, metric="f1")
+    plot_rejection_curves(
+    curves,
+    figure_dir,
+    metric=args.plots.rejection_curves.metric,
+    plot_cfg=args.plots.rejection_curves,
+    method_order=args.methods.order,
+)
 
     print("Saving teaser circle figure...")
-    plot_teaser_circle(
-        stats=test_stats,
-        gallery_mu=test_gallery_mu,
-        known_classes=known_classes,
-        tau=tau,
-        gallery_kappa=args.gallery_kappa,
-        uncertainty=test_stats.holue_entropy,
-        out_dir=figure_dir,
-        seed=args.seed,
-        max_points=args.teaser_points,
-    )
+    if args.plots.teaser_circle_2d.enabled:
+        plot_teaser_circle(
+            stats=test_stats,
+            gallery_mu=test_gallery_mu,
+            known_classes=known_classes,
+            tau=tau,
+            gallery_kappa=args.gallery_kappa,
+            uncertainty=test_stats.holue_entropy,
+            out_dir=figure_dir,
+            seed=args.seed,
+            max_points=args.plots.teaser_circle_2d.max_points,
+        )
     print("Saving stylized Bayesian circle teaser...")
-    plot_stylized_bayesian_circle_teaser(
-        gallery_mu=test_gallery_mu,
-        known_classes=known_classes,
-        out_dir=figure_dir,
-        kappa=min(args.gallery_kappa, 12.0),
-        beta=0.5,
-        unc_type="entropy",
-        draw_oog=True,
-    )
+    if args.plots.stylized_bayesian_circle.enabled:
+        plot_stylized_bayesian_circle_teaser(
+            gallery_mu=test_gallery_mu,
+            known_classes=known_classes,
+            out_dir=figure_dir,
+            kappa=args.plots.stylized_bayesian_circle.kappa,
+            beta=args.plots.stylized_bayesian_circle.beta,
+            unc_type=args.plots.stylized_bayesian_circle.unc_type,
+            draw_oog=args.plots.stylized_bayesian_circle.draw_oog,
+        )
 
     # Additional compact diagnostic scatter: error vs uncertainty.
-    plt.figure(figsize=(7, 4.5))
+    scatter_cfg = args.plots.holue_vs_scf_scatter
+    plt.figure(figsize=tuple(scatter_cfg.figsize))
     plot_df = pd.DataFrame(
         {
             "HolUE no calibration": test_stats.holue_entropy,
@@ -3515,17 +4240,16 @@ def main() -> None:
         alpha=0.75,
         linewidths=0,
     )
-    plt.xlabel("SCF uncertainty: -log kappa")
-    plt.ylabel("HolUE no-calibration entropy")
-    plt.title("MNIST toy OSR: errors are high-HolUE-uncertainty probes")
+    plt.title(scatter_cfg.title)
+    plt.xlabel(scatter_cfg.xlabel)
+    plt.ylabel(scatter_cfg.ylabel)
     cb = plt.colorbar()
     cb.set_label("OSR error")
     plt.grid(True, linestyle="--", alpha=0.35)
     plt.tight_layout()
-    plt.savefig(figure_dir / "holue_vs_scf_error_scatter.png", dpi=300)
-    plt.savefig(
-        figure_dir / "holue_vs_scf_error_scatter.pdf", dpi=300, bbox_inches="tight"
-    )
+    plt.savefig(figure_dir / scatter_cfg.save_png, dpi=scatter_cfg.dpi)
+    plt.savefig(figure_dir / scatter_cfg.save_pdf, dpi=scatter_cfg.dpi, bbox_inches="tight")
+
     plt.close()
 
     # Save a tiny markdown report.
@@ -3573,7 +4297,7 @@ validation-calibrated variant is included only as an extra comparison.
         f.write(report)
 
     with open(out_dir / "run_config.json", "w", encoding="utf-8") as f:
-        json.dump(vars(args), f, indent=2)
+        json.dump(to_jsonable(args), f, indent=2)
     if not args.skip_3d:
         run_3d_extension(
             args=args,
