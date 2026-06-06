@@ -782,7 +782,9 @@ class NNcalibration:
         else:
             w_error = torch.sigmoid(legacy_weight)
 
-        return (correct_loss * (1.0 - w_error) + error_loss * w_error) / loss_elementwise.shape[0]
+        return (
+            correct_loss * (1.0 - w_error) + error_loss * w_error
+        ) / loss_elementwise.shape[0]
 
     # ------------------------------------------------------------------
     # Training

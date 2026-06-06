@@ -19,7 +19,9 @@ import torch.nn.functional as F
 from evaluation.open_set_methods.kappa_utils import (
     threshold_at_far,
     log_uniform_density,
-    vmf_log_normalizer_np)
+    vmf_log_normalizer_np,
+)
+
 #     solve_kappa_for_tau,
 #     ,
 #     ,
@@ -201,7 +203,7 @@ class MonteCarloPredictiveProb:
             is_seen = np.isin(probe_unique_ids, g_unique_ids)
             max_scores = np.max(probe_feats @ gallery_feats.T, axis=1)
             tau = threshold_at_far(max_scores[~is_seen], self.far)
-            
+
             far_loss_func = FarLossCalc(
                 probe_feats,
                 probe_unc_scaled,
@@ -279,7 +281,12 @@ class MonteCarloPredictiveProb:
             )
 
             calibratation_set_kappa = golden_selection_search(
-                self.kappa_high, self.kappa_low, self.eps, self.max_iter, far_loss_func_calib, verbose=False
+                self.kappa_high,
+                self.kappa_low,
+                self.eps,
+                self.max_iter,
+                far_loss_func_calib,
+                verbose=False,
             )
 
             gallery_unc_scaled_calib = (
