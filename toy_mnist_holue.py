@@ -178,7 +178,7 @@ def flatten_config(raw: dict) -> SimpleNamespace:
         osr_beta = None
     else:
         osr_beta = float(beta_raw)
-
+    kappa_search = osr.get("kappa_search", {})
     args = SimpleNamespace(
         raw_config=raw,
         seed=int(runtime.get("seed", 777)),
@@ -270,6 +270,30 @@ def flatten_config(raw: dict) -> SimpleNamespace:
         methods=raw.get("methods", {}),
         three_d=raw.get("three_d", {}),
         controlled_circle=raw.get("controlled_circle", raw.get("oracle_circle", {})),
+                kappa_search_enabled_when_beta_fixed=bool(
+            kappa_search.get("enabled_when_beta_fixed", True)
+        ),
+        kappa_search_use_split=str(
+            kappa_search.get("use_split", "validation")
+        ),
+        kappa_search_compute_test_diagnostic=bool(
+            kappa_search.get("compute_test_diagnostic", True)
+        ),
+        kappa_search_min=float(
+            kappa_search.get("kappa_min", 1e-3)
+        ),
+        kappa_search_max=float(
+            kappa_search.get("kappa_max", 1e4)
+        ),
+        kappa_search_grid_points=int(
+            kappa_search.get("grid_points", 500)
+        ),
+        kappa_search_golden_iters=int(
+            kappa_search.get("golden_iters", 80)
+        ),
+        kappa_search_tolerance=float(
+            kappa_search.get("tolerance", 1e-8)
+        ),
     )
 
     args.method_order = list(
@@ -289,6 +313,10 @@ def flatten_config(raw: dict) -> SimpleNamespace:
             ],
         )
     )
+    if args.kappa_search_use_split not in ["validation", "test"]:
+        raise ValueError(
+            "osr.kappa_search.use_split must be either 'validation' or 'test'."
+        )
 
     return args
 
@@ -1364,6 +1392,223 @@ def threshold_at_fpir(scores_unknown: np.ndarray, target_fpir: float) -> float:
     idx = int(np.clip(idx, 0, len(sorted_scores) - 1))
     return float(sorted_scores[idx])
 
+def fpir_from_kappa_fixed_beta(
+    scores_unknown: np.ndarray,
+    dim: int,
+    beta: float,
+    gallery_kappa: float,
+    K: int,
+) -> Tuple[float, float]:
+    """
+    Compute empirical FPIR induced by fixed beta and gallery_kappa.
+
+    Boundary:
+        accept iff max_sim >= tau(beta, gallery_kappa).
+
+    Returns:
+        fpir, tau
+    """
+    scores_unknown = np.asarray(scores_unknown, dtype=np.float64).reshape(-1)
+    if len(scores_unknown) == 0:
+        raise ValueError("Need unknown scores to compute FPIR.")
+
+    tau = tau_from_beta_mixed_prior(
+        dim=dim,
+        beta=beta,
+        gallery_kappa=gallery_kappa,
+        K=K,
+    )
+
+    fpir = float(np.mean(scores_unknown >= tau))
+    return fpir, float(tau)
+
+
+def golden_section_minimize_1d(
+    fn,
+    left: float,
+    right: float,
+    max_iter: int = 80,
+    tol: float = 1e-8,
+) -> Tuple[float, float]:
+    """
+    Golden-section minimization on a scalar interval.
+
+    Returns:
+        best_x, best_value
+    """
+    gr = (math.sqrt(5.0) - 1.0) / 2.0
+
+    a = float(left)
+    b = float(right)
+
+    c = b - gr * (b - a)
+    d = a + gr * (b - a)
+
+    fc = float(fn(c))
+    fd = float(fn(d))
+
+    for _ in range(int(max_iter)):
+        if abs(b - a) < tol:
+            break
+
+        if fc <= fd:
+            b = d
+            d = c
+            fd = fc
+            c = b - gr * (b - a)
+            fc = float(fn(c))
+        else:
+            a = c
+            c = d
+            fc = fd
+            d = a + gr * (b - a)
+            fd = float(fn(d))
+
+    if fc <= fd:
+        return float(c), float(fc)
+    return float(d), float(fd)
+
+
+def find_gallery_kappa_for_fixed_beta_and_fpir(
+    scores_unknown: np.ndarray,
+    dim: int,
+    beta: float,
+    K: int,
+    target_fpir: float,
+    kappa_min: float = 1e-3,
+    kappa_max: float = 1e4,
+    grid_points: int = 500,
+    golden_iters: int = 80,
+    tolerance: float = 1e-8,
+) -> Dict[str, float]:
+    """
+    Find gallery_kappa for fixed beta and target FPIR.
+
+    We search in log(kappa). The empirical FPIR is piecewise constant, so pure
+    golden-section search is not perfectly reliable. Therefore we first do a
+    coarse log-grid search and then refine the best neighboring interval by
+    golden-section search.
+
+    Objective:
+        abs(FPIR(kappa) - target_fpir)
+
+    Returns a dictionary with:
+        kappa, tau, fpir, abs_error, target_fpir
+    """
+    scores_unknown = np.asarray(scores_unknown, dtype=np.float64).reshape(-1)
+    if len(scores_unknown) == 0:
+        raise ValueError("Need unknown scores to search gallery_kappa.")
+
+    beta = float(np.clip(beta, 1e-8, 1.0 - 1e-8))
+    target_fpir = float(target_fpir)
+
+    if not (0.0 <= target_fpir <= 1.0):
+        raise ValueError(f"target_fpir must be in [0,1], got {target_fpir}")
+
+    kappa_min = float(kappa_min)
+    kappa_max = float(kappa_max)
+
+    if not (kappa_min > 0.0 and kappa_max > kappa_min):
+        raise ValueError(
+            f"Invalid kappa search interval: [{kappa_min}, {kappa_max}]"
+        )
+
+    log_min = math.log(kappa_min)
+    log_max = math.log(kappa_max)
+
+    def objective_logk(log_kappa: float) -> float:
+        kappa = math.exp(float(log_kappa))
+        fpir, _ = fpir_from_kappa_fixed_beta(
+            scores_unknown=scores_unknown,
+            dim=dim,
+            beta=beta,
+            gallery_kappa=kappa,
+            K=K,
+        )
+        return abs(fpir - target_fpir)
+
+    # Coarse robust grid.
+    grid = np.linspace(log_min, log_max, int(grid_points))
+    vals = np.asarray([objective_logk(x) for x in grid], dtype=np.float64)
+
+    best_grid_idx = int(np.argmin(vals))
+
+    # Refine around the best grid cell.
+    left_idx = max(0, best_grid_idx - 1)
+    right_idx = min(len(grid) - 1, best_grid_idx + 1)
+
+    left = float(grid[left_idx])
+    right = float(grid[right_idx])
+
+    candidates = []
+
+    # Add grid best and endpoints.
+    for x in [grid[best_grid_idx], grid[left_idx], grid[right_idx], log_min, log_max]:
+        k = math.exp(float(x))
+        fpir, tau = fpir_from_kappa_fixed_beta(
+            scores_unknown=scores_unknown,
+            dim=dim,
+            beta=beta,
+            gallery_kappa=k,
+            K=K,
+        )
+        candidates.append(
+            {
+                "kappa": float(k),
+                "tau": float(tau),
+                "fpir": float(fpir),
+                "abs_error": float(abs(fpir - target_fpir)),
+            }
+        )
+
+    # Golden refinement if interval is non-degenerate.
+    if right > left:
+        best_log, _ = golden_section_minimize_1d(
+            objective_logk,
+            left=left,
+            right=right,
+            max_iter=golden_iters,
+            tol=tolerance,
+        )
+        k = math.exp(float(best_log))
+        fpir, tau = fpir_from_kappa_fixed_beta(
+            scores_unknown=scores_unknown,
+            dim=dim,
+            beta=beta,
+            gallery_kappa=k,
+            K=K,
+        )
+        candidates.append(
+            {
+                "kappa": float(k),
+                "tau": float(tau),
+                "fpir": float(fpir),
+                "abs_error": float(abs(fpir - target_fpir)),
+            }
+        )
+
+    # Prefer smaller absolute error. If tied, prefer not exceeding target FPIR.
+    # If still tied, prefer moderate kappa.
+    def sort_key(rec):
+        over = max(0.0, rec["fpir"] - target_fpir)
+        return (rec["abs_error"], over, abs(math.log(rec["kappa"])))
+
+    best = sorted(candidates, key=sort_key)[0]
+
+    best.update(
+        {
+            "target_fpir": float(target_fpir),
+            "beta": float(beta),
+            "dim": int(dim),
+            "K": int(K),
+            "kappa_min": float(kappa_min),
+            "kappa_max": float(kappa_max),
+            "grid_points": int(grid_points),
+            "golden_iters": int(golden_iters),
+        }
+    )
+
+    return best
 
 @dataclass
 class OSRStats:
@@ -2277,6 +2522,59 @@ def fit_holue_calibrator(
     return unc, info
 
 
+def sample_model_matched_circle_split(
+    n: int,
+    gallery_mu: np.ndarray,
+    beta: float,
+    gallery_kappa: float,
+    kappa_high: float,
+    kappa_low: float,
+    low_quality_prob: float,
+    circle_grid: int,
+    rng: np.random.Generator,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Fully model-matched ideal S^1 experiment.
+
+    We first choose p(z|x)=vMF(mu_x,kappa_x), then sample the identity label
+    from the exact HolUE posterior p(c|x). Therefore the HolUE posterior is
+    correct by construction.
+
+    labels:
+      0..K-1 = known identities
+      -1     = OOD identity
+    """
+    K = gallery_mu.shape[0]
+
+    theta_mu = rng.uniform(0.0, 2.0 * math.pi, size=n)
+    mu = angle_to_unit_vectors(theta_mu)
+
+    low_quality = rng.random(n) < low_quality_prob
+    kappa = np.where(low_quality, float(kappa_low), float(kappa_high))
+
+    hol_post, _, _, _ = mixed_holue_posterior_quadrature(
+        mu=mu,
+        kappa=kappa,
+        gallery_mu=gallery_mu,
+        gallery_kappa=gallery_kappa,
+        beta=beta,
+        circle_grid=circle_grid,
+        sphere_theta_grid=96,
+        sphere_phi_grid=48,
+    )
+
+    labels = np.full(n, -1, dtype=int)
+
+    for i in range(n):
+        sampled = rng.choice(K + 1, p=hol_post[i])
+        if sampled < K:
+            labels[i] = sampled
+        else:
+            labels[i] = -1
+
+    return mu, kappa, labels
+
+
 def evaluate_uncertainty_methods(
     args: SimpleNamespace,
     dim: int,
@@ -2285,6 +2583,7 @@ def evaluate_uncertainty_methods(
     known_classes: List[int],
     tau: float,
     beta: float,
+    gallery_kappa: float,
     result_dir: Path,
     figure_dir: Path,
     test_probe_mu: np.ndarray,
@@ -2333,8 +2632,9 @@ def evaluate_uncertainty_methods(
                 "dim": dim,
                 "tau": tau,
                 "beta": beta,
+"gallery_kappa": gallery_kappa,
                 "target_fpir": args.target_fpir,
-                "gallery_kappa": args.gallery_kappa,
+                "gallery_kappa": gallery_kappa,
                 "val": val_metrics,
                 "test": test_metrics,
             },
@@ -2447,6 +2747,8 @@ def evaluate_uncertainty_methods(
 
     rows = []
     for name, unc in uncertainties.items():
+        if name not in args.method_order:
+            continue
         df = curves[name]
         prr_f1 = compute_prr(
             df,
@@ -2468,6 +2770,7 @@ def evaluate_uncertainty_methods(
                 "embedding_dim": dim,
                 "tau": tau,
                 "beta": beta,
+"gallery_kappa": gallery_kappa,
                 "base_f1": test_metrics["f1"],
                 "base_fpir": test_metrics["fpir"],
                 "base_fnir": test_metrics["fnir"],
@@ -2506,7 +2809,7 @@ def evaluate_uncertainty_methods(
             gallery_mu=test_gallery_mu,
             known_classes=known_classes,
             beta=beta,
-            gallery_kappa=args.gallery_kappa,
+            gallery_kappa=gallery_kappa,
             uncertainty=holue_unc,
             out_dir=figure_dir,
             seed=args.seed,
@@ -2649,38 +2952,178 @@ def run_mnist_branch(
     )
 
     # Fixed OSR threshold selected on validation unknown probes.
+        # ------------------------------------------------------------
+    # Select OSR boundary.
+    #
+    # Two modes:
+    #
+    # 1. beta: auto
+    #      Keep gallery_kappa fixed and derive beta so that the mixed-prior
+    #      Bayesian boundary matches the validation FPIR threshold.
+    #
+    # 2. beta: fixed number
+    #      Keep beta fixed and search gallery_kappa so that the induced
+    #      mixed-prior boundary reaches target validation FPIR.
+    # ------------------------------------------------------------
+
     val_sim = val_probe_mu @ val_gallery_mu.T
     val_max_sim = np.max(val_sim, axis=1)
     val_seen = np.isin(val_probe_labels, np.asarray(known_classes, dtype=int))
+    val_unknown_scores = val_max_sim[~val_seen]
 
-    tau = threshold_at_fpir(val_max_sim[~val_seen], args.target_fpir)
+    test_sim_for_search = test_probe_mu @ test_gallery_mu.T
+    test_max_sim_for_search = np.max(test_sim_for_search, axis=1)
+    test_seen_for_search = np.isin(
+        test_probe_labels,
+        np.asarray(known_classes, dtype=int),
+    )
+    test_unknown_scores = test_max_sim_for_search[~test_seen_for_search]
+
+    kappa_search_info = {
+        "mode": "",
+        "used_split": "",
+        "validation": None,
+        "test_diagnostic": None,
+    }
 
     if args.osr_beta is None:
+        # Previous mode: fixed gallery_kappa, derive beta.
+        gallery_kappa_eff = float(args.gallery_kappa)
+
+        tau = threshold_at_fpir(
+            val_unknown_scores,
+            target_fpir=args.target_fpir,
+        )
+
         beta = beta_from_tau_mixed_prior(
             dim=dim,
             tau=tau,
-            gallery_kappa=args.gallery_kappa,
+            gallery_kappa=gallery_kappa_eff,
             K=len(known_classes),
         )
+
+        achieved_val_fpir = float(np.mean(val_unknown_scores >= tau))
+
+        kappa_search_info.update(
+            {
+                "mode": "beta_auto_fixed_kappa",
+                "used_split": "validation",
+                "gallery_kappa": gallery_kappa_eff,
+                "tau": float(tau),
+                "beta": float(beta),
+                "target_fpir": float(args.target_fpir),
+                "validation_fpir": achieved_val_fpir,
+            }
+        )
+
     else:
+        # New mode: fixed beta, search gallery_kappa.
         beta = float(args.osr_beta)
-        implied_tau = tau_from_beta_mixed_prior(
-            dim=dim,
-            beta=beta,
-            gallery_kappa=args.gallery_kappa,
-            K=len(known_classes),
-        )
-        if abs(implied_tau - tau) > 1e-4:
-            print(
-                f"[{dim}D][Warning] Fixed beta and validation tau are inconsistent: "
-                f"OSR tau={tau:.6f}, posterior-implied tau={implied_tau:.6f}. "
-                "For strict equivalence, set osr.beta: auto."
+
+        if not args.kappa_search_enabled_when_beta_fixed:
+            gallery_kappa_eff = float(args.gallery_kappa)
+            tau = tau_from_beta_mixed_prior(
+                dim=dim,
+                beta=beta,
+                gallery_kappa=gallery_kappa_eff,
+                K=len(known_classes),
+            )
+            achieved_val_fpir = float(np.mean(val_unknown_scores >= tau))
+
+            kappa_search_info.update(
+                {
+                    "mode": "fixed_beta_fixed_kappa_no_search",
+                    "used_split": "validation",
+                    "gallery_kappa": gallery_kappa_eff,
+                    "tau": float(tau),
+                    "beta": float(beta),
+                    "target_fpir": float(args.target_fpir),
+                    "validation_fpir": achieved_val_fpir,
+                }
             )
 
-    print(
-        f"[{dim}D] Validation-selected tau={tau:.6f} at target FPIR={args.target_fpir}"
-    )
+        else:
+            val_search = find_gallery_kappa_for_fixed_beta_and_fpir(
+                scores_unknown=val_unknown_scores,
+                dim=dim,
+                beta=beta,
+                K=len(known_classes),
+                target_fpir=args.target_fpir,
+                kappa_min=args.kappa_search_min,
+                kappa_max=args.kappa_search_max,
+                grid_points=args.kappa_search_grid_points,
+                golden_iters=args.kappa_search_golden_iters,
+                tolerance=args.kappa_search_tolerance,
+            )
+
+            test_search = None
+            if args.kappa_search_compute_test_diagnostic:
+                test_search = find_gallery_kappa_for_fixed_beta_and_fpir(
+                    scores_unknown=test_unknown_scores,
+                    dim=dim,
+                    beta=beta,
+                    K=len(known_classes),
+                    target_fpir=args.target_fpir,
+                    kappa_min=args.kappa_search_min,
+                    kappa_max=args.kappa_search_max,
+                    grid_points=args.kappa_search_grid_points,
+                    golden_iters=args.kappa_search_golden_iters,
+                    tolerance=args.kappa_search_tolerance,
+                )
+
+            if args.kappa_search_use_split == "validation":
+                used_search = val_search
+            elif args.kappa_search_use_split == "test":
+                if test_search is None:
+                    test_search = find_gallery_kappa_for_fixed_beta_and_fpir(
+                        scores_unknown=test_unknown_scores,
+                        dim=dim,
+                        beta=beta,
+                        K=len(known_classes),
+                        target_fpir=args.target_fpir,
+                        kappa_min=args.kappa_search_min,
+                        kappa_max=args.kappa_search_max,
+                        grid_points=args.kappa_search_grid_points,
+                        golden_iters=args.kappa_search_golden_iters,
+                        tolerance=args.kappa_search_tolerance,
+                    )
+
+                print(
+                    f"[{dim}D][Warning] kappa_search.use_split='test' uses test "
+                    "OOD labels to tune gallery_kappa. This is label leakage and "
+                    "should be used only for diagnostic fixed-test-FPIR plots."
+                )
+                used_search = test_search
+            else:
+                raise ValueError(
+                    "args.kappa_search_use_split must be 'validation' or 'test'."
+                )
+
+            gallery_kappa_eff = float(used_search["kappa"])
+            tau = float(used_search["tau"])
+
+            kappa_search_info.update(
+                {
+                    "mode": "fixed_beta_search_kappa",
+                    "used_split": args.kappa_search_use_split,
+                    "validation": val_search,
+                    "test_diagnostic": test_search,
+                    "gallery_kappa": gallery_kappa_eff,
+                    "tau": float(tau),
+                    "beta": float(beta),
+                    "target_fpir": float(args.target_fpir),
+                }
+            )
+
+    print(f"[{dim}D] Target FPIR={args.target_fpir}")
     print(f"[{dim}D] Mixed-prior beta={beta:.8f}")
+    print(f"[{dim}D] Effective gallery_kappa={gallery_kappa_eff:.8f}")
+    print(f"[{dim}D] Effective tau={tau:.8f}")
+    print(f"[{dim}D] Validation FPIR at effective tau={float(np.mean(val_unknown_scores >= tau)):.6f}")
+    print(f"[{dim}D] Test FPIR at effective tau={float(np.mean(test_unknown_scores >= tau)):.6f}")
+
+    with open(result_dir / f"kappa_search_info_{dim}d.json", "w", encoding="utf-8") as f:
+        json.dump(kappa_search_info, f, indent=2)
 
     print(f"[{dim}D] Computing validation GalUE/HolUE...")
     val_stats = compute_osr_stats(
@@ -2689,7 +3132,7 @@ def run_mnist_branch(
         probe_labels=val_probe_labels,
         gallery_mu=val_gallery_mu,
         tau=tau,
-        gallery_kappa=args.gallery_kappa,
+        gallery_kappa=gallery_kappa_eff,
         beta=beta,
         circle_grid=args.circle_grid,
         sphere_theta_grid=args.sphere_theta_grid,
@@ -2703,7 +3146,7 @@ def run_mnist_branch(
         probe_labels=test_probe_labels,
         gallery_mu=test_gallery_mu,
         tau=tau,
-        gallery_kappa=args.gallery_kappa,
+        gallery_kappa=gallery_kappa_eff,
         beta=beta,
         circle_grid=args.circle_grid,
         sphere_theta_grid=args.sphere_theta_grid,
@@ -2714,7 +3157,7 @@ def run_mnist_branch(
         result_dir / f"posteriors_and_osr_stats_{dim}d.npz",
         tau=tau,
         beta=beta,
-        gallery_kappa=args.gallery_kappa,
+        gallery_kappa=gallery_kappa_eff,
         val_labels=val_stats.labels,
         val_max_sim=val_stats.max_sim,
         val_pred_idx=val_stats.pred_idx,
@@ -2749,6 +3192,7 @@ def run_mnist_branch(
         known_classes=known_classes,
         tau=tau,
         beta=beta,
+        gallery_kappa=gallery_kappa_eff,
         result_dir=result_dir,
         figure_dir=figure_dir,
         test_probe_mu=test_probe_mu,
@@ -2844,33 +3288,62 @@ def run_controlled_circle_experiment(args: SimpleNamespace, out_dir: Path) -> No
     gallery_mu = angle_to_unit_vectors(center_angles)
     known_classes = list(range(K))
 
-    tau = tau_from_beta_mixed_prior(
+    # For controlled circle, either use the configured true gallery_kappa,
+    # or search kappa from validation FPIR when requested.
+    tau_initial = tau_from_beta_mixed_prior(
         dim=2,
         beta=beta,
         gallery_kappa=gallery_kappa,
         K=K,
     )
 
-    val_mu, val_kappa, val_labels = sample_controlled_circle_split(
+    val_mu, val_kappa, val_labels = sample_model_matched_circle_split(
         n=n_val,
-        center_angles=center_angles,
+        gallery_mu=gallery_mu,
         beta=beta,
         gallery_kappa=gallery_kappa,
         kappa_high=kappa_high,
         kappa_low=kappa_low,
         low_quality_prob=low_quality_prob,
+        circle_grid=circle_grid,
         rng=rng,
     )
-    test_mu, test_kappa, test_labels = sample_controlled_circle_split(
+
+    test_mu, test_kappa, test_labels = sample_model_matched_circle_split(
         n=n_test,
-        center_angles=center_angles,
+        gallery_mu=gallery_mu,
         beta=beta,
         gallery_kappa=gallery_kappa,
         kappa_high=kappa_high,
         kappa_low=kappa_low,
         low_quality_prob=low_quality_prob,
+        circle_grid=circle_grid,
         rng=rng,
     )
+    if bool(cfg_get(cfg, "search_kappa_for_fpir", False)):
+        val_scores = np.max(val_mu @ gallery_mu.T, axis=1)
+        val_seen = np.isin(val_labels, np.asarray(known_classes, dtype=int))
+
+        search = find_gallery_kappa_for_fixed_beta_and_fpir(
+            scores_unknown=val_scores[~val_seen],
+            dim=2,
+            beta=beta,
+            K=K,
+            target_fpir=args.target_fpir,
+            kappa_min=args.kappa_search_min,
+            kappa_max=args.kappa_search_max,
+            grid_points=args.kappa_search_grid_points,
+            golden_iters=args.kappa_search_golden_iters,
+            tolerance=args.kappa_search_tolerance,
+        )
+
+        gallery_kappa = float(search["kappa"])
+        tau = float(search["tau"])
+
+        with open(result_dir / "controlled_circle_kappa_search.json", "w", encoding="utf-8") as f:
+            json.dump(search, f, indent=2)
+    else:
+        tau = tau_initial
 
     val_stats = compute_osr_stats(
         probe_mu=val_mu,
@@ -2909,6 +3382,7 @@ def run_controlled_circle_experiment(args: SimpleNamespace, out_dir: Path) -> No
             known_classes=known_classes,
             tau=tau,
             beta=beta,
+            gallery_kappa=gallery_kappa,
             result_dir=result_dir,
             figure_dir=figure_dir,
             test_probe_mu=test_mu,

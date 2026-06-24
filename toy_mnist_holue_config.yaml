@@ -111,11 +111,31 @@ training:
 
 osr:
   target_fpir: 0.10
+
+  # Used only when beta: auto.
+  # If beta is fixed, gallery_kappa is found by search.
   gallery_kappa: 25.0
 
-  # "auto" derives beta so that the mixed-prior Bayesian known/OOD boundary
-  # matches the validation-selected cosine threshold tau.
-  beta: auto
+  # Use "auto" to derive beta from fixed gallery_kappa and validation tau.
+  # Use a number, e.g. 0.5, to fix beta and search gallery_kappa.
+  beta: 0.5
+
+  kappa_search:
+    enabled_when_beta_fixed: true
+
+    # validation = correct final protocol.
+    # test = diagnostic only / label leakage.
+    use_split: test
+
+    # Also compute the test-tuned kappa as a diagnostic, but do not use it
+    # unless use_split: test.
+    compute_test_diagnostic: true
+
+    kappa_min: 0.001
+    kappa_max: 100000.0
+    grid_points: 500
+    golden_iters: 80
+    tolerance: 1.0e-8
 
 integration:
   # S^1 quadrature for 2D branch.
@@ -142,7 +162,7 @@ methods:
   order:
     - HolUE no calibration
     - HolUE calibrated
-    - HolUE collapsed entropy
+    #- HolUE collapsed entropy
     #- GalUE
     - SCF
     #- AccScr
@@ -210,7 +230,7 @@ three_d:
 controlled_circle:
   enabled: true
   seed: 12345
-
+  search_kappa_for_fpir: True
   num_known_classes: 5
   n_val: 6000
   n_test: 6000

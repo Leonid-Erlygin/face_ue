@@ -754,7 +754,7 @@ class NNcalibration:
             if correct_loss is not None:
                 components.append(correct_loss)
             if error_loss is not None:
-                components.append(error_loss * 2)
+                components.append(error_loss)
 
             if not components:
                 return loss_elementwise.mean()
