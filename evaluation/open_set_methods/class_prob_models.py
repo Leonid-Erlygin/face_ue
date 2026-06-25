@@ -427,13 +427,14 @@ class MonteCarloPredictiveProb:
         return unc
 
     def compute_mean_probs_and_kl(
-        self,
-        mean: np.ndarray,
-        kappa: np.ndarray,
-        gallery_means,
-        gallery_kappas,
-        T,
-    ) -> Any:
+    self,
+    mean: np.ndarray,
+    kappa: np.ndarray,
+    gallery_means,
+    gallery_kappas,
+    T,
+    return_mprisk_aux: bool = False,
+) -> Any:
         """
         Stable log-space computation of:
           mean_gallery_probs, KL_1, KL_2
@@ -522,7 +523,12 @@ class MonteCarloPredictiveProb:
         gallery_log_probs = log_gallery_terms - log_den[..., None]
         gallery_probs = torch.exp(gallery_log_probs)
         mean_gallery_probs = torch.mean(gallery_probs, dim=1)
-
+        # Local posterior probability of the continuous out-of-gallery component.
+        # This is the aggregate probability of the mixed-prior unknown identity continuum
+        # at a sampled embedding z.
+        log_p0 = log_oog_term - log_den
+        p0 = torch.exp(log_p0)
+        mean_oog_prob = torch.mean(p0, dim=1)
         # KL_1 = sum p_T(c|x) log(p_T(c|x) / p(c))
         p_safe = mean_gallery_probs.clamp_min(1e-300)
         kl_1 = torch.sum(
@@ -549,20 +555,523 @@ class MonteCarloPredictiveProb:
 
         log_p_z_given_x = log_norm_x[:, None] + kappa_x[:, None] * sim_x
 
-        p0 = torch.exp(log_oog_term - log_den)
+        # p0 = torch.exp(log_oog_term - log_den)
 
         log_beta_over_sphere = log_beta + log_uniform
         log_arg = (inv_T - 1.0) * log_beta_over_sphere + log_p_z_given_x - log_den
 
         kl_2 = torch.mean(p0 * log_arg, dim=1)
+        # ------------------------------------------------------------------
+        # MPRisk auxiliary quantity: reject non-specificity.
+        #
+        # The mixed prior represents unknown identities as a continuum. Therefore,
+        # even if the aggregate unknown probability pi0 is high, we can still ask:
+        # is the posterior over unknown identities concentrated around a specific
+        # unknown identity, or is it diffuse because the input sample is poor?
+        #
+        # For a rejected sample:
+        #   high pi0 + diffuse unknown identity posterior => suspicious rejection.
+        #
+        # We use the inverse collision concentration of p(u | x, unknown).
+        # In default analytic_vmf mode we use the exact collision concentration of
+        # q(z | x) = vMF(mu_x, kappa_x):
+        #
+        #   C0 = S * integral q(z|x)^2 dz
+        #      = S * C_d(kappa_x)^2 / C_d(2 kappa_x)
+        #
+        # and non_specificity = 1 / C0.
+        #
+        # This is intentionally tied to the mixed prior. If unknown were a single
+        # collapsed class, this quantity would not exist.
+        # ------------------------------------------------------------------
+        if return_mprisk_aux:
+            mode = getattr(self, "nonspecificity_mode", "analytic_vmf")
+            log_surface_area = -log_uniform
 
-        if (
-            not torch.isfinite(mean_gallery_probs).all()
-            or not torch.isfinite(kl_1).all()
-            or not torch.isfinite(kl_2).all()
-        ):
+            if mode == "analytic_vmf":
+                # Exact vMF collision concentration of q(z|x).
+                log_norm_2x_np = vmf_log_normalizer_np(2.0 * kappa_x_np, d=d_int)
+                log_norm_2x = torch.as_tensor(log_norm_2x_np, device=device, dtype=dtype)
+
+                log_collision = log_surface_area + 2.0 * log_norm_x - log_norm_2x
+
+            elif mode == "weighted_mc":
+                # More literal but noisier estimate:
+                # C0 = S / pi0^2 * E_q[ q(z|x) * p0(z)^2 ].
+                #
+                # Use this only with M > 1. With M=0 it degenerates to evaluating q at
+                # its mean and overestimates concentration in high dimensions.
+                log_mean_q_p0_sq = (
+                    torch.logsumexp(log_p_z_given_x + 2.0 * log_p0, dim=1)
+                    - np.log(zs.shape[1])
+                )
+                log_pi0 = torch.log(mean_oog_prob.clamp_min(1e-300))
+                log_collision = log_surface_area + log_mean_q_p0_sq - 2.0 * log_pi0
+
+            else:
+                raise ValueError(
+                    f"Unknown nonspecificity_mode={mode!r}. "
+                    "Use 'analytic_vmf' or 'weighted_mc'."
+                )
+
+            # Mathematically collision >= 1. Clamp for numerical stability.
+            log_collision = torch.clamp(log_collision, min=0.0, max=700.0)
+            oog_nonspecificity = torch.exp(-log_collision)
+
+        finite_tensors = [mean_gallery_probs, kl_1, kl_2]
+        if return_mprisk_aux:
+            finite_tensors.extend([mean_oog_prob, oog_nonspecificity])
+
+        if any(not bool(torch.isfinite(t).all()) for t in finite_tensors):
             raise FloatingPointError(
-                "Non-finite value in HolUE probability/KL computation."
+                "Non-finite value in HolUE/MPRisk probability computation."
             )
 
+        if return_mprisk_aux:
+            return mean_gallery_probs, kl_1, kl_2, mean_oog_prob, oog_nonspecificity
+
         return mean_gallery_probs, kl_1, kl_2
+
+
+
+class MPRiskPredictiveProb(MonteCarloPredictiveProb):
+    """
+    Mixed-Prior Bayes Risk for open-set recognition.
+
+    This method replaces KL-based confidence with a posterior OSR risk.
+
+    For an accepted probe predicted as gallery identity i:
+
+        R = lambda_FA * pi_0
+            + lambda_ID * (1 - pi_0 - pi_i)
+
+    For a rejected probe:
+
+        R = lambda_FR * (1 - pi_0)
+            + lambda_NS * pi_0 * N_0
+
+    where:
+        pi_i  = posterior probability of gallery identity i,
+        pi_0  = aggregate posterior probability of the unknown continuum,
+        N_0   = reject non-specificity.
+
+    The last term is the key mixed-prior correction. It prevents low-quality
+    in-gallery samples that drift far from all gallery classes from being treated
+    as confident true rejects. If the probe is rejected but the posterior over
+    unknown identities is diffuse, the rejection is suspicious and uncertainty
+    should be high.
+
+    The class optionally calibrates two risk features:
+        1. ordinary posterior OSR risk,
+        2. mixed-prior non-specific reject penalty.
+
+    Existing NNcalibration can be reused because it accepts two scalar features.
+    """
+
+    def __init__(
+        self,
+        gallery_prior: str,
+        emb_unc_model: str,
+        beta: float,
+        far: float,
+        M: int = 0,
+        calibration_set=None,
+        calibration_embs_name=None,
+        calibration_transform=None,
+        gallery_kappa: float = None,
+        kappa_scale: float = 1.0,
+        kappa_input_scale: float = 1.0,
+        predict_T: float = 1.0,
+        train_predict_T: bool = False,
+        predict_T_lr: float = 1e-2,
+        pred_uncertainty_type: str = "entropy",
+        alpha: float = 0.5,
+        log_dir: str = None,
+        predictor=None,
+        lambda_fa: float = 1.0,
+        lambda_id: float = 1.0,
+        lambda_fr: float = 1.0,
+        lambda_ns: float = 1.0,
+        nonspecificity_mode: str = "analytic_vmf",
+        use_calibration: bool = True,
+    ) -> None:
+        if train_predict_T:
+            raise NotImplementedError(
+                "MPRiskPredictiveProb currently does not support "
+                "joint training of predict_T. Set train_predict_T=False."
+            )
+
+        if predictor is not None:
+            raise ValueError(
+                "MPRiskPredictiveProb must score the same Bayesian decision "
+                "whose posterior risk it computes. Do not use predictor='AccScore'."
+            )
+
+        super().__init__(
+            gallery_prior=gallery_prior,
+            emb_unc_model=emb_unc_model,
+            beta=beta,
+            far=far,
+            M=M,
+            calibration_set=calibration_set,
+            calibration_embs_name=calibration_embs_name,
+            calibration_transform=calibration_transform,
+            gallery_kappa=gallery_kappa,
+            kappa_scale=kappa_scale,
+            kappa_input_scale=kappa_input_scale,
+            predict_T=predict_T,
+            train_predict_T=train_predict_T,
+            predict_T_lr=predict_T_lr,
+            pred_uncertainty_type=pred_uncertainty_type,
+            alpha=alpha,
+            log_dir=log_dir,
+            predictor=predictor,
+        )
+
+        self.lambda_fa = float(lambda_fa)
+        self.lambda_id = float(lambda_id)
+        self.lambda_fr = float(lambda_fr)
+        self.lambda_ns = float(lambda_ns)
+
+        if nonspecificity_mode not in ["analytic_vmf", "weighted_mc"]:
+            raise ValueError(
+                "nonspecificity_mode must be 'analytic_vmf' or 'weighted_mc'."
+            )
+        self.nonspecificity_mode = nonspecificity_mode
+
+        self.use_calibration = bool(use_calibration)
+        self._mprisk_calibration_trained = False
+
+    def _compute_probs_aux(
+        self,
+        probe_feats: np.ndarray,
+        probe_unc: np.ndarray,
+        gallery_feats: np.ndarray,
+        gallery_unc: np.ndarray,
+        gallery_kappa: float,
+    ):
+        dtype = np.float64
+
+        probe_feats = np.asarray(probe_feats, dtype=dtype)
+        probe_unc = np.asarray(probe_unc, dtype=dtype)
+        probe_unc_scaled = probe_unc * self.kappa_input_scale
+
+        gallery_feats = np.asarray(gallery_feats, dtype=dtype)
+        gallery_unc = np.asarray(gallery_unc, dtype=dtype)
+        gallery_unc_scaled = np.ones_like(gallery_unc) * float(gallery_kappa)
+
+        out = self.compute_mean_probs_and_kl(
+            probe_feats,
+            probe_unc_scaled,
+            gallery_feats,
+            gallery_unc_scaled,
+            self.predict_T,
+            return_mprisk_aux=True,
+        )
+
+        return [x.cpu().detach().numpy() for x in out]
+
+    def _risk_components(
+        self,
+        mean_probs: np.ndarray,
+        oog_prob: np.ndarray,
+        oog_nonspecificity: np.ndarray,
+    ) -> dict:
+        mean_probs = np.asarray(mean_probs, dtype=np.float64)
+        oog_prob = np.asarray(oog_prob, dtype=np.float64).reshape(-1)
+        oog_nonspecificity = np.asarray(oog_nonspecificity, dtype=np.float64).reshape(-1)
+
+        n, K = mean_probs.shape
+
+        oog_prob = np.clip(oog_prob, 0.0, 1.0)
+        oog_nonspecificity = np.clip(oog_nonspecificity, 0.0, 1.0)
+
+        predicted_id = np.argmax(mean_probs, axis=-1)
+
+        all_prob = np.concatenate([mean_probs, oog_prob[:, None]], axis=-1)
+        was_rejected = np.argmax(all_prob, axis=-1) == K
+
+        row_idx = np.arange(n)
+        pi_hat = mean_probs[row_idx, predicted_id]
+
+        other_known_prob = 1.0 - oog_prob - pi_hat
+        other_known_prob = np.clip(other_known_prob, 0.0, 1.0)
+
+        accepted = ~was_rejected
+        rejected = was_rejected
+
+        r_fa = np.zeros(n, dtype=np.float64)
+        r_id = np.zeros(n, dtype=np.float64)
+        r_fr = np.zeros(n, dtype=np.float64)
+        r_ns = np.zeros(n, dtype=np.float64)
+
+        # If accepted as gallery identity i:
+        # false acceptance risk = probability of unknown.
+        r_fa[accepted] = oog_prob[accepted]
+
+        # If accepted as gallery identity i:
+        # misidentification risk = probability of another known identity.
+        r_id[accepted] = other_known_prob[accepted]
+
+        # If rejected:
+        # false rejection risk = probability of any known identity.
+        r_fr[rejected] = 1.0 - oog_prob[rejected]
+
+        # Mixed-prior correction:
+        # high only when sample is rejected, unknown probability is high,
+        # but the unknown identity posterior is diffuse.
+        r_ns[rejected] = oog_prob[rejected] * oog_nonspecificity[rejected]
+
+        ordinary_risk = (
+            self.lambda_fa * r_fa
+            + self.lambda_id * r_id
+            + self.lambda_fr * r_fr
+        )
+
+        mixed_prior_penalty = r_ns
+
+        mprisk = ordinary_risk + self.lambda_ns * mixed_prior_penalty
+
+        return {
+            "predicted_id": predicted_id,
+            "was_rejected": was_rejected,
+            "r_fa": r_fa,
+            "r_id": r_id,
+            "r_fr": r_fr,
+            "r_ns": r_ns,
+            "ordinary_risk": ordinary_risk,
+            "mixed_prior_penalty": mixed_prior_penalty,
+            "mprisk": mprisk,
+        }
+
+    def _store_test_risk_components(self, components: dict) -> None:
+        self.predicted_id = components["predicted_id"]
+        self.was_rejected = components["was_rejected"]
+
+        self.r_fa = components["r_fa"]
+        self.r_id = components["r_id"]
+        self.r_fr = components["r_fr"]
+        self.r_ns = components["r_ns"]
+
+        self.risk_main = components["ordinary_risk"]
+        self.risk_ns = components["mixed_prior_penalty"]
+        self.mprisk = components["mprisk"]
+
+    def setup(
+        self,
+        probe_feats: np.ndarray,
+        probe_unc: np.ndarray,
+        gallery_feats: np.ndarray,
+        gallery_unc: np.ndarray,
+        dataset_name: str,
+        g_unique_ids: np.ndarray = None,
+        probe_unique_ids: np.ndarray = None,
+    ):
+        """
+        We reuse the parent setup only to:
+          1. find gallery_kappa for the requested FPIR,
+          2. initialize the Bayesian posterior model.
+
+        Then we recompute posterior probabilities with MPRisk auxiliary terms.
+        Calibration, if enabled, is MPRisk-specific and is performed below.
+        """
+        old_calibration_set = self.calibration_set
+        old_calibration_transform = self.calibration_transform
+
+        # Disable parent HolUE KL calibration path.
+        self.calibration_set = None
+        self.calibration_transform = None
+
+        super().setup(
+            probe_feats=probe_feats,
+            probe_unc=probe_unc,
+            gallery_feats=gallery_feats,
+            gallery_unc=gallery_unc,
+            g_unique_ids=g_unique_ids,
+            probe_unique_ids=probe_unique_ids,
+            dataset_name=dataset_name,
+        )
+
+        # Restore MPRisk calibration objects.
+        self.calibration_set = old_calibration_set
+        self.calibration_transform = old_calibration_transform
+
+        self.g_unique_ids = g_unique_ids
+        self.probe_unique_ids = probe_unique_ids
+        self.dataset_name = dataset_name
+
+        # Test-set probabilities and MPRisk auxiliaries.
+        (
+            self.mean_probs,
+            self.kl_1,
+            self.kl_2,
+            self.oog_prob,
+            self.oog_nonspecificity,
+        ) = self._compute_probs_aux(
+            probe_feats=probe_feats,
+            probe_unc=probe_unc,
+            gallery_feats=gallery_feats,
+            gallery_unc=gallery_unc,
+            gallery_kappa=self.gallery_kappa,
+        )
+
+        components = self._risk_components(
+            self.mean_probs,
+            self.oog_prob,
+            self.oog_nonspecificity,
+        )
+        self._store_test_risk_components(components)
+
+        # Optional MPRisk calibration.
+        if (
+            self.use_calibration
+            and self.calibration_set is not None
+            and self.calibration_transform is not None
+        ):
+            self.gallery_pooled_templates_calib, self.probe_pooled_templates_calib = (
+                prepare_calibration_dataset(
+                    self.calibration_set,
+                    self.calibration_embs_name,
+                )
+            )
+
+            self.g_unique_ids_calib = self.gallery_pooled_templates_calib["g1"][
+                "template_subject_ids_sorted"
+            ]
+            self.probe_unique_ids_calib = self.probe_pooled_templates_calib["g1"][
+                "template_subject_ids_sorted"
+            ]
+
+            is_seen_calib = np.isin(
+                self.probe_unique_ids_calib,
+                self.g_unique_ids_calib,
+            )
+
+            probe_feats_calib = self.probe_pooled_templates_calib["g1"][
+                "template_pooled_features"
+            ]
+            probe_unc_calib = self.probe_pooled_templates_calib["g1"][
+                "template_pooled_data_unc"
+            ]
+            gallery_feats_calib = self.gallery_pooled_templates_calib["g1"][
+                "template_pooled_features"
+            ]
+            gallery_unc_calib = self.gallery_pooled_templates_calib["g1"][
+                "template_pooled_data_unc"
+            ]
+
+            probe_unc_calib_scaled = probe_unc_calib * self.kappa_input_scale
+
+            far_loss_func_calib = FarLossCalc(
+                probe_feats_calib,
+                probe_unc_calib_scaled,
+                gallery_feats_calib,
+                gallery_unc_calib,
+                self.predict_T,
+                self.far,
+                is_seen_calib,
+                self,
+                verbose=True,
+            )
+
+            calibration_set_kappa = golden_selection_search(
+                self.kappa_high,
+                self.kappa_low,
+                self.eps,
+                self.max_iter,
+                far_loss_func_calib,
+                verbose=False,
+            )
+
+            print(
+                f"[MPRisk] Found calibration kappa "
+                f"{np.round(calibration_set_kappa, 4)} for far {self.far}"
+            )
+
+            (
+                self.mean_probs_calib,
+                self.kl_1_calib,
+                self.kl_2_calib,
+                self.oog_prob_calib,
+                self.oog_nonspecificity_calib,
+            ) = self._compute_probs_aux(
+                probe_feats=probe_feats_calib,
+                probe_unc=probe_unc_calib,
+                gallery_feats=gallery_feats_calib,
+                gallery_unc=gallery_unc_calib,
+                gallery_kappa=calibration_set_kappa,
+            )
+
+            calib_components = self._risk_components(
+                self.mean_probs_calib,
+                self.oog_prob_calib,
+                self.oog_nonspecificity_calib,
+            )
+
+            self.risk_main_calib = calib_components["ordinary_risk"]
+            self.risk_ns_calib = calib_components["mixed_prior_penalty"]
+
+            error_calc = FrrFarIdent()
+            error_calc(
+                calib_components["predicted_id"],
+                calib_components["was_rejected"],
+                self.g_unique_ids_calib,
+                self.probe_unique_ids_calib,
+            )
+
+            # Reuse existing two-input NNcalibration:
+            # feature 1 = ordinary OSR posterior risk,
+            # feature 2 = mixed-prior reject non-specificity penalty.
+            self.calibration_transform.train_calibration_parameters(
+                self.risk_main_calib,
+                self.risk_ns_calib,
+                error_calc,
+                dataset_name=self.calibration_set.dataset_name,
+                far=self.far,
+            )
+
+            self._mprisk_calibration_trained = True
+
+        if self.log_dir is not None:
+            Path(self.log_dir).mkdir(parents=True, exist_ok=True)
+            np.savez(
+                Path(self.log_dir) / f"mprisk_components_far_{self.far}.npz",
+                mean_probs=self.mean_probs,
+                oog_prob=self.oog_prob,
+                oog_nonspecificity=self.oog_nonspecificity,
+                r_fa=self.r_fa,
+                r_id=self.r_id,
+                r_fr=self.r_fr,
+                r_ns=self.r_ns,
+                risk_main=self.risk_main,
+                risk_ns=self.risk_ns,
+                mprisk=self.mprisk,
+            )
+
+    def predict(self):
+        return self.predicted_id, self.was_rejected
+
+    def predict_uncertainty(self):
+        if self.use_calibration and self._mprisk_calibration_trained:
+            error_calc = FrrFarIdent()
+            error_calc(
+                self.predicted_id,
+                self.was_rejected,
+                self.g_unique_ids,
+                self.probe_unique_ids,
+            )
+
+            # Existing calibrator returns -P(correct).
+            # This is consistent with the repository convention:
+            # lower values are kept first, higher values are filtered first.
+            unc = self.calibration_transform.apply_calibration_transform(
+                self.risk_main,
+                self.risk_ns,
+                error_calc,
+                dataset_name=self.dataset_name,
+                far=self.far,
+            )
+            return unc
+
+        # Raw MPRisk: larger value = more uncertain.
+        return self.mprisk
