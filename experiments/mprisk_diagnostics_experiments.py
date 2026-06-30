@@ -59,7 +59,9 @@ def apply_recognition_overrides(method_cfg, overrides: Optional[Dict[str, Any]])
 
 
 def np_trapz(y, x) -> float:
-    return float(np.trapezoid(np.asarray(y, dtype=np.float64), np.asarray(x, dtype=np.float64)))
+    return float(
+        np.trapezoid(np.asarray(y, dtype=np.float64), np.asarray(x, dtype=np.float64))
+    )
 
 
 def score_quantiles(score: np.ndarray) -> Dict[str, float]:
@@ -76,11 +78,15 @@ def score_quantiles(score: np.ndarray) -> Dict[str, float]:
     }
 
 
-def method_key(dataset_name: str, pretty_name: str, far: float, beta: float) -> Tuple[str, str, float, float]:
+def method_key(
+    dataset_name: str, pretty_name: str, far: float, beta: float
+) -> Tuple[str, str, float, float]:
     return dataset_name, pretty_name, float(far), float(beta)
 
 
-def valid_probability_from_predicted_unc(predicted_unc: np.ndarray) -> Optional[np.ndarray]:
+def valid_probability_from_predicted_unc(
+    predicted_unc: np.ndarray,
+) -> Optional[np.ndarray]:
     """
     Convert repository uncertainty convention into P(error), if possible.
 
@@ -128,7 +134,9 @@ def run_configured_methods(cfg, test_datasets, out_dir: Path):
                         pretty_name += f"_beta-{beta}"
 
                     print("=" * 100)
-                    print(f"[Diagnostics] dataset={dataset_name} method={pretty_name} far={far} beta={beta}")
+                    print(
+                        f"[Diagnostics] dataset={dataset_name} method={pretty_name} far={far} beta={beta}"
+                    )
                     print("=" * 100)
 
                     recognition_method = instantiate(method_cfg.recognition_method)
@@ -201,7 +209,9 @@ def run_configured_methods(cfg, test_datasets, out_dir: Path):
 # ---------------------------------------------------------------------
 
 
-def collapsed_unknown_risk(result: Dict[str, Any], arrays: Dict[str, np.ndarray]) -> Optional[np.ndarray]:
+def collapsed_unknown_risk(
+    result: Dict[str, Any], arrays: Dict[str, np.ndarray]
+) -> Optional[np.ndarray]:
     """
     Collapsed unknown baseline risk:
 
@@ -239,7 +249,9 @@ def collapsed_unknown_risk(result: Dict[str, Any], arrays: Dict[str, np.ndarray]
     return 1.0 - np.clip(pi_action, 0.0, 1.0)
 
 
-def mixed_prior_variant_scores(result: Dict[str, Any], arrays: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+def mixed_prior_variant_scores(
+    result: Dict[str, Any], arrays: Dict[str, np.ndarray]
+) -> Dict[str, np.ndarray]:
     scores = {}
 
     if all(k in arrays for k in ["r_fa", "r_id", "r_fr", "r_ns"]):
@@ -257,7 +269,9 @@ def mixed_prior_variant_scores(result: Dict[str, Any], arrays: Dict[str, np.ndar
         scores["equal_full_risk"] = r_fa + r_id + r_fr + r_ns
 
     if "mprisk" in arrays:
-        scores["MPRisk_current"] = np.asarray(arrays["mprisk"], dtype=np.float64).reshape(-1)
+        scores["MPRisk_current"] = np.asarray(
+            arrays["mprisk"], dtype=np.float64
+        ).reshape(-1)
 
     collapsed = collapsed_unknown_risk(result, arrays)
     if collapsed is not None:
@@ -756,7 +770,9 @@ def run_qualitative_examples(cfg, results: Dict, out_dir: Path):
 
         for name in ["r_fa", "r_id", "r_fr", "r_ns", "mprisk", "risk_main", "risk_ns"]:
             if name in arrays:
-                score_sources[name] = np.asarray(arrays[name], dtype=np.float64).reshape(-1)
+                score_sources[name] = np.asarray(
+                    arrays[name], dtype=np.float64
+                ).reshape(-1)
 
         for score_name, score in score_sources.items():
             for group_name, group_mask in {
@@ -774,7 +790,9 @@ def run_qualitative_examples(cfg, results: Dict, out_dir: Path):
 
                 for rank, i in enumerate(selected):
                     predicted_gallery_index = int(result["predicted_id"][i])
-                    predicted_subject = int(result["g_unique_ids"][predicted_gallery_index])
+                    predicted_subject = int(
+                        result["g_unique_ids"][predicted_gallery_index]
+                    )
 
                     row = {
                         "dataset": dataset_name,
@@ -794,7 +812,17 @@ def run_qualitative_examples(cfg, results: Dict, out_dir: Path):
                         "score_value": float(score[i]),
                     }
 
-                    for name in ["r_fa", "r_id", "r_fr", "r_ns", "mprisk", "risk_main", "risk_ns", "oog_prob", "oog_nonspecificity"]:
+                    for name in [
+                        "r_fa",
+                        "r_id",
+                        "r_fr",
+                        "r_ns",
+                        "mprisk",
+                        "risk_main",
+                        "risk_ns",
+                        "oog_prob",
+                        "oog_nonspecificity",
+                    ]:
                         if name in arrays:
                             row[name] = float(np.asarray(arrays[name]).reshape(-1)[i])
 
@@ -803,11 +831,20 @@ def run_qualitative_examples(cfg, results: Dict, out_dir: Path):
                         row["sum_gallery_prob"] = float(np.sum(mean_probs[i]))
 
                     if top_gallery is not None:
-                        for j in range(min(int(cfg.qualitative.num_nearest_gallery), top_gallery.shape[1])):
+                        for j in range(
+                            min(
+                                int(cfg.qualitative.num_nearest_gallery),
+                                top_gallery.shape[1],
+                            )
+                        ):
                             gid_index = int(top_gallery[i, j])
                             row[f"top{j+1}_gallery_index"] = gid_index
-                            row[f"top{j+1}_subject_id"] = int(result["g_unique_ids"][gid_index])
-                            row[f"top{j+1}_posterior_prob"] = float(mean_probs[i, gid_index])
+                            row[f"top{j+1}_subject_id"] = int(
+                                result["g_unique_ids"][gid_index]
+                            )
+                            row[f"top{j+1}_posterior_prob"] = float(
+                                mean_probs[i, gid_index]
+                            )
 
                     rows.append(row)
 
@@ -904,9 +941,19 @@ def run_quality_stress(cfg, test_datasets, base_method_cfg, out_dir: Path):
                                 "kappa_input_scale": float(scale),
                                 "score": score_name,
                                 "prr_f1": prr,
-                                "false_reject_auroc": safe_auc(masks["false_reject"], score),
-                                "true_reject_mean_score": float(np.mean(score[masks["true_reject"]])) if np.any(masks["true_reject"]) else np.nan,
-                                "false_reject_mean_score": float(np.mean(score[masks["false_reject"]])) if np.any(masks["false_reject"]) else np.nan,
+                                "false_reject_auroc": safe_auc(
+                                    masks["false_reject"], score
+                                ),
+                                "true_reject_mean_score": (
+                                    float(np.mean(score[masks["true_reject"]]))
+                                    if np.any(masks["true_reject"])
+                                    else np.nan
+                                ),
+                                "false_reject_mean_score": (
+                                    float(np.mean(score[masks["false_reject"]]))
+                                    if np.any(masks["false_reject"])
+                                    else np.nan
+                                ),
                                 "f1_at_max_filter": float(curve["f1_class"].iloc[-1]),
                             }
                         )
@@ -922,7 +969,9 @@ def run_quality_stress(cfg, test_datasets, base_method_cfg, out_dir: Path):
 
 
 @hydra.main(
-    config_path=str(Path(__file__).resolve().parents[1] / "configs/uncertainty_benchmark"),
+    config_path=str(
+        Path(__file__).resolve().parents[1] / "configs/uncertainty_benchmark"
+    ),
     config_name="mprisk_diagnostics_experiments",
     version_base="1.2",
 )

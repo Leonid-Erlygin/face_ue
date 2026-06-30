@@ -69,8 +69,13 @@ def _to_numpy(x: Any) -> np.ndarray:
     return np.asarray(x)
 
 
-def _safe_std(x: torch.Tensor, dim: int = 0, eps: float = _EPS) -> torch.Tensor:
-    return torch.std(x, dim=dim, unbiased=False).clamp_min(eps)
+def _safe_std(
+    x: torch.Tensor,
+    dim: int = 0,
+    eps: float = _EPS,
+    unbiased: bool = False,
+) -> torch.Tensor:
+    return torch.std(x, dim=dim, unbiased=unbiased).clamp_min(eps)
 
 
 def _make_x(kl_1: Any, kl_2: Any, device: torch.device) -> torch.Tensor:
@@ -138,6 +143,185 @@ def _error_group_masks_from_error_calc(error_calc: Any) -> Dict[str, np.ndarray]
         "false_accept": false_accept,
         "false_reject_or_ident": false_reject_or_ident,
     }
+
+
+def _osr_category_masks_from_error_calc(error_calc: Any) -> Dict[str, np.ndarray]:
+    """
+    Build full-length TP/FP/FN/correct/error masks from FrrFarIdent.
+
+    These masks allow us to compute F1-based rejection curves using only
+    error_calc, without needing IDs again.
+    """
+    is_seen = np.asarray(error_calc.is_seen, dtype=bool)
+    n = is_seen.shape[0]
+
+    tp = np.zeros(n, dtype=bool)
+    fp = np.zeros(n, dtype=bool)
+    fn = np.zeros(n, dtype=bool)
+    true_reject = np.zeros(n, dtype=bool)
+
+    tp[is_seen] = np.asarray(error_calc.true_accept_true_ident, dtype=bool)
+
+    seen_fn = np.logical_or.reduce(
+        [
+            np.asarray(error_calc.true_accept_false_ident, dtype=bool),
+            np.asarray(error_calc.false_reject_false_ident, dtype=bool),
+            np.asarray(error_calc.false_reject_true_ident, dtype=bool),
+        ]
+    )
+    fn[is_seen] = seen_fn
+
+    fp[~is_seen] = np.asarray(error_calc.false_accept, dtype=bool)
+    true_reject[~is_seen] = np.asarray(error_calc.true_reject, dtype=bool)
+
+    correct = np.logical_or(tp, true_reject)
+    error = ~correct
+
+    return {
+        "tp": tp,
+        "fp": fp,
+        "fn": fn,
+        "true_reject": true_reject,
+        "correct": correct,
+        "error": error,
+        "is_seen": is_seen,
+    }
+
+
+def _make_fraction_grid(spec: Any) -> np.ndarray:
+    """
+    Convert either [start, stop, num] or explicit list of fractions to a 1D array.
+    """
+    spec = _to_numpy(spec).astype(float).reshape(-1)
+
+    if spec.shape[0] == 3 and spec[2] > 1 and float(spec[2]).is_integer():
+        return np.linspace(float(spec[0]), float(spec[1]), int(spec[2]))
+
+    return spec
+
+
+def _f1_from_category_masks(cats: Dict[str, np.ndarray], keep_idx: np.ndarray) -> float:
+    keep = np.zeros(cats["tp"].shape[0], dtype=bool)
+    keep[np.asarray(keep_idx, dtype=int)] = True
+
+    tp = int(np.sum(np.logical_and(cats["tp"], keep)))
+    fp = int(np.sum(np.logical_and(cats["fp"], keep)))
+    fn = int(np.sum(np.logical_and(cats["fn"], keep)))
+
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+
+    if precision + recall == 0:
+        return 0.0
+
+    return float(2.0 * precision * recall / (precision + recall))
+
+
+def _f1_rejection_auc_from_uncertainty(
+    uncertainty: np.ndarray,
+    cats: Dict[str, np.ndarray],
+    fractions: np.ndarray,
+) -> float:
+    """
+    Repository convention:
+      lower uncertainty = kept first,
+      higher uncertainty = filtered first.
+    """
+    uncertainty = np.asarray(uncertainty, dtype=np.float64).reshape(-1)
+    order = np.argsort(uncertainty)
+
+    n = uncertainty.shape[0]
+    values = []
+
+    for frac in fractions:
+        keep_size = int((1.0 - float(frac)) * n)
+        keep_size = max(0, min(n, keep_size))
+        keep_idx = order[:keep_size]
+        values.append(_f1_from_category_masks(cats, keep_idx))
+
+    return float(np.trapz(np.asarray(values, dtype=np.float64), fractions))
+
+
+def _validation_selection_score_from_p_correct(
+    p_correct: np.ndarray,
+    cats: Dict[str, np.ndarray],
+    selection_metric: str,
+    fractions: np.ndarray,
+    seed: int,
+) -> float:
+    """
+    Compute validation selection score for a calibrator checkpoint.
+
+    p_correct:
+      output of calibration model.
+
+    Repository uncertainty convention:
+      uncertainty = -p_correct.
+    """
+    p_correct = np.asarray(p_correct, dtype=np.float64).reshape(-1)
+    p_correct = np.nan_to_num(p_correct, nan=0.5, posinf=1.0, neginf=0.0)
+    p_correct = np.clip(p_correct, 0.0, 1.0)
+
+    uncertainty = -p_correct
+    y_error = np.asarray(cats["error"], dtype=bool)
+
+    metric = str(selection_metric).lower()
+
+    if metric in {"prr", "prr_f1", "f1_prr"}:
+        auc_value = _f1_rejection_auc_from_uncertainty(
+            uncertainty=uncertainty,
+            cats=cats,
+            fractions=fractions,
+        )
+
+        rng = np.random.default_rng(seed)
+
+        random_unc = rng.random(len(uncertainty))
+        oracle_unc = y_error.astype(np.float64) + 1e-9 * rng.random(len(uncertainty))
+
+        random_auc = _f1_rejection_auc_from_uncertainty(
+            uncertainty=random_unc,
+            cats=cats,
+            fractions=fractions,
+        )
+        oracle_auc = _f1_rejection_auc_from_uncertainty(
+            uncertainty=oracle_unc,
+            cats=cats,
+            fractions=fractions,
+        )
+
+        denom = oracle_auc - random_auc
+        if abs(denom) < 1e-12:
+            return auc_value
+
+        return float((auc_value - random_auc) / denom)
+
+    if metric in {"auroc", "roc_auc", "error_auroc"}:
+        if len(np.unique(y_error)) < 2:
+            return -np.inf
+
+        try:
+            from sklearn.metrics import roc_auc_score
+
+            return float(roc_auc_score(y_error.astype(int), uncertainty))
+        except Exception:
+            return -np.inf
+
+    if metric in {"auprc", "ap", "average_precision", "error_auprc"}:
+        if len(np.unique(y_error)) < 2:
+            return -np.inf
+
+        try:
+            from sklearn.metrics import average_precision_score
+
+            return float(average_precision_score(y_error.astype(int), uncertainty))
+        except Exception:
+            return -np.inf
+
+    raise ValueError(
+        f"Unknown selection_metric={selection_metric!r}. "
+        "Use one of {'prr_f1', 'auroc', 'auprc'}."
+    )
 
 
 def _to_torch_masks(
@@ -579,12 +763,53 @@ class NNcalibration:
         max_plot_points: int = 5000,
         grid_size: int = 300,
         random_state: int = 777,
+        preset: Optional[str] = None,
+        loss_weighting: Optional[str] = None,
+        std_unbiased: bool = False,
+        reset_model: bool = True,
+        clamp_predictions: bool = True,
+        return_mode: str = "neg_correct",
         # Backward-compatible legacy arguments for old configs that created
         # NNcalibration without a nested `model`.
         hidden_size: Optional[int] = None,
         num_layers: Optional[int] = None,
         use_bn: Optional[bool] = None,
+        select_best: bool = False,
+        selection_metric: str = "prr_f1",
+        selection_interval: int = 25,
+        selection_fractions: Optional[Any] = None,
+        # Backward-compatible legacy arguments ...
     ):
+        # --------------------------------------------------------------
+        # Preset for reproducing the accepted-paper HolUE calibration
+        # target/objective while still using the new calibrator class.
+        #
+        # This is not a separate legacy class. It only selects:
+        #   - target = P(correct)
+        #   - uncertainty = -P(correct)
+        #   - old group-balanced BCE objective
+        #   - old unbiased torch.std normalization
+        #   - no forced model reinitialization
+        # --------------------------------------------------------------
+        if preset is not None:
+            preset = str(preset).strip().lower()
+
+        if preset in {"holue_paper", "paper_holue", "accepted_holue"}:
+            loss_weighting = "legacy_group_mean"
+            std_unbiased = True
+            reset_model = False
+            clamp_predictions = False
+            return_mode = "neg_correct"
+
+            # These should not override the legacy objective.
+            balanced_loss = False
+            weight_loss_types = False
+
+            print(
+                "[NNcalibration] Using HolUE-paper calibration preset: "
+                "target=P(correct), uncertainty=-P(correct), "
+                "loss=legacy_group_mean."
+            )
         if model is None:
             model = MLP(
                 hidden_size=6 if hidden_size is None else hidden_size,
@@ -615,19 +840,35 @@ class NNcalibration:
         self.max_plot_points = max_plot_points
         self.grid_size = grid_size
         self.random_state = random_state
+        self.preset = preset
+        self.loss_weighting = loss_weighting
+        self.std_unbiased = bool(std_unbiased)
+        self.reset_model = bool(reset_model)
+        self.clamp_predictions = bool(clamp_predictions)
+        self.return_mode = str(return_mode)
+        self.select_best = bool(select_best)
+        self.selection_metric = str(selection_metric)
+        self.selection_interval = int(selection_interval)
+        if self.selection_interval <= 0:
+            self.selection_interval = 1
+
+        if selection_fractions is None:
+            selection_fractions = [0.0, 0.5, 20]
+        self.selection_fractions = selection_fractions
         if self.random_state is not None:
             np.random.seed(self.random_state)
             torch.manual_seed(self.random_state)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(self.random_state)
 
-            # Hydra constructs nested model before this object. Reset here so
-            # calibration does not depend on previous methods/datasets.
-            def _reset(m):
-                if hasattr(m, "reset_parameters"):
-                    m.reset_parameters()
+            if self.reset_model:
+                # Hydra constructs nested model before this object. Reset here so
+                # calibration does not depend on previous methods/datasets.
+                def _reset(m):
+                    if hasattr(m, "reset_parameters"):
+                        m.reset_parameters()
 
-            self.model.apply(_reset)
+                self.model.apply(_reset)
         self.val_ds_name = "unknown_val"
 
         if self.train_weight and (self.balanced_loss or self.weight_loss_types):
@@ -645,17 +886,20 @@ class NNcalibration:
     def _fit_normalization(self, x: torch.Tensor) -> torch.Tensor:
         if self.use_norm:
             self.X_mean_val = x.mean(dim=0)
-            self.X_std_val = _safe_std(x, dim=0)
-        else:
-            self.X_mean_val = torch.zeros(x.shape[1], device=x.device, dtype=x.dtype)
-            self.X_std_val = torch.ones(x.shape[1], device=x.device, dtype=x.dtype)
-
-        return (x - self.X_mean_val) / self.X_std_val
+            self.X_std_val = _safe_std(
+                x,
+                dim=0,
+                unbiased=self.std_unbiased,
+            )
 
     def _apply_normalization(self, x: torch.Tensor) -> torch.Tensor:
         if self.normalize_kl_by_test:
             mean = x.mean(dim=0)
-            std = _safe_std(x, dim=0)
+            std = _safe_std(
+                x,
+                dim=0,
+                unbiased=self.std_unbiased,
+            )
             return (x - mean) / std
 
         if not hasattr(self, "X_mean_val") or not hasattr(self, "X_std_val"):
@@ -718,6 +962,45 @@ class NNcalibration:
 
         Default: balanced binary loss over correct/error groups.
         """
+        if self.loss_weighting == "legacy_group_mean":
+            correct_mask = masks["correct"]
+            error_mask = masks["error"]
+
+            components = []
+
+            if bool(correct_mask.any()):
+                correct_loss = loss_elementwise[correct_mask].mean()
+            else:
+                correct_loss = torch.tensor(
+                    0.0,
+                    dtype=loss_elementwise.dtype,
+                    device=loss_elementwise.device,
+                )
+
+            if bool(error_mask.any()):
+                error_loss = loss_elementwise[error_mask].mean()
+            else:
+                error_loss = torch.tensor(
+                    0.0,
+                    dtype=loss_elementwise.dtype,
+                    device=loss_elementwise.device,
+                )
+
+            if legacy_weight is None:
+                raw_weight = torch.tensor(
+                    0.0 if self.weight is None else float(self.weight),
+                    dtype=loss_elementwise.dtype,
+                    device=loss_elementwise.device,
+                )
+            else:
+                raw_weight = legacy_weight.to(
+                    device=loss_elementwise.device,
+                    dtype=loss_elementwise.dtype,
+                )
+
+            w_error = torch.sigmoid(raw_weight)
+
+            return correct_loss * (1.0 - w_error) + error_loss * w_error
         if self.weight_loss_types:
             components = []
 
@@ -813,8 +1096,15 @@ class NNcalibration:
         self.val_ds_name = str(dataset_name)
 
         x = _make_x(kl_1, kl_2, device=self.device)
-        x_norm = self._fit_normalization(x)
-
+        self._fit_normalization(x)
+        x_norm = self._apply_normalization(x)
+        if self.preset in {"holue_paper", "paper_holue", "accepted_holue"}:
+            print("[NNcalibration] HolUE-paper preset active.")
+            print(f"[NNcalibration] X mean: {self.X_mean_val.detach().cpu().numpy()}")
+            print(f"[NNcalibration] X std:  {self.X_std_val.detach().cpu().numpy()}")
+            print(f"[NNcalibration] weight: {self.weight}")
+            print(f"[NNcalibration] train_weight: {self.train_weight}")
+            print(f"[NNcalibration] loss_weighting: {self.loss_weighting}")
         y_np = _true_prediction_labels_from_error_calc(error_calc)
         y = torch.tensor(
             y_np.astype(np.float32), dtype=torch.float32, device=self.device
@@ -823,10 +1113,20 @@ class NNcalibration:
         masks_np = _error_group_masks_from_error_calc(error_calc)
         masks = _to_torch_masks(masks_np, self.device)
 
-        loss_fn = self._loss_fn()
+        # Full OSR masks used for validation PRR-based checkpoint selection.
+        cats_np = _osr_category_masks_from_error_calc(error_calc)
+        selection_fractions = _make_fraction_grid(self.selection_fractions)
 
+        loss_fn = self._loss_fn()
+        if self.loss_weighting == "legacy_group_mean" and self.weight is None:
+            true_pred_ratio = float(y.mean().detach().cpu())
+            print(f"[NNcalibration] true prediction ratio: {true_pred_ratio:.6f}")
+            self.weight = true_pred_ratio
         legacy_weight_param = None
-        if self.train_weight and not self.balanced_loss and not self.weight_loss_types:
+        if self.train_weight and (
+            self.loss_weighting == "legacy_group_mean"
+            or (not self.balanced_loss and not self.weight_loss_types)
+        ):
             init_weight = 0.5 if self.weight is None else float(self.weight)
             legacy_weight_param = torch.nn.Parameter(
                 torch.tensor(init_weight, dtype=torch.float32, device=self.device),
@@ -847,6 +1147,10 @@ class NNcalibration:
         n = x_norm.shape[0]
         subset_size = self._subset_size(n)
 
+        best_state = None
+        best_selection_score = -np.inf
+        best_selection_iter = -1
+
         self.model.train()
         for iteration in range(self.epochs):
             optimizer.zero_grad(set_to_none=True)
@@ -861,7 +1165,10 @@ class NNcalibration:
                 y_batch = y
                 masks_batch = masks
 
-            pred = self.model(x_batch).flatten().clamp(1e-6, 1.0 - 1e-6)
+            pred = self.model(x_batch).flatten()
+
+            if self.clamp_predictions:
+                pred = pred.clamp(1e-6, 1.0 - 1e-6)
             loss_elementwise = loss_fn(pred, y_batch).flatten()
             loss = self._compute_weighted_loss(
                 loss_elementwise,
@@ -875,8 +1182,36 @@ class NNcalibration:
 
             if scheduler is not None:
                 scheduler.step()
+            if self.select_best and (
+                iteration % self.selection_interval == 0 or iteration == self.epochs - 1
+            ):
+                with torch.no_grad():
+                    self.model.eval()
+                    pred_for_selection = (
+                        self.model(x_norm).flatten().detach().cpu().numpy()
+                    )
 
-            if iteration % 100 == 0 or iteration == self.epochs - 1:
+                    selection_score = _validation_selection_score_from_p_correct(
+                        p_correct=pred_for_selection,
+                        cats=cats_np,
+                        selection_metric=self.selection_metric,
+                        fractions=selection_fractions,
+                        seed=self.random_state,
+                    )
+
+                    if (
+                        np.isfinite(selection_score)
+                        and selection_score > best_selection_score
+                    ):
+                        best_selection_score = float(selection_score)
+                        best_selection_iter = int(iteration)
+                        best_state = {
+                            key: value.detach().cpu().clone()
+                            for key, value in self.model.state_dict().items()
+                        }
+
+                    self.model.train()
+            if iteration % 500 == 0 or iteration == self.epochs - 1:
                 with torch.no_grad():
                     self.model.eval()
                     pred_eval = self.model(x_norm).flatten()
@@ -889,7 +1224,13 @@ class NNcalibration:
                     f"loss={loss.item():.6f} acc={acc:.4f} lr={lr_now:.3e}"
                 )
                 print_specific_params_table_terminal(self.model, iteration)
-
+        if self.select_best and best_state is not None:
+            self.model.load_state_dict(best_state)
+            print(
+                f"[NNcalibration] restored best checkpoint by "
+                f"{self.selection_metric}: iter={best_selection_iter}, "
+                f"score={best_selection_score:.6f}"
+            )
         self.model.eval()
         self._maybe_draw_density_plot(
             x_norm.detach().cpu(),
@@ -1098,7 +1439,20 @@ class NNcalibration:
                 model_name=getattr(self.model, "name", self.model.__class__.__name__),
             )
 
-        uncertainty = -p_correct.detach().cpu().numpy()
+        p_correct_np = p_correct.detach().cpu().numpy()
+
+        if self.return_mode == "neg_correct":
+            uncertainty = -p_correct_np
+        elif self.return_mode == "error_prob":
+            uncertainty = 1.0 - p_correct_np
+        elif self.return_mode == "neg_error_prob":
+            uncertainty = -(1.0 - p_correct_np)
+        else:
+            raise ValueError(
+                f"Unknown return_mode={self.return_mode!r}. "
+                "Use {'neg_correct', 'error_prob', 'neg_error_prob'}."
+            )
+
         return uncertainty
 
     # ------------------------------------------------------------------
@@ -1488,6 +1842,7 @@ class Standartization:
     ) -> None:
         self.draw_density_plot(x_norm, error_calc, dataset_name, far, is_val)
 
+
 class ScalarRiskCalibration:
     """
     Monotone scalar calibration for already meaningful risk scores.
@@ -1566,9 +1921,7 @@ class ScalarRiskCalibration:
             return (risk - mean) / std
 
         if not hasattr(self, "risk_mean_val") or not hasattr(self, "risk_std_val"):
-            raise RuntimeError(
-                "ScalarRiskCalibration must be trained before use."
-            )
+            raise RuntimeError("ScalarRiskCalibration must be trained before use.")
 
         return (risk - self.risk_mean_val) / self.risk_std_val
 
@@ -1679,9 +2032,7 @@ class ScalarRiskCalibration:
         far: Optional[float] = None,
     ) -> np.ndarray:
         if not self.is_trained:
-            raise RuntimeError(
-                "ScalarRiskCalibration must be trained before use."
-            )
+            raise RuntimeError("ScalarRiskCalibration must be trained before use.")
 
         risk = self._prepare_risk(kl_1)
         x = self._apply_normalization(risk)
@@ -1696,6 +2047,7 @@ class ScalarRiskCalibration:
         # Returning -P(correct) = P(error)-1 keeps this convention and also
         # makes CalibrationPlot compute predicted_conf = -predicted_unc.
         return p_error - 1.0
-    
+
+
 # Correctly spelled alias for new code.
 Standardization = Standartization

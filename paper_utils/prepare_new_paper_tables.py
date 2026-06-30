@@ -176,7 +176,9 @@ def match_value(series: pd.Series, value: Any) -> pd.Series:
         return pd.Series(mask, index=series.index)
 
     if is_number_like(value) and pd.api.types.is_numeric_dtype(series):
-        return pd.Series(np.isclose(series.astype(float), float(value)), index=series.index)
+        return pd.Series(
+            np.isclose(series.astype(float), float(value)), index=series.index
+        )
 
     return series.astype(str) == str(value)
 
@@ -420,7 +422,9 @@ def render_grouped_column_table(
 
     first_header = ["Method"]
     for group_name, ncols in groups:
-        first_header.append(f"\\multicolumn{{{ncols}}}{{c}}{{{latex_cell(group_name)}}}")
+        first_header.append(
+            f"\\multicolumn{{{ncols}}}{{c}}{{{latex_cell(group_name)}}}"
+        )
 
     out += " & ".join(first_header) + " \\\\\n"
 
@@ -478,7 +482,9 @@ def build_main_prr_table(cfg, tcfg, name: str):
                         "beta": beta,
                     },
                 )
-                numeric.loc[method, f"{dataset}|{far}"] = first_or_mean(selected, metric)
+                numeric.loc[method, f"{dataset}|{far}"] = first_or_mean(
+                    selected, metric
+                )
 
     directions = {c: "high" for c in numeric.columns}
     display_numeric = format_highlighted_numeric_df(
@@ -583,7 +589,11 @@ def build_component_ablation_table(cfg, tcfg, name: str):
             numeric.loc[variant, metric] = first_or_mean(selected, metric)
 
     directions = {
-        metric: str(tcfg.get("directions", {}).get(metric, get_metric_direction(cfg, metric, "high")))
+        metric: str(
+            tcfg.get("directions", {}).get(
+                metric, get_metric_direction(cfg, metric, "high")
+            )
+        )
         for metric in metrics
     }
 
@@ -639,7 +649,11 @@ def build_kl_inversion_table(cfg, tcfg, name: str):
             numeric.loc[method, metric] = first_or_mean(selected, metric)
 
     directions = {
-        metric: str(tcfg.get("directions", {}).get(metric, get_metric_direction(cfg, metric, "high")))
+        metric: str(
+            tcfg.get("directions", {}).get(
+                metric, get_metric_direction(cfg, metric, "high")
+            )
+        )
         for metric in metrics
     }
 
@@ -704,10 +718,18 @@ def build_validation_size_table(cfg, tcfg, name: str):
             {
                 "Validation fraction": format_float(frac, digits=2),
                 "Test PRR": test_prr,
-                "$\\lambda_{FA}$": format_float(row.get("lambda_fa_mean", np.nan), digits=2),
-                "$\\lambda_{ID}$": format_float(row.get("lambda_id_mean", np.nan), digits=2),
-                "$\\lambda_{FR}$": format_float(row.get("lambda_fr_mean", np.nan), digits=2),
-                "$\\lambda_{NS}$": format_float(row.get("lambda_ns_mean", np.nan), digits=2),
+                "$\\lambda_{FA}$": format_float(
+                    row.get("lambda_fa_mean", np.nan), digits=2
+                ),
+                "$\\lambda_{ID}$": format_float(
+                    row.get("lambda_id_mean", np.nan), digits=2
+                ),
+                "$\\lambda_{FR}$": format_float(
+                    row.get("lambda_fr_mean", np.nan), digits=2
+                ),
+                "$\\lambda_{NS}$": format_float(
+                    row.get("lambda_ns_mean", np.nan), digits=2
+                ),
             }
         )
 
@@ -819,7 +841,11 @@ def build_hyperparameter_sensitivity_table(cfg, tcfg, name: str):
             numeric.loc[variant, metric] = first_or_mean(selected, metric)
 
     directions = {
-        metric: str(tcfg.get("directions", {}).get(metric, get_metric_direction(cfg, metric, "high")))
+        metric: str(
+            tcfg.get("directions", {}).get(
+                metric, get_metric_direction(cfg, metric, "high")
+            )
+        )
         for metric in metrics
     }
 
@@ -876,7 +902,11 @@ def build_mixed_prior_necessity_table(cfg, tcfg, name: str):
             numeric.loc[variant, metric] = first_or_mean(selected, metric)
 
     directions = {
-        metric: str(tcfg.get("directions", {}).get(metric, get_metric_direction(cfg, metric, "high")))
+        metric: str(
+            tcfg.get("directions", {}).get(
+                metric, get_metric_direction(cfg, metric, "high")
+            )
+        )
         for metric in metrics
     }
 
@@ -929,7 +959,11 @@ def build_reliability_table(cfg, tcfg, name: str):
             numeric.loc[method, metric] = first_or_mean(selected, metric)
 
     directions = {
-        metric: str(tcfg.get("directions", {}).get(metric, get_metric_direction(cfg, metric, "high")))
+        metric: str(
+            tcfg.get("directions", {}).get(
+                metric, get_metric_direction(cfg, metric, "high")
+            )
+        )
         for metric in metrics
     }
 
@@ -994,7 +1028,9 @@ def build_bootstrap_table(cfg, tcfg, name: str):
                     row.get("ci95_high", np.nan),
                     digits=digits,
                 ),
-                "$p(\\Delta\\leq 0)$": format_float(row.get("p_delta_le_0", np.nan), digits=3),
+                "$p(\\Delta\\leq 0)$": format_float(
+                    row.get("p_delta_le_0", np.nan), digits=3
+                ),
             }
         )
 
@@ -1036,7 +1072,11 @@ def build_runtime_table(cfg, tcfg, name: str):
             numeric.loc[method, metric] = first_or_mean(selected, metric)
 
     directions = {
-        metric: str(tcfg.get("directions", {}).get(metric, get_metric_direction(cfg, metric, "low")))
+        metric: str(
+            tcfg.get("directions", {}).get(
+                metric, get_metric_direction(cfg, metric, "low")
+            )
+        )
         for metric in metrics
     }
 

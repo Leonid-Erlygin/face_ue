@@ -270,30 +270,18 @@ def flatten_config(raw: dict) -> SimpleNamespace:
         methods=raw.get("methods", {}),
         three_d=raw.get("three_d", {}),
         controlled_circle=raw.get("controlled_circle", raw.get("oracle_circle", {})),
-                kappa_search_enabled_when_beta_fixed=bool(
+        kappa_search_enabled_when_beta_fixed=bool(
             kappa_search.get("enabled_when_beta_fixed", True)
         ),
-        kappa_search_use_split=str(
-            kappa_search.get("use_split", "validation")
-        ),
+        kappa_search_use_split=str(kappa_search.get("use_split", "validation")),
         kappa_search_compute_test_diagnostic=bool(
             kappa_search.get("compute_test_diagnostic", True)
         ),
-        kappa_search_min=float(
-            kappa_search.get("kappa_min", 1e-3)
-        ),
-        kappa_search_max=float(
-            kappa_search.get("kappa_max", 1e4)
-        ),
-        kappa_search_grid_points=int(
-            kappa_search.get("grid_points", 500)
-        ),
-        kappa_search_golden_iters=int(
-            kappa_search.get("golden_iters", 80)
-        ),
-        kappa_search_tolerance=float(
-            kappa_search.get("tolerance", 1e-8)
-        ),
+        kappa_search_min=float(kappa_search.get("kappa_min", 1e-3)),
+        kappa_search_max=float(kappa_search.get("kappa_max", 1e4)),
+        kappa_search_grid_points=int(kappa_search.get("grid_points", 500)),
+        kappa_search_golden_iters=int(kappa_search.get("golden_iters", 80)),
+        kappa_search_tolerance=float(kappa_search.get("tolerance", 1e-8)),
     )
 
     args.method_order = list(
@@ -1392,6 +1380,7 @@ def threshold_at_fpir(scores_unknown: np.ndarray, target_fpir: float) -> float:
     idx = int(np.clip(idx, 0, len(sorted_scores) - 1))
     return float(sorted_scores[idx])
 
+
 def fpir_from_kappa_fixed_beta(
     scores_unknown: np.ndarray,
     dim: int,
@@ -1509,9 +1498,7 @@ def find_gallery_kappa_for_fixed_beta_and_fpir(
     kappa_max = float(kappa_max)
 
     if not (kappa_min > 0.0 and kappa_max > kappa_min):
-        raise ValueError(
-            f"Invalid kappa search interval: [{kappa_min}, {kappa_max}]"
-        )
+        raise ValueError(f"Invalid kappa search interval: [{kappa_min}, {kappa_max}]")
 
     log_min = math.log(kappa_min)
     log_max = math.log(kappa_max)
@@ -1609,6 +1596,7 @@ def find_gallery_kappa_for_fixed_beta_and_fpir(
     )
 
     return best
+
 
 @dataclass
 class OSRStats:
@@ -2632,7 +2620,7 @@ def evaluate_uncertainty_methods(
                 "dim": dim,
                 "tau": tau,
                 "beta": beta,
-"gallery_kappa": gallery_kappa,
+                "gallery_kappa": gallery_kappa,
                 "target_fpir": args.target_fpir,
                 "gallery_kappa": gallery_kappa,
                 "val": val_metrics,
@@ -2770,7 +2758,7 @@ def evaluate_uncertainty_methods(
                 "embedding_dim": dim,
                 "tau": tau,
                 "beta": beta,
-"gallery_kappa": gallery_kappa,
+                "gallery_kappa": gallery_kappa,
                 "base_f1": test_metrics["f1"],
                 "base_fpir": test_metrics["fpir"],
                 "base_fnir": test_metrics["fnir"],
@@ -2952,7 +2940,7 @@ def run_mnist_branch(
     )
 
     # Fixed OSR threshold selected on validation unknown probes.
-        # ------------------------------------------------------------
+    # ------------------------------------------------------------
     # Select OSR boundary.
     #
     # Two modes:
@@ -3119,10 +3107,16 @@ def run_mnist_branch(
     print(f"[{dim}D] Mixed-prior beta={beta:.8f}")
     print(f"[{dim}D] Effective gallery_kappa={gallery_kappa_eff:.8f}")
     print(f"[{dim}D] Effective tau={tau:.8f}")
-    print(f"[{dim}D] Validation FPIR at effective tau={float(np.mean(val_unknown_scores >= tau)):.6f}")
-    print(f"[{dim}D] Test FPIR at effective tau={float(np.mean(test_unknown_scores >= tau)):.6f}")
+    print(
+        f"[{dim}D] Validation FPIR at effective tau={float(np.mean(val_unknown_scores >= tau)):.6f}"
+    )
+    print(
+        f"[{dim}D] Test FPIR at effective tau={float(np.mean(test_unknown_scores >= tau)):.6f}"
+    )
 
-    with open(result_dir / f"kappa_search_info_{dim}d.json", "w", encoding="utf-8") as f:
+    with open(
+        result_dir / f"kappa_search_info_{dim}d.json", "w", encoding="utf-8"
+    ) as f:
         json.dump(kappa_search_info, f, indent=2)
 
     print(f"[{dim}D] Computing validation GalUE/HolUE...")
@@ -3340,7 +3334,9 @@ def run_controlled_circle_experiment(args: SimpleNamespace, out_dir: Path) -> No
         gallery_kappa = float(search["kappa"])
         tau = float(search["tau"])
 
-        with open(result_dir / "controlled_circle_kappa_search.json", "w", encoding="utf-8") as f:
+        with open(
+            result_dir / "controlled_circle_kappa_search.json", "w", encoding="utf-8"
+        ) as f:
             json.dump(search, f, indent=2)
     else:
         tau = tau_initial

@@ -427,14 +427,14 @@ class MonteCarloPredictiveProb:
         return unc
 
     def compute_mean_probs_and_kl(
-    self,
-    mean: np.ndarray,
-    kappa: np.ndarray,
-    gallery_means,
-    gallery_kappas,
-    T,
-    return_mprisk_aux: bool = False,
-) -> Any:
+        self,
+        mean: np.ndarray,
+        kappa: np.ndarray,
+        gallery_means,
+        gallery_kappas,
+        T,
+        return_mprisk_aux: bool = False,
+    ) -> Any:
         """
         Stable log-space computation of:
           mean_gallery_probs, KL_1, KL_2
@@ -591,7 +591,9 @@ class MonteCarloPredictiveProb:
             if mode == "analytic_vmf":
                 # Exact vMF collision concentration of q(z|x).
                 log_norm_2x_np = vmf_log_normalizer_np(2.0 * kappa_x_np, d=d_int)
-                log_norm_2x = torch.as_tensor(log_norm_2x_np, device=device, dtype=dtype)
+                log_norm_2x = torch.as_tensor(
+                    log_norm_2x_np, device=device, dtype=dtype
+                )
 
                 log_collision = log_surface_area + 2.0 * log_norm_x - log_norm_2x
 
@@ -601,10 +603,9 @@ class MonteCarloPredictiveProb:
                 #
                 # Use this only with M > 1. With M=0 it degenerates to evaluating q at
                 # its mean and overestimates concentration in high dimensions.
-                log_mean_q_p0_sq = (
-                    torch.logsumexp(log_p_z_given_x + 2.0 * log_p0, dim=1)
-                    - np.log(zs.shape[1])
-                )
+                log_mean_q_p0_sq = torch.logsumexp(
+                    log_p_z_given_x + 2.0 * log_p0, dim=1
+                ) - np.log(zs.shape[1])
                 log_pi0 = torch.log(mean_oog_prob.clamp_min(1e-300))
                 log_collision = log_surface_area + log_mean_q_p0_sq - 2.0 * log_pi0
 
@@ -631,7 +632,6 @@ class MonteCarloPredictiveProb:
             return mean_gallery_probs, kl_1, kl_2, mean_oog_prob, oog_nonspecificity
 
         return mean_gallery_probs, kl_1, kl_2
-
 
 
 class MPRiskPredictiveProb(MonteCarloPredictiveProb):
@@ -803,7 +803,9 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
     ) -> dict:
         mean_probs = np.asarray(mean_probs, dtype=np.float64)
         oog_prob = np.asarray(oog_prob, dtype=np.float64).reshape(-1)
-        oog_nonspecificity = np.asarray(oog_nonspecificity, dtype=np.float64).reshape(-1)
+        oog_nonspecificity = np.asarray(oog_nonspecificity, dtype=np.float64).reshape(
+            -1
+        )
 
         n, K = mean_probs.shape
 
@@ -856,9 +858,7 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
         }
 
         ordinary_risk = (
-            self.lambda_fa * r_fa
-            + self.lambda_id * r_id
-            + self.lambda_fr * r_fr
+            self.lambda_fa * r_fa + self.lambda_id * r_id + self.lambda_fr * r_fr
         )
 
         mixed_prior_penalty = r_ns
@@ -903,6 +903,7 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
         self.risk_main = components["ordinary_risk"]
         self.risk_ns = components["mixed_prior_penalty"]
         self.mprisk = components["mprisk"]
+
     def _calibration_features_from_components(self, components: dict):
         """
         Select features passed to the calibration transform.
@@ -926,7 +927,9 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
             x2 = components["mixed_prior_penalty"]
             return x1, x2
 
-        raise ValueError(f"Unknown calibration_feature_mode={self.calibration_feature_mode}")
+        raise ValueError(
+            f"Unknown calibration_feature_mode={self.calibration_feature_mode}"
+        )
 
     def _test_calibration_features(self):
         if self.calibration_feature_mode == "scalar":
@@ -937,7 +940,10 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
         if self.calibration_feature_mode == "components":
             return self.risk_main, self.risk_ns
 
-        raise ValueError(f"Unknown calibration_feature_mode={self.calibration_feature_mode}")
+        raise ValueError(
+            f"Unknown calibration_feature_mode={self.calibration_feature_mode}"
+        )
+
     def _current_lambdas(self) -> np.ndarray:
         return np.array(
             [
@@ -1105,7 +1111,9 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
         return float((auc_value - random_auc) / denom)
 
     def _build_lambda_candidates(self) -> list:
-        rng = np.random.default_rng(self.lambda_tune_seed + int(10000 * float(self.far)))
+        rng = np.random.default_rng(
+            self.lambda_tune_seed + int(10000 * float(self.far))
+        )
 
         candidates = []
 
@@ -1238,6 +1246,7 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
             f"lambda_ns={self.lambda_ns:.6g}, "
             f"val_PRR={best_score:.4f}"
         )
+
     def setup(
         self,
         probe_feats: np.ndarray,
@@ -1303,15 +1312,9 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
             self.oog_nonspecificity,
         )
 
-        need_validation_protocol = (
-            self.calibration_set is not None
-            and (
-                self.tune_lambdas
-                or (
-                    self.use_calibration
-                    and self.calibration_transform is not None
-                )
-            )
+        need_validation_protocol = self.calibration_set is not None and (
+            self.tune_lambdas
+            or (self.use_calibration and self.calibration_transform is not None)
         )
 
         calib_components = None

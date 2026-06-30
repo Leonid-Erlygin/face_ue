@@ -128,7 +128,9 @@ def sampled_rank_inversion_rate(
 
 
 def np_trapz(y: np.ndarray, x: np.ndarray) -> float:
-    return float(np.trapezoid(np.asarray(y, dtype=np.float64), np.asarray(x, dtype=np.float64)))
+    return float(
+        np.trapezoid(np.asarray(y, dtype=np.float64), np.asarray(x, dtype=np.float64))
+    )
 
 
 # ---------------------------------------------------------------------
@@ -150,7 +152,7 @@ def compute_osr_error_masks(
     n = len(probe_unique_ids)
     is_seen = np.isin(probe_unique_ids, g_unique_ids)
 
-    predicted_subject = np.full(n, -10**18, dtype=np.int64)
+    predicted_subject = np.full(n, -(10**18), dtype=np.int64)
     if len(g_unique_ids) > 0:
         predicted_subject = g_unique_ids[predicted_id]
 
@@ -275,7 +277,11 @@ def rejection_curve_for_score(
                 "f1_class": f1,
                 "fnir": fnir,
                 "fpir": fpir,
-                "error_rate": float(np.mean(masks_i["any_error"])) if len(keep_idx) > 0 else np.nan,
+                "error_rate": (
+                    float(np.mean(masks_i["any_error"]))
+                    if len(keep_idx) > 0
+                    else np.nan
+                ),
                 "false_accept_count": int(np.sum(masks_i["false_accept"])),
                 "false_reject_count": int(np.sum(masks_i["false_reject"])),
                 "misidentification_count": int(np.sum(masks_i["misidentification"])),
@@ -337,8 +343,12 @@ def self_normalized_prr(
     )
 
     area = np_trapz(curve[metric_name].values, curve["fraction"].values)
-    random_area = np_trapz(random_curve[metric_name].values, random_curve["fraction"].values)
-    oracle_area = np_trapz(oracle_curve[metric_name].values, oracle_curve["fraction"].values)
+    random_area = np_trapz(
+        random_curve[metric_name].values, random_curve["fraction"].values
+    )
+    oracle_area = np_trapz(
+        oracle_curve[metric_name].values, oracle_curve["fraction"].values
+    )
 
     denom = oracle_area - random_area
     if abs(denom) < 1e-12:
@@ -378,9 +388,13 @@ def maybe_attach_calibration_set(cfg, recognition_method, dataset_name: str):
         recognition_method.calibration_set = instantiate(calib_set_cfg)
 
 
-def maybe_attach_dataset_temperature(cfg, recognition_method, pretty_name: str, dataset_name: str):
+def maybe_attach_dataset_temperature(
+    cfg, recognition_method, pretty_name: str, dataset_name: str
+):
     if pretty_name == "GalUE" and hasattr(cfg, "dataset_name_to_T_scale"):
-        recognition_method.predict_T = getattr(cfg.dataset_name_to_T_scale, dataset_name)
+        recognition_method.predict_T = getattr(
+            cfg.dataset_name_to_T_scale, dataset_name
+        )
 
 
 def build_tester(
@@ -431,10 +445,16 @@ def run_method_raw(
 
     probe_feats = tt.probe_pooled_templates[gallery_name]["template_pooled_features"]
     probe_unc = tt.probe_pooled_templates[gallery_name]["template_pooled_data_unc"]
-    gallery_feats = tt.gallery_pooled_templates[gallery_name]["template_pooled_features"]
+    gallery_feats = tt.gallery_pooled_templates[gallery_name][
+        "template_pooled_features"
+    ]
     gallery_unc = tt.gallery_pooled_templates[gallery_name]["template_pooled_data_unc"]
-    g_unique_ids = tt.gallery_pooled_templates[gallery_name]["template_subject_ids_sorted"]
-    probe_unique_ids = tt.probe_pooled_templates[gallery_name]["template_subject_ids_sorted"]
+    g_unique_ids = tt.gallery_pooled_templates[gallery_name][
+        "template_subject_ids_sorted"
+    ]
+    probe_unique_ids = tt.probe_pooled_templates[gallery_name][
+        "template_subject_ids_sorted"
+    ]
 
     rm.setup(
         probe_feats,
@@ -774,13 +794,263 @@ def save_per_example_npz(
     np.savez_compressed(out_path, **save_dict)
 
 
+def save_main_rejection_curve_plots(
+    all_curves: Dict[Tuple[str, float, float, str], pd.DataFrame],
+    all_prr: Dict[Tuple[str, float, float, str], float],
+    reference_curves: Dict[Tuple[str, float, float], Dict[str, pd.DataFrame]],
+    cfg,
+    out_dir: Path,
+):
+    """
+    Save original-paper-style rejection curves.
+
+    Includes:
+      - method curves;
+      - Random curve;
+      - Oracle curve;
+      - PRR value in legend.
+
+    `all_curves` contains method curves:
+        (dataset, far, beta, method) -> curve
+
+    `all_prr` contains method PRR values:
+        (dataset, far, beta, method) -> PRR
+
+    `reference_curves` contains Random/Oracle curves:
+        (dataset, far, beta) -> {"Random": df, "Oracle": df}
+    """
+    try:
+        enabled = bool(cfg.plots.rejection_curves.enabled)
+    except Exception:
+        enabled = True
+
+    if not enabled:
+        return
+
+    try:
+        metrics = list(cfg.plots.rejection_curves.metrics)
+    except Exception:
+        metrics = ["f1_class", "fpir", "fnir"]
+
+    try:
+        method_order = list(cfg.plots.rejection_curves.method_order)
+    except Exception:
+        method_order = []
+
+    try:
+        display_random_curve = bool(cfg.plots.rejection_curves.display_random_curve)
+    except Exception:
+        display_random_curve = True
+
+    try:
+        display_oracle_curve = bool(cfg.plots.rejection_curves.display_oracle_curve)
+    except Exception:
+        display_oracle_curve = True
+
+    try:
+        prr_in_legend = bool(cfg.plots.rejection_curves.prr_in_legend)
+    except Exception:
+        prr_in_legend = True
+
+    try:
+        legend_fontsize = float(cfg.plots.rejection_curves.legend_fontsize)
+    except Exception:
+        legend_fontsize = 8.0
+
+    try:
+        figsize = tuple(cfg.plots.rejection_curves.figsize)
+    except Exception:
+        figsize = (7.0, 4.8)
+
+    plot_dir = out_dir / "rejection_curves"
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
+    groups = sorted(
+        set((dataset, far, beta) for dataset, far, beta, _ in all_curves.keys())
+    )
+
+    metric_labels = {
+        "f1_class": "$F_1$",
+        "fpir": "FPIR",
+        "fnir": "FNIR",
+        "error_rate": "Error rate",
+        "false_accept_count": "False accept count",
+        "false_reject_count": "False reject count",
+        "misidentification_count": "Misidentification count",
+    }
+
+    for dataset, far, beta in groups:
+        group_key = (dataset, far, beta)
+
+        group_methods = [
+            method
+            for d, f, b, method in all_curves.keys()
+            if d == dataset and f == far and b == beta
+        ]
+
+        ordered_methods = [m for m in method_order if m in group_methods]
+        ordered_methods += [m for m in group_methods if m not in ordered_methods]
+
+        group_dir = plot_dir / slugify(dataset) / f"far_{far}_beta_{beta}"
+        group_dir.mkdir(parents=True, exist_ok=True)
+
+        refs = reference_curves.get(group_key, {})
+        random_curve = refs.get("Random", None)
+        oracle_curve = refs.get("Oracle", None)
+
+        # --------------------------------------------------------------
+        # Save all curves into one CSV, including Random and Oracle.
+        # --------------------------------------------------------------
+        curve_rows = []
+
+        if display_random_curve and random_curve is not None:
+            tmp = random_curve.copy()
+            tmp.insert(0, "method", "Random")
+            tmp.insert(0, "prr_f1", 0.0)
+            tmp.insert(0, "beta", beta)
+            tmp.insert(0, "far", far)
+            tmp.insert(0, "dataset", dataset)
+            curve_rows.append(tmp)
+
+        if display_oracle_curve and oracle_curve is not None:
+            tmp = oracle_curve.copy()
+            tmp.insert(0, "method", "Oracle")
+            tmp.insert(0, "prr_f1", 1.0)
+            tmp.insert(0, "beta", beta)
+            tmp.insert(0, "far", far)
+            tmp.insert(0, "dataset", dataset)
+            curve_rows.append(tmp)
+
+        for method in ordered_methods:
+            curve = all_curves[(dataset, far, beta, method)]
+            prr_value = all_prr.get((dataset, far, beta, method), np.nan)
+
+            tmp = curve.copy()
+            tmp.insert(0, "method", method)
+            tmp.insert(0, "prr_f1", prr_value)
+            tmp.insert(0, "beta", beta)
+            tmp.insert(0, "far", far)
+            tmp.insert(0, "dataset", dataset)
+            curve_rows.append(tmp)
+
+        if len(curve_rows) > 0:
+            pd.concat(curve_rows, ignore_index=True).to_csv(
+                group_dir / "all_rejection_curves.csv",
+                index=False,
+            )
+
+        # Also save a compact PRR table for the plotted methods.
+        prr_rows = []
+        if display_random_curve and random_curve is not None:
+            prr_rows.append({"method": "Random", "prr_f1": 0.0})
+        if display_oracle_curve and oracle_curve is not None:
+            prr_rows.append({"method": "Oracle", "prr_f1": 1.0})
+        for method in ordered_methods:
+            prr_rows.append(
+                {
+                    "method": method,
+                    "prr_f1": all_prr.get((dataset, far, beta, method), np.nan),
+                }
+            )
+
+        pd.DataFrame(prr_rows).to_csv(group_dir / "prr_values.csv", index=False)
+
+        # --------------------------------------------------------------
+        # Draw one plot per metric.
+        # --------------------------------------------------------------
+        for metric in metrics:
+            plt.figure(figsize=figsize)
+
+            # Plot Random first.
+            if (
+                display_random_curve
+                and random_curve is not None
+                and metric in random_curve.columns
+            ):
+                label = "Random"
+                if prr_in_legend:
+                    label += ", PRR=0.00"
+
+                plt.plot(
+                    random_curve["fraction"].values,
+                    random_curve[metric].values,
+                    label=label,
+                    linewidth=2.0,
+                    alpha=0.8,
+                    color="gray",
+                    linestyle="--",
+                )
+
+            # Plot Oracle second.
+            if (
+                display_oracle_curve
+                and oracle_curve is not None
+                and metric in oracle_curve.columns
+            ):
+                label = "Oracle"
+                if prr_in_legend:
+                    label += ", PRR=1.00"
+
+                plt.plot(
+                    oracle_curve["fraction"].values,
+                    oracle_curve[metric].values,
+                    label=label,
+                    linewidth=2.0,
+                    alpha=0.8,
+                    color="black",
+                    linestyle="--",
+                )
+
+            # Plot actual methods.
+            for method in ordered_methods:
+                curve = all_curves[(dataset, far, beta, method)]
+
+                if metric not in curve.columns:
+                    continue
+
+                prr_value = all_prr.get((dataset, far, beta, method), np.nan)
+
+                if prr_in_legend and np.isfinite(prr_value):
+                    label = f"{method}, PRR={prr_value:.2f}"
+                else:
+                    label = method
+
+                linewidth = 2.8 if ("MPRisk" in method or "HolUE" in method) else 1.8
+                alpha = 0.95
+
+                plt.plot(
+                    curve["fraction"].values,
+                    curve[metric].values,
+                    label=label,
+                    linewidth=linewidth,
+                    alpha=alpha,
+                )
+
+            plt.xlabel("Filtered-out probe fraction")
+            plt.ylabel(metric_labels.get(metric, metric))
+            # plt.title(f"{dataset}, FPIR={far}, beta={beta}")
+            plt.grid(True, linestyle="--", alpha=0.4)
+            plt.legend(fontsize=legend_fontsize)
+            plt.tight_layout()
+
+            out_stem = group_dir / f"{metric}_rejection_curve"
+            plt.savefig(out_stem.with_suffix(".png"), dpi=300)
+            plt.savefig(out_stem.with_suffix(".pdf"), dpi=300, bbox_inches="tight")
+            plt.close()
+
+            print(f"[saved] {out_stem.with_suffix('.png')}")
+            print(f"[saved] {out_stem.with_suffix('.pdf')}")
+
+
 # ---------------------------------------------------------------------
 # Main Hydra entry
 # ---------------------------------------------------------------------
 
 
 @hydra.main(
-    config_path=str(Path(__file__).resolve().parents[1] / "configs/uncertainty_benchmark"),
+    config_path=str(
+        Path(__file__).resolve().parents[1] / "configs/uncertainty_benchmark"
+    ),
     config_name="mprisk_core_experiments",
     version_base="1.2",
 )
@@ -814,6 +1084,10 @@ def main(cfg):
     component_rows = []
     inversion_rows = []
 
+    # Curves for paper-style plots.
+    all_curves = {}
+    all_prr = {}
+    reference_curves = {}
     for test_dataset in test_datasets:
         dataset_name = test_dataset.dataset_name
 
@@ -832,7 +1106,9 @@ def main(cfg):
                     )
 
                     print("=" * 100)
-                    print(f"[MPRiskCore] dataset={dataset_name} method={pretty_name} far={far} beta={beta}")
+                    print(
+                        f"[MPRiskCore] dataset={dataset_name} method={pretty_name} far={far} beta={beta}"
+                    )
                     print("=" * 100)
 
                     recognition_method = instantiate(method_cfg.recognition_method)
@@ -885,11 +1161,43 @@ def main(cfg):
                         seed=int(cfg.get("seed", 777)),
                     )
 
-                    curve_out_dir = curves_dir / slugify(dataset_name) / slugify(pretty_name) / f"far_{far}"
+                    curve_out_dir = (
+                        curves_dir
+                        / slugify(dataset_name)
+                        / slugify(pretty_name)
+                        / f"far_{far}"
+                    )
                     curve_out_dir.mkdir(parents=True, exist_ok=True)
                     curve.to_csv(curve_out_dir / "curve.csv", index=False)
                     random_curve.to_csv(curve_out_dir / "random_curve.csv", index=False)
                     oracle_curve.to_csv(curve_out_dir / "oracle_curve.csv", index=False)
+                    group_key = (dataset_name, float(far), float(beta))
+                    method_curve_key = (
+                        dataset_name,
+                        float(far),
+                        float(beta),
+                        pretty_name,
+                    )
+
+                    all_curves[method_curve_key] = curve
+                    all_prr[method_curve_key] = float(prr)
+
+                    # Store one Random/Oracle reference pair per dataset/far/beta.
+                    # If a reference_method is specified, prefer its references.
+                    try:
+                        reference_method = str(
+                            cfg.plots.rejection_curves.reference_method
+                        )
+                    except Exception:
+                        reference_method = None
+
+                    if group_key not in reference_curves or (
+                        reference_method is not None and pretty_name == reference_method
+                    ):
+                        reference_curves[group_key] = {
+                            "Random": random_curve,
+                            "Oracle": oracle_curve,
+                        }
 
                     masks = result["masks"]
                     fnir, fpir = fnir_fpir(
@@ -918,9 +1226,15 @@ def main(cfg):
                             "error_rate": float(np.mean(masks["any_error"])),
                             "false_accept_count": int(np.sum(masks["false_accept"])),
                             "false_reject_count": int(np.sum(masks["false_reject"])),
-                            "misidentification_count": int(np.sum(masks["misidentification"])),
-                            "error_auroc": safe_auc(masks["any_error"], result["predicted_unc"]),
-                            "error_auprc": safe_auprc(masks["any_error"], result["predicted_unc"]),
+                            "misidentification_count": int(
+                                np.sum(masks["misidentification"])
+                            ),
+                            "error_auroc": safe_auc(
+                                masks["any_error"], result["predicted_unc"]
+                            ),
+                            "error_auprc": safe_auprc(
+                                masks["any_error"], result["predicted_unc"]
+                            ),
                             **lambdas,
                         }
                     )
@@ -983,7 +1297,13 @@ def main(cfg):
     error_type_df.to_csv(tables_dir / "error_type_detection.csv", index=False)
     component_df.to_csv(tables_dir / "mprisk_component_ablation.csv", index=False)
     inversion_df.to_csv(tables_dir / "kl_rank_inversion.csv", index=False)
-
+    save_main_rejection_curve_plots(
+        all_curves=all_curves,
+        all_prr=all_prr,
+        reference_curves=reference_curves,
+        cfg=cfg,
+        out_dir=plots_dir,
+    )
     print("\nSaved:")
     print(tables_dir / "main_mprisk_core_comparison.csv")
     print(tables_dir / "error_type_detection.csv")

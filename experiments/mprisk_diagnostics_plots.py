@@ -66,7 +66,8 @@ def plot_mixed_prior_necessity(exp_dir: Path):
         sub = sub.copy()
         sub["variant"] = pd.Categorical(
             sub["variant"],
-            categories=preferred_order + sorted(set(sub["variant"]) - set(preferred_order)),
+            categories=preferred_order
+            + sorted(set(sub["variant"]) - set(preferred_order)),
             ordered=True,
         )
         sub = sub.sort_values("variant")
@@ -124,16 +125,23 @@ def plot_mixed_prior_necessity(exp_dir: Path):
                 )
 
             ax.set_xticks(x)
-            ax.set_xticklabels(sub["variant"].astype(str).values, rotation=45, ha="right")
+            ax.set_xticklabels(
+                sub["variant"].astype(str).values, rotation=45, ha="right"
+            )
             ax.set_ylabel("AUROC")
             ax.set_ylim(0.0, 1.0)
-            ax.set_title(f"Error-type detection: {dataset}, {source_method}, FPIR={far}")
+            ax.set_title(
+                f"Error-type detection: {dataset}, {source_method}, FPIR={far}"
+            )
             ax.grid(True, axis="y", linestyle="--", alpha=0.35)
             ax.legend(fontsize=8)
 
             fig.tight_layout()
 
-            out = plot_dir / f"{dataset}_{source_method}_far_{far}_beta_{beta}_error_type_auroc"
+            out = (
+                plot_dir
+                / f"{dataset}_{source_method}_far_{far}_beta_{beta}_error_type_auroc"
+            )
             save_fig(fig, out)
 
 
@@ -210,7 +218,9 @@ def plot_reliability_metrics(exp_dir: Path):
         dataset, far, beta = keys
 
         for metric in metrics:
-            sub_sorted = sub.sort_values(metric, ascending=("auroc" not in metric and "auprc" not in metric))
+            sub_sorted = sub.sort_values(
+                metric, ascending=("auroc" not in metric and "auprc" not in metric)
+            )
 
             fig, ax = plt.subplots(figsize=(6.5, 4.2))
 

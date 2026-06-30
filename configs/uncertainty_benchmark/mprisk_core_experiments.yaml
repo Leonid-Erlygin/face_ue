@@ -20,23 +20,55 @@ plots:
     enabled: True
     max_points: 5000
 
+  rejection_curves:
+    enabled: True
+
+    # Curves to draw. These columns are present in rejection_curve_for_score().
+    metrics: [f1_class, fpir, fnir]
+
+    # Add Random and Oracle curves like in the original HolUE paper.
+    display_random_curve: True
+    display_oracle_curve: True
+
+    # Add PRR value to legend labels.
+    prr_in_legend: True
+
+    # Use this method's Random/Oracle reference curves if present.
+    # If missing, the first evaluated method for the dataset/far/beta is used.
+    reference_method: "HolUE"
+
+    figsize: [6.4, 4.8]
+    legend_fontsize: 8
+
+    method_order:
+      - SCF
+      - AccScr
+      - MSP
+      - Margin
+      - GalUE
+      - HolUE
+      - MPRisk raw
+      - MPRisk no NS
+      - MPRisk tuned
+      - MPRisk tuned+cal
+
 test_datasets:
   - _target_: evaluation.test_datasets.FaceRecogntionDataset
     dataset_name: IJBC
     dataset_path: /app/datasets/arcface_ijb/IJBC
 
   # Uncomment after checking IJBC.
-  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
-  #   dataset_name: IJBB
-  #   dataset_path: /app/datasets/arcface_ijb/IJBB
+  - _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: IJBB
+    dataset_path: /app/datasets/arcface_ijb/IJBB
 
-  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
-  #   dataset_name: large_12k-perspk5
-  #   dataset_path: /app/datasets/vb-clean_ident/Large_12k/perspk5
+  - _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: large_12k-perspk5
+    dataset_path: /app/datasets/vb-clean_ident/Large_12k/perspk5
 
-  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
-  #   dataset_name: whale
-  #   dataset_path: /app/datasets/whale
+  - _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: whale
+    dataset_path: /app/datasets/whale
 
 
 calibration_sets:
@@ -70,9 +102,9 @@ dataset_name_to_T_scale:
 
 
 beta_list: [0.5]
-far_list: [0.05]
+#far_list: [0.05]
 # After first successful run, use:
-# far_list: [0.01, 0.05, 0.1, 0.2]
+far_list: [0.01, 0.05, 0.1, 0.2]
 
 
 open_set_identification_methods:
@@ -122,6 +154,43 @@ open_set_identification_methods:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
     probe_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
+    recognition_method:
+      _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
+      calibration_set: True
+      calibration_embs_name: scf
+      distance_function: 
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
+      acceptance_score: 
+        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+      uncertainty_function:
+        _target_: evaluation.open_set_methods.uncertainty_functions.MaximumSoftmaxProbability
+        T: 1
+      alpha: 0
+      calib_strategy: "norm_val"
+    pretty_name: "MSP"
+
+  - embeddings: scf
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    recognition_method:
+      _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
+      distance_function: 
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
+      acceptance_score: 
+        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+      uncertainty_function:
+        _target_: evaluation.open_set_methods.uncertainty_functions.Margin
+      alpha: 0
+      calib_strategy: "norm_val"
+    pretty_name: "Margin"
+
+  - embeddings: scf
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
     use_detector_score: False
     recognition_method:
       _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
@@ -141,13 +210,11 @@ open_set_identification_methods:
   # ------------------------------------------------------------------
   # Original HolUE
   # ------------------------------------------------------------------
-
   - embeddings: scf
     gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
+      _target_: evaluation.template_pooling_strategies.PoolingDefault  
     probe_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
-    use_detector_score: False
     recognition_method:
       _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
       gallery_prior: power
@@ -163,10 +230,9 @@ open_set_identification_methods:
       calibration_transform:
         _target_: evaluation.open_set_methods.calibration_methods.NNcalibration
         model:
-          _target_: evaluation.open_set_methods.calibration_methods.MLP
-          hidden_size: 6
-          num_layers: 3
-          use_bn: False
+          _target_: evaluation.open_set_methods.calibration_methods.ExpTransform
+          use_shift: True
+          use_alpha: True
         lr: 0.001
         epochs: 2000
         weight: 0
@@ -174,7 +240,7 @@ open_set_identification_methods:
         train_weight: False
         weight_decay: 0.001
         normalize_kl_by_test: False
-        scheduler_params:
+        scheduler_params: 
           max_lr: 1e-3
           steps_per_epoch: 1
           div_factor: 1e1
@@ -213,30 +279,30 @@ open_set_identification_methods:
     pretty_name: "MPRisk raw"
 
 
-  - embeddings: scf
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    use_detector_score: False
-    recognition_method:
-      _target_: evaluation.open_set_methods.class_prob_models.MPRiskPredictiveProb
-      gallery_prior: power
-      emb_unc_model: vMF
-      beta: 0.5
-      predict_T: 20
-      M: 0
-      far: null
+  # - embeddings: scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   use_detector_score: False
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.class_prob_models.MPRiskPredictiveProb
+  #     gallery_prior: power
+  #     emb_unc_model: vMF
+  #     beta: 0.5
+  #     predict_T: 20
+  #     M: 0
+  #     far: null
 
-      lambda_fa: 1.0
-      lambda_id: 1.0
-      lambda_fr: 1.0
-      lambda_ns: 0.0
+  #     lambda_fa: 1.0
+  #     lambda_id: 1.0
+  #     lambda_fr: 1.0
+  #     lambda_ns: 0.0
 
-      nonspecificity_mode: analytic_vmf
-      tune_lambdas: False
-      use_calibration: False
-    pretty_name: "MPRisk no NS"
+  #     nonspecificity_mode: analytic_vmf
+  #     tune_lambdas: False
+  #     use_calibration: False
+  #   pretty_name: "MPRisk no NS"
 
 
   - embeddings: scf
@@ -272,52 +338,52 @@ open_set_identification_methods:
       use_calibration: False
       calibration_set: True
       calibration_embs_name: scf
-    pretty_name: "MPRisk tuned"
+    pretty_name: "MPRisk"
 
 
-  - embeddings: scf
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    use_detector_score: False
-    recognition_method:
-      _target_: evaluation.open_set_methods.class_prob_models.MPRiskPredictiveProb
-      gallery_prior: power
-      emb_unc_model: vMF
-      beta: 0.5
-      predict_T: 20
-      M: 0
-      far: null
+  # - embeddings: scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   use_detector_score: False
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.class_prob_models.MPRiskPredictiveProb
+  #     gallery_prior: power
+  #     emb_unc_model: vMF
+  #     beta: 0.5
+  #     predict_T: 20
+  #     M: 0
+  #     far: null
 
-      lambda_fa: 1.0
-      lambda_id: 1.0
-      lambda_fr: 1.0
-      lambda_ns: 1.0
+  #     lambda_fa: 1.0
+  #     lambda_id: 1.0
+  #     lambda_fr: 1.0
+  #     lambda_ns: 1.0
 
-      nonspecificity_mode: analytic_vmf
+  #     nonspecificity_mode: analytic_vmf
 
-      tune_lambdas: True
-      lambda_search_steps: 4096
-      lambda_search_log_low: -10.0
-      lambda_search_log_high: 10.0
-      lambda_tune_fraction_max: 0.5
-      lambda_tune_fraction_num: 20
-      lambda_tune_seed: 777
+  #     tune_lambdas: True
+  #     lambda_search_steps: 4096
+  #     lambda_search_log_low: -10.0
+  #     lambda_search_log_high: 10.0
+  #     lambda_tune_fraction_max: 0.5
+  #     lambda_tune_fraction_num: 20
+  #     lambda_tune_seed: 777
 
-      use_calibration: True
-      calibration_feature_mode: scalar
-      calibration_set: True
-      calibration_embs_name: scf
-      calibration_transform:
-        _target_: evaluation.open_set_methods.calibration_methods.ScalarRiskCalibration
-        lr: 0.01
-        epochs: 1000
-        weight_decay: 0.0
-        balanced_loss: True
-        normalize_kl_by_test: False
-        use_norm: True
-        min_slope: 1e-6
-        log_dir: ${exp_dir}
-        verbose: False
-    pretty_name: "MPRisk tuned+cal"
+  #     use_calibration: True
+  #     calibration_feature_mode: scalar
+  #     calibration_set: True
+  #     calibration_embs_name: scf
+  #     calibration_transform:
+  #       _target_: evaluation.open_set_methods.calibration_methods.ScalarRiskCalibration
+  #       lr: 0.01
+  #       epochs: 1000
+  #       weight_decay: 0.0
+  #       balanced_loss: True
+  #       normalize_kl_by_test: False
+  #       use_norm: True
+  #       min_slope: 1e-6
+  #       log_dir: ${exp_dir}
+  #       verbose: False
+  #   pretty_name: "MPRisk tuned+cal"

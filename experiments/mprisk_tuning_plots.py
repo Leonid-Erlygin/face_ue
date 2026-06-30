@@ -154,7 +154,9 @@ def plot_cross_dataset_transfer(exp_dir: Path):
 
         ax.set_xlabel("Target test dataset")
         ax.set_ylabel("Source validation dataset")
-        ax.set_title(f"Cross-dataset lambda transfer: {variant}, FPIR={far}, beta={beta}")
+        ax.set_title(
+            f"Cross-dataset lambda transfer: {variant}, FPIR={far}, beta={beta}"
+        )
 
         for i in range(pivot.shape[0]):
             for j in range(pivot.shape[1]):

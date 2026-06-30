@@ -31,7 +31,8 @@ from experiments.mprisk_core_experiments import (
     slugify,
     run_method_raw,
 )
-#---------------------------------------------------------------------
+
+# ---------------------------------------------------------------------
 # Generic component utilities
 # ---------------------------------------------------------------------
 
@@ -60,7 +61,9 @@ def apply_recognition_overrides(method_cfg, overrides: Optional[Dict[str, Any]])
     return method_cfg
 
 
-def extract_mprisk_components_from_result(result: Dict[str, Any]) -> Dict[str, np.ndarray]:
+def extract_mprisk_components_from_result(
+    result: Dict[str, Any],
+) -> Dict[str, np.ndarray]:
     rm = result["recognition_method"]
 
     missing = []
@@ -239,8 +242,12 @@ def tune_lambdas_for_components(
         fractions=fractions,
     )
 
-    random_area = float(np.trapezoid(random_curve["f1_class"].values, random_curve["fraction"].values))
-    oracle_area = float(np.trapezoid(oracle_curve["f1_class"].values, oracle_curve["fraction"].values))
+    random_area = float(
+        np.trapezoid(random_curve["f1_class"].values, random_curve["fraction"].values)
+    )
+    oracle_area = float(
+        np.trapezoid(oracle_curve["f1_class"].values, oracle_curve["fraction"].values)
+    )
     denom = oracle_area - random_area
 
     best_l = np.ones(4, dtype=np.float64)
@@ -273,8 +280,16 @@ def tune_lambdas_for_components(
     return {
         "lambdas": best_l,
         "val_prr": float(best_prr),
-        "val_auc": safe_auc(masks["any_error"], best_score) if best_score is not None else np.nan,
-        "val_auprc": safe_auprc(masks["any_error"], best_score) if best_score is not None else np.nan,
+        "val_auc": (
+            safe_auc(masks["any_error"], best_score)
+            if best_score is not None
+            else np.nan
+        ),
+        "val_auprc": (
+            safe_auprc(masks["any_error"], best_score)
+            if best_score is not None
+            else np.nan
+        ),
         "subset_size": len(probe_ids_sub),
     }
 
@@ -366,19 +381,13 @@ def compute_mprisk_calibration_components(
         "template_subject_ids_sorted"
     ]
 
-    probe_feats_calib = probe_pooled_templates_calib["g1"][
-        "template_pooled_features"
-    ]
-    probe_unc_calib = probe_pooled_templates_calib["g1"][
-        "template_pooled_data_unc"
-    ]
+    probe_feats_calib = probe_pooled_templates_calib["g1"]["template_pooled_features"]
+    probe_unc_calib = probe_pooled_templates_calib["g1"]["template_pooled_data_unc"]
 
     gallery_feats_calib = gallery_pooled_templates_calib["g1"][
         "template_pooled_features"
     ]
-    gallery_unc_calib = gallery_pooled_templates_calib["g1"][
-        "template_pooled_data_unc"
-    ]
+    gallery_unc_calib = gallery_pooled_templates_calib["g1"]["template_pooled_data_unc"]
 
     is_seen_calib = np.isin(probe_unique_ids_calib, g_unique_ids_calib)
 
@@ -625,10 +634,23 @@ def run_operating_point_transfer(cfg, cache: Dict, out_dir: Path) -> pd.DataFram
     eval_fars = list(cfg.operating_point_transfer.eval_fars)
 
     for dataset_name in sorted({k[0] for k in cache.keys()}):
-        for variant_name in sorted({k[1] for k in cache.keys() if k[0] == dataset_name}):
-            for beta in sorted({k[3] for k in cache.keys() if k[0] == dataset_name and k[1] == variant_name}):
+        for variant_name in sorted(
+            {k[1] for k in cache.keys() if k[0] == dataset_name}
+        ):
+            for beta in sorted(
+                {
+                    k[3]
+                    for k in cache.keys()
+                    if k[0] == dataset_name and k[1] == variant_name
+                }
+            ):
                 for train_far in train_fars:
-                    train_key = (dataset_name, variant_name, float(train_far), float(beta))
+                    train_key = (
+                        dataset_name,
+                        variant_name,
+                        float(train_far),
+                        float(beta),
+                    )
                     if train_key not in cache:
                         continue
 
@@ -647,7 +669,12 @@ def run_operating_point_transfer(cfg, cache: Dict, out_dir: Path) -> pd.DataFram
                     )
 
                     for eval_far in eval_fars:
-                        eval_key = (dataset_name, variant_name, float(eval_far), float(beta))
+                        eval_key = (
+                            dataset_name,
+                            variant_name,
+                            float(eval_far),
+                            float(beta),
+                        )
                         if eval_key not in cache:
                             continue
 
@@ -860,10 +887,7 @@ def run_hyperparameter_sensitivity(
                             "lambda_id": tune["lambdas"][1],
                             "lambda_fr": tune["lambdas"][2],
                             "lambda_ns": tune["lambdas"][3],
-                            **{
-                                f"override_{k}": v
-                                for k, v in overrides.items()
-                            },
+                            **{f"override_{k}": v for k, v in overrides.items()},
                             **test_eval,
                         }
                     )
@@ -907,8 +931,7 @@ def build_cache_for_main_tuning_experiments(
                 print(
                     "\n" + "-" * 100 + "\n"
                     f"[Cache] dataset={dataset_name} variant={variant_name} "
-                    f"far={far} beta={beta}\n"
-                    + "-" * 100
+                    f"far={far} beta={beta}\n" + "-" * 100
                 )
 
                 entry = run_base_mprisk(
@@ -929,13 +952,16 @@ def build_cache_for_main_tuning_experiments(
 
     return cache
 
+
 # ---------------------------------------------------------------------
 # Main Hydra entry
 # ---------------------------------------------------------------------
 
 
 @hydra.main(
-    config_path=str(Path(__file__).resolve().parents[1] / "configs/uncertainty_benchmark"),
+    config_path=str(
+        Path(__file__).resolve().parents[1] / "configs/uncertainty_benchmark"
+    ),
     config_name="mprisk_tuning_experiments",
     version_base="1.2",
 )
