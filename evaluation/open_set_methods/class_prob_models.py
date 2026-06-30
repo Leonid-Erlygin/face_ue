@@ -694,6 +694,13 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
         lambda_ns: float = 1.0,
         nonspecificity_mode: str = "analytic_vmf",
         use_calibration: bool = True,
+        tune_lambdas: bool = False,
+        lambda_search_steps: int = 2048,
+        lambda_search_log_low: float = -8.0,
+        lambda_search_log_high: float = 8.0,
+        lambda_tune_fraction_max: float = 0.5,
+        lambda_tune_fraction_num: int = 20,
+        lambda_tune_seed: int = 777,
     ) -> None:
         if train_predict_T:
             raise NotImplementedError(
@@ -732,7 +739,13 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
         self.lambda_id = float(lambda_id)
         self.lambda_fr = float(lambda_fr)
         self.lambda_ns = float(lambda_ns)
-
+        self.tune_lambdas = bool(tune_lambdas)
+        self.lambda_search_steps = int(lambda_search_steps)
+        self.lambda_search_log_low = float(lambda_search_log_low)
+        self.lambda_search_log_high = float(lambda_search_log_high)
+        self.lambda_tune_fraction_max = float(lambda_tune_fraction_max)
+        self.lambda_tune_fraction_num = int(lambda_tune_fraction_num)
+        self.lambda_tune_seed = int(lambda_tune_seed)
         if nonspecificity_mode not in ["analytic_vmf", "weighted_mc"]:
             raise ValueError(
                 "nonspecificity_mode must be 'analytic_vmf' or 'weighted_mc'."
@@ -822,6 +835,15 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
         # but the unknown identity posterior is diffuse.
         r_ns[rejected] = oog_prob[rejected] * oog_nonspecificity[rejected]
 
+        components = {
+            "predicted_id": predicted_id,
+            "was_rejected": was_rejected,
+            "r_fa": r_fa,
+            "r_id": r_id,
+            "r_fr": r_fr,
+            "r_ns": r_ns,
+        }
+
         ordinary_risk = (
             self.lambda_fa * r_fa
             + self.lambda_id * r_id
@@ -830,19 +852,33 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
 
         mixed_prior_penalty = r_ns
 
-        mprisk = ordinary_risk + self.lambda_ns * mixed_prior_penalty
+        mprisk = self._score_from_components(components)
 
-        return {
-            "predicted_id": predicted_id,
-            "was_rejected": was_rejected,
-            "r_fa": r_fa,
-            "r_id": r_id,
-            "r_fr": r_fr,
-            "r_ns": r_ns,
-            "ordinary_risk": ordinary_risk,
-            "mixed_prior_penalty": mixed_prior_penalty,
-            "mprisk": mprisk,
-        }
+        components.update(
+            {
+                "ordinary_risk": ordinary_risk,
+                "mixed_prior_penalty": mixed_prior_penalty,
+                "mprisk": mprisk,
+            }
+        )
+
+        return components
+
+        # mixed_prior_penalty = r_ns
+
+        # mprisk = ordinary_risk + self.lambda_ns * mixed_prior_penalty
+
+        # return {
+        #     "predicted_id": predicted_id,
+        #     "was_rejected": was_rejected,
+        #     "r_fa": r_fa,
+        #     "r_id": r_id,
+        #     "r_fr": r_fr,
+        #     "r_ns": r_ns,
+        #     "ordinary_risk": ordinary_risk,
+        #     "mixed_prior_penalty": mixed_prior_penalty,
+        #     "mprisk": mprisk,
+        # }
 
     def _store_test_risk_components(self, components: dict) -> None:
         self.predicted_id = components["predicted_id"]
@@ -856,7 +892,306 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
         self.risk_main = components["ordinary_risk"]
         self.risk_ns = components["mixed_prior_penalty"]
         self.mprisk = components["mprisk"]
+    def _current_lambdas(self) -> np.ndarray:
+        return np.array(
+            [
+                self.lambda_fa,
+                self.lambda_id,
+                self.lambda_fr,
+                self.lambda_ns,
+            ],
+            dtype=np.float64,
+        )
 
+    def _set_lambdas(self, lambdas: np.ndarray) -> None:
+        lambdas = np.asarray(lambdas, dtype=np.float64).reshape(4)
+        lambdas = np.maximum(lambdas, 0.0)
+
+        self.lambda_fa = float(lambdas[0])
+        self.lambda_id = float(lambdas[1])
+        self.lambda_fr = float(lambdas[2])
+        self.lambda_ns = float(lambdas[3])
+
+    def _score_from_components(
+        self,
+        components: dict,
+        lambdas: np.ndarray = None,
+    ) -> np.ndarray:
+        if lambdas is None:
+            lambdas = self._current_lambdas()
+
+        lambdas = np.asarray(lambdas, dtype=np.float64).reshape(4)
+
+        return (
+            lambdas[0] * components["r_fa"]
+            + lambdas[1] * components["r_id"]
+            + lambdas[2] * components["r_fr"]
+            + lambdas[3] * components["r_ns"]
+        )
+
+    @staticmethod
+    def _safe_div(num: float, den: float, default: float = 0.0) -> float:
+        den = float(den)
+        if den == 0.0 or not np.isfinite(den):
+            return default
+        return float(num) / den
+
+    def _f1_classic_for_subset(
+        self,
+        predicted_id: np.ndarray,
+        was_rejected: np.ndarray,
+        g_unique_ids: np.ndarray,
+        probe_unique_ids: np.ndarray,
+        subset_idx: np.ndarray,
+    ) -> float:
+        predicted_id = np.asarray(predicted_id)[subset_idx]
+        was_rejected = np.asarray(was_rejected, dtype=bool)[subset_idx]
+        probe_unique_ids = np.asarray(probe_unique_ids)[subset_idx]
+
+        is_seen = np.isin(probe_unique_ids, g_unique_ids)
+
+        tp = 0
+        if np.any(is_seen):
+            similar_gallery_class = g_unique_ids[predicted_id[is_seen]]
+            tp = int(
+                np.sum(
+                    np.logical_and(
+                        probe_unique_ids[is_seen] == similar_gallery_class,
+                        was_rejected[is_seen] == False,
+                    )
+                )
+            )
+
+        fp = int(np.sum(was_rejected[~is_seen] == False))
+        fn = int(np.sum(is_seen)) - tp
+
+        precision = self._safe_div(tp, tp + fp)
+        recall = self._safe_div(tp, tp + fn)
+        f1 = self._safe_div(2.0 * precision * recall, precision + recall)
+
+        return float(f1)
+
+    def _correct_mask(
+        self,
+        predicted_id: np.ndarray,
+        was_rejected: np.ndarray,
+        g_unique_ids: np.ndarray,
+        probe_unique_ids: np.ndarray,
+    ) -> np.ndarray:
+        predicted_id = np.asarray(predicted_id)
+        was_rejected = np.asarray(was_rejected, dtype=bool)
+        probe_unique_ids = np.asarray(probe_unique_ids)
+
+        is_seen = np.isin(probe_unique_ids, g_unique_ids)
+
+        correct = np.zeros(probe_unique_ids.shape[0], dtype=bool)
+
+        if np.any(is_seen):
+            similar_gallery_class = g_unique_ids[predicted_id[is_seen]]
+            correct[is_seen] = np.logical_and(
+                probe_unique_ids[is_seen] == similar_gallery_class,
+                was_rejected[is_seen] == False,
+            )
+
+        correct[~is_seen] = was_rejected[~is_seen]
+
+        return correct
+
+    def _auc_f1_rejection_curve(
+        self,
+        uncertainty_score: np.ndarray,
+        predicted_id: np.ndarray,
+        was_rejected: np.ndarray,
+        g_unique_ids: np.ndarray,
+        probe_unique_ids: np.ndarray,
+        fractions: np.ndarray,
+    ) -> float:
+        uncertainty_score = np.asarray(uncertainty_score, dtype=np.float64).reshape(-1)
+
+        # Repository convention:
+        # lower predicted_unc = more confident, kept first.
+        order = np.argsort(uncertainty_score)
+
+        n = uncertainty_score.shape[0]
+        f1_values = []
+
+        for fraction in fractions:
+            keep_size = int((1.0 - float(fraction)) * n)
+            keep_size = max(0, min(n, keep_size))
+
+            keep_idx = order[:keep_size]
+
+            f1 = self._f1_classic_for_subset(
+                predicted_id=predicted_id,
+                was_rejected=was_rejected,
+                g_unique_ids=g_unique_ids,
+                probe_unique_ids=probe_unique_ids,
+                subset_idx=keep_idx,
+            )
+            f1_values.append(f1)
+
+        return float(np.trapezoid(np.asarray(f1_values), fractions))
+
+    def _validation_prr_for_score(
+        self,
+        uncertainty_score: np.ndarray,
+        predicted_id: np.ndarray,
+        was_rejected: np.ndarray,
+        g_unique_ids: np.ndarray,
+        probe_unique_ids: np.ndarray,
+        fractions: np.ndarray,
+        random_auc: float,
+        oracle_auc: float,
+    ) -> float:
+        auc_value = self._auc_f1_rejection_curve(
+            uncertainty_score=uncertainty_score,
+            predicted_id=predicted_id,
+            was_rejected=was_rejected,
+            g_unique_ids=g_unique_ids,
+            probe_unique_ids=probe_unique_ids,
+            fractions=fractions,
+        )
+
+        denom = oracle_auc - random_auc
+        if abs(denom) < 1e-12:
+            return auc_value
+
+        return float((auc_value - random_auc) / denom)
+
+    def _build_lambda_candidates(self) -> list:
+        rng = np.random.default_rng(self.lambda_tune_seed + int(10000 * float(self.far)))
+
+        candidates = []
+
+        # Current manually specified weights.
+        candidates.append(self._current_lambdas())
+
+        # Equal-cost baseline.
+        candidates.append(np.ones(4, dtype=np.float64))
+
+        # Single-component baselines.
+        candidates.extend(
+            [
+                np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64),
+                np.array([0.0, 1.0, 0.0, 0.0], dtype=np.float64),
+                np.array([0.0, 0.0, 1.0, 0.0], dtype=np.float64),
+                np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float64),
+            ]
+        )
+
+        # Useful structured mixtures.
+        candidates.extend(
+            [
+                np.array([1.0, 1.0, 0.0, 0.0], dtype=np.float64),
+                np.array([0.0, 0.0, 1.0, 1.0], dtype=np.float64),
+                np.array([1.0, 1.0, 1.0, 0.0], dtype=np.float64),
+                np.array([1.0, 1.0, 0.0, 1.0], dtype=np.float64),
+                np.array([0.0, 0.0, 1.0, 10.0], dtype=np.float64),
+                np.array([1.0, 1.0, 1.0, 10.0], dtype=np.float64),
+                np.array([1.0, 1.0, 1.0, 100.0], dtype=np.float64),
+            ]
+        )
+
+        # Random log-uniform search.
+        for _ in range(self.lambda_search_steps):
+            log_lambdas = rng.uniform(
+                self.lambda_search_log_low,
+                self.lambda_search_log_high,
+                size=4,
+            )
+            lambdas = np.exp(log_lambdas)
+
+            # Scale is irrelevant for ranking, but normalize to avoid overflow.
+            lambdas = lambdas / max(np.max(lambdas), 1e-12)
+
+            candidates.append(lambdas.astype(np.float64))
+
+        return candidates
+
+    def _tune_lambdas_on_validation(
+        self,
+        calib_components: dict,
+        g_unique_ids_calib: np.ndarray,
+        probe_unique_ids_calib: np.ndarray,
+    ) -> None:
+        fractions = np.linspace(
+            0.0,
+            self.lambda_tune_fraction_max,
+            self.lambda_tune_fraction_num,
+        )
+
+        predicted_id = calib_components["predicted_id"]
+        was_rejected = calib_components["was_rejected"]
+
+        correct = self._correct_mask(
+            predicted_id=predicted_id,
+            was_rejected=was_rejected,
+            g_unique_ids=g_unique_ids_calib,
+            probe_unique_ids=probe_unique_ids_calib,
+        )
+        is_error = ~correct
+
+        rng = np.random.default_rng(self.lambda_tune_seed)
+
+        # Oracle: errors get large uncertainty and are filtered first.
+        oracle_score = is_error.astype(np.float64)
+        oracle_score = oracle_score + 1e-9 * rng.random(len(oracle_score))
+
+        # Random baseline.
+        random_score = rng.random(len(oracle_score))
+
+        oracle_auc = self._auc_f1_rejection_curve(
+            uncertainty_score=oracle_score,
+            predicted_id=predicted_id,
+            was_rejected=was_rejected,
+            g_unique_ids=g_unique_ids_calib,
+            probe_unique_ids=probe_unique_ids_calib,
+            fractions=fractions,
+        )
+
+        random_auc = self._auc_f1_rejection_curve(
+            uncertainty_score=random_score,
+            predicted_id=predicted_id,
+            was_rejected=was_rejected,
+            g_unique_ids=g_unique_ids_calib,
+            probe_unique_ids=probe_unique_ids_calib,
+            fractions=fractions,
+        )
+
+        best_lambdas = self._current_lambdas()
+        best_score = -np.inf
+
+        for lambdas in self._build_lambda_candidates():
+            uncertainty_score = self._score_from_components(
+                calib_components,
+                lambdas=lambdas,
+            )
+
+            prr = self._validation_prr_for_score(
+                uncertainty_score=uncertainty_score,
+                predicted_id=predicted_id,
+                was_rejected=was_rejected,
+                g_unique_ids=g_unique_ids_calib,
+                probe_unique_ids=probe_unique_ids_calib,
+                fractions=fractions,
+                random_auc=random_auc,
+                oracle_auc=oracle_auc,
+            )
+
+            if prr > best_score:
+                best_score = prr
+                best_lambdas = lambdas.copy()
+
+        self._set_lambdas(best_lambdas)
+
+        print(
+            "[MPRisk] Tuned lambdas on validation: "
+            f"lambda_fa={self.lambda_fa:.6g}, "
+            f"lambda_id={self.lambda_id:.6g}, "
+            f"lambda_fr={self.lambda_fr:.6g}, "
+            f"lambda_ns={self.lambda_ns:.6g}, "
+            f"val_PRR={best_score:.4f}"
+        )
     def setup(
         self,
         probe_feats: np.ndarray,
@@ -915,19 +1250,27 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
             gallery_kappa=self.gallery_kappa,
         )
 
+        # Compute initial test components. They may be recomputed after lambda tuning.
         components = self._risk_components(
             self.mean_probs,
             self.oog_prob,
             self.oog_nonspecificity,
         )
-        self._store_test_risk_components(components)
 
-        # Optional MPRisk calibration.
-        if (
-            self.use_calibration
-            and self.calibration_set is not None
-            and self.calibration_transform is not None
-        ):
+        need_validation_protocol = (
+            self.calibration_set is not None
+            and (
+                self.tune_lambdas
+                or (
+                    self.use_calibration
+                    and self.calibration_transform is not None
+                )
+            )
+        )
+
+        calib_components = None
+
+        if need_validation_protocol:
             self.gallery_pooled_templates_calib, self.probe_pooled_templates_calib = (
                 prepare_calibration_dataset(
                     self.calibration_set,
@@ -1007,31 +1350,51 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
                 self.oog_prob_calib,
                 self.oog_nonspecificity_calib,
             )
+            if self.tune_lambdas:
+                self._tune_lambdas_on_validation(
+                    calib_components=calib_components,
+                    g_unique_ids_calib=self.g_unique_ids_calib,
+                    probe_unique_ids_calib=self.probe_unique_ids_calib,
+                )
 
-            self.risk_main_calib = calib_components["ordinary_risk"]
-            self.risk_ns_calib = calib_components["mixed_prior_penalty"]
+                # Recompute calibration and test components with tuned lambdas.
+                calib_components = self._risk_components(
+                    self.mean_probs_calib,
+                    self.oog_prob_calib,
+                    self.oog_nonspecificity_calib,
+                )
 
-            error_calc = FrrFarIdent()
-            error_calc(
-                calib_components["predicted_id"],
-                calib_components["was_rejected"],
-                self.g_unique_ids_calib,
-                self.probe_unique_ids_calib,
-            )
+                components = self._risk_components(
+                    self.mean_probs,
+                    self.oog_prob,
+                    self.oog_nonspecificity,
+                )
+            if self.use_calibration:
+                self.risk_main_calib = calib_components["ordinary_risk"]
+                self.risk_ns_calib = calib_components["mixed_prior_penalty"]
 
-            # Reuse existing two-input NNcalibration:
-            # feature 1 = ordinary OSR posterior risk,
-            # feature 2 = mixed-prior reject non-specificity penalty.
-            self.calibration_transform.train_calibration_parameters(
-                self.risk_main_calib,
-                self.risk_ns_calib,
-                error_calc,
-                dataset_name=self.calibration_set.dataset_name,
-                far=self.far,
-            )
+                error_calc = FrrFarIdent()
+                error_calc(
+                    calib_components["predicted_id"],
+                    calib_components["was_rejected"],
+                    self.g_unique_ids_calib,
+                    self.probe_unique_ids_calib,
+                )
 
-            self._mprisk_calibration_trained = True
+                # Reuse existing two-input NNcalibration:
+                # feature 1 = ordinary OSR posterior risk,
+                # feature 2 = mixed-prior reject non-specificity penalty.
+                self.calibration_transform.train_calibration_parameters(
+                    self.risk_main_calib,
+                    self.risk_ns_calib,
+                    error_calc,
+                    dataset_name=self.calibration_set.dataset_name,
+                    far=self.far,
+                )
 
+                self._mprisk_calibration_trained = True
+        # Store final test components after optional lambda tuning.
+        self._store_test_risk_components(components)
         if self.log_dir is not None:
             Path(self.log_dir).mkdir(parents=True, exist_ok=True)
             np.savez(
