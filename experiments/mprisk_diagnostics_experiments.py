@@ -59,7 +59,7 @@ def apply_recognition_overrides(method_cfg, overrides: Optional[Dict[str, Any]])
 
 
 def np_trapz(y, x) -> float:
-    return float(np.trapz(np.asarray(y, dtype=np.float64), np.asarray(x, dtype=np.float64)))
+    return float(np.trapezoid(np.asarray(y, dtype=np.float64), np.asarray(x, dtype=np.float64)))
 
 
 def score_quantiles(score: np.ndarray) -> Dict[str, float]:

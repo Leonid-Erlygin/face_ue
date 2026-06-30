@@ -701,6 +701,7 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
         lambda_tune_fraction_max: float = 0.5,
         lambda_tune_fraction_num: int = 20,
         lambda_tune_seed: int = 777,
+        calibration_feature_mode: str = "scalar",
     ) -> None:
         if train_predict_T:
             raise NotImplementedError(
@@ -754,6 +755,16 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
 
         self.use_calibration = bool(use_calibration)
         self._mprisk_calibration_trained = False
+        calibration_feature_mode = str(calibration_feature_mode).strip()
+        calibration_feature_mode = calibration_feature_mode.replace("-", "_").lower()
+
+        if calibration_feature_mode not in ["scalar", "components"]:
+            raise ValueError(
+                "calibration_feature_mode must be either 'scalar' or 'components', "
+                f"got {calibration_feature_mode!r}."
+            )
+
+        self.calibration_feature_mode = calibration_feature_mode
 
     def _compute_probs_aux(
         self,
@@ -892,6 +903,41 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
         self.risk_main = components["ordinary_risk"]
         self.risk_ns = components["mixed_prior_penalty"]
         self.mprisk = components["mprisk"]
+    def _calibration_features_from_components(self, components: dict):
+        """
+        Select features passed to the calibration transform.
+
+        scalar:
+            use raw MPRisk only. This preserves the theoretically motivated
+            MPRisk ordering after monotone calibration.
+
+        components:
+            use ordinary OSR risk and mixed-prior reject penalty separately.
+            This is useful for ablation, but can hurt ranking if the calibrator
+            is too flexible.
+        """
+        if self.calibration_feature_mode == "scalar":
+            x1 = components["mprisk"]
+            x2 = np.zeros_like(x1)
+            return x1, x2
+
+        if self.calibration_feature_mode == "components":
+            x1 = components["ordinary_risk"]
+            x2 = components["mixed_prior_penalty"]
+            return x1, x2
+
+        raise ValueError(f"Unknown calibration_feature_mode={self.calibration_feature_mode}")
+
+    def _test_calibration_features(self):
+        if self.calibration_feature_mode == "scalar":
+            x1 = self.mprisk
+            x2 = np.zeros_like(x1)
+            return x1, x2
+
+        if self.calibration_feature_mode == "components":
+            return self.risk_main, self.risk_ns
+
+        raise ValueError(f"Unknown calibration_feature_mode={self.calibration_feature_mode}")
     def _current_lambdas(self) -> np.ndarray:
         return np.array(
             [
@@ -1372,6 +1418,11 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
             if self.use_calibration:
                 self.risk_main_calib = calib_components["ordinary_risk"]
                 self.risk_ns_calib = calib_components["mixed_prior_penalty"]
+                self.mprisk_calib = calib_components["mprisk"]
+
+                calib_x1, calib_x2 = self._calibration_features_from_components(
+                    calib_components
+                )
 
                 error_calc = FrrFarIdent()
                 error_calc(
@@ -1381,12 +1432,9 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
                     self.probe_unique_ids_calib,
                 )
 
-                # Reuse existing two-input NNcalibration:
-                # feature 1 = ordinary OSR posterior risk,
-                # feature 2 = mixed-prior reject non-specificity penalty.
                 self.calibration_transform.train_calibration_parameters(
-                    self.risk_main_calib,
-                    self.risk_ns_calib,
+                    calib_x1,
+                    calib_x2,
                     error_calc,
                     dataset_name=self.calibration_set.dataset_name,
                     far=self.far,
@@ -1427,9 +1475,11 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
             # Existing calibrator returns -P(correct).
             # This is consistent with the repository convention:
             # lower values are kept first, higher values are filtered first.
+            test_x1, test_x2 = self._test_calibration_features()
+
             unc = self.calibration_transform.apply_calibration_transform(
-                self.risk_main,
-                self.risk_ns,
+                test_x1,
+                test_x2,
                 error_calc,
                 dataset_name=self.dataset_name,
                 far=self.far,

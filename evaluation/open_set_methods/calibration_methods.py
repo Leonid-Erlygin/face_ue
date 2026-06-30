@@ -1488,6 +1488,214 @@ class Standartization:
     ) -> None:
         self.draw_density_plot(x_norm, error_calc, dataset_name, far, is_val)
 
+class ScalarRiskCalibration:
+    """
+    Monotone scalar calibration for already meaningful risk scores.
 
+    This calibrator is intended for MPRisk.
+
+    Input convention:
+      - kl_1 is interpreted as a scalar risk score.
+      - kl_2 is ignored and kept only for API compatibility.
+
+    It learns
+
+        P(error | risk) = sigmoid(b + a * standardized_risk),
+
+    with a >= 0.
+
+    Therefore the calibrated uncertainty preserves the raw MPRisk ranking.
+    The returned value is
+
+        uncertainty = P(error) - 1 = -P(correct),
+
+    which matches the repository convention used by NNcalibration:
+    smaller values are more confident and are kept first by rejection curves.
+    """
+
+    def __init__(
+        self,
+        lr: float = 1e-2,
+        epochs: int = 1000,
+        weight_decay: float = 0.0,
+        normalize_kl_by_test: bool = False,
+        use_norm: bool = True,
+        balanced_loss: bool = True,
+        min_slope: float = 1e-6,
+        log_dir: Optional[str] = None,
+        random_state: int = 777,
+        verbose: bool = True,
+    ):
+        self.lr = lr
+        self.epochs = int(epochs)
+        self.weight_decay = weight_decay
+        self.normalize_kl_by_test = normalize_kl_by_test
+        self.use_norm = use_norm
+        self.balanced_loss = balanced_loss
+        self.min_slope = min_slope
+        self.log_dir = log_dir
+        self.random_state = random_state
+        self.verbose = verbose
+        self.device = torch.device("cpu")
+        self.is_trained = False
+
+    def _prepare_risk(self, risk: np.ndarray) -> np.ndarray:
+        risk = np.asarray(risk, dtype=np.float64).reshape(-1)
+        risk = np.nan_to_num(
+            risk,
+            nan=0.0,
+            posinf=np.finfo(np.float64).max / 100.0,
+            neginf=np.finfo(np.float64).min / 100.0,
+        )
+        return risk
+
+    def _fit_normalization(self, risk: np.ndarray) -> np.ndarray:
+        if self.use_norm:
+            self.risk_mean_val = float(np.mean(risk))
+            self.risk_std_val = float(max(np.std(risk), _EPS))
+        else:
+            self.risk_mean_val = 0.0
+            self.risk_std_val = 1.0
+
+        return (risk - self.risk_mean_val) / self.risk_std_val
+
+    def _apply_normalization(self, risk: np.ndarray) -> np.ndarray:
+        if self.normalize_kl_by_test:
+            mean = float(np.mean(risk))
+            std = float(max(np.std(risk), _EPS))
+            return (risk - mean) / std
+
+        if not hasattr(self, "risk_mean_val") or not hasattr(self, "risk_std_val"):
+            raise RuntimeError(
+                "ScalarRiskCalibration must be trained before use."
+            )
+
+        return (risk - self.risk_mean_val) / self.risk_std_val
+
+    def train_calibration_parameters(
+        self,
+        kl_1: np.ndarray,
+        kl_2: np.ndarray,
+        error_calc: Any,
+        dataset_name: str,
+        far: float,
+    ) -> None:
+        if self.random_state is not None:
+            np.random.seed(self.random_state)
+            torch.manual_seed(self.random_state)
+
+        risk = self._prepare_risk(kl_1)
+        x_np = self._fit_normalization(risk)
+
+        correct_np = _true_prediction_labels_from_error_calc(error_calc)
+        y_error_np = (~correct_np).astype(np.float64)
+
+        if len(np.unique(y_error_np)) < 2:
+            # Degenerate validation set. Use monotone identity-like calibration.
+            self.slope_ = 1.0
+            rate = float(np.clip(np.mean(y_error_np), 1e-4, 1.0 - 1e-4))
+            self.bias_ = float(np.log(rate / (1.0 - rate)))
+            self.is_trained = True
+            return
+
+        x = torch.tensor(x_np, dtype=torch.float64, device=self.device)
+        y = torch.tensor(y_error_np, dtype=torch.float64, device=self.device)
+
+        # Positive slope parameterization.
+        raw_slope_init = np.log(np.exp(1.0 - self.min_slope) - 1.0)
+        raw_slope = torch.nn.Parameter(
+            torch.tensor(raw_slope_init, dtype=torch.float64, device=self.device)
+        )
+
+        error_rate = float(np.clip(np.mean(y_error_np), 1e-4, 1.0 - 1e-4))
+        bias = torch.nn.Parameter(
+            torch.tensor(
+                np.log(error_rate / (1.0 - error_rate)),
+                dtype=torch.float64,
+                device=self.device,
+            )
+        )
+
+        params = [raw_slope, bias]
+        optimizer = torch.optim.Adam(
+            params,
+            lr=self.lr,
+            weight_decay=self.weight_decay,
+        )
+
+        if self.balanced_loss:
+            n_pos = float(np.sum(y_error_np == 1))
+            n_neg = float(np.sum(y_error_np == 0))
+
+            weights_np = np.zeros_like(y_error_np, dtype=np.float64)
+            if n_pos > 0:
+                weights_np[y_error_np == 1] = 0.5 / n_pos
+            if n_neg > 0:
+                weights_np[y_error_np == 0] = 0.5 / n_neg
+
+            weights = torch.tensor(weights_np, dtype=torch.float64, device=self.device)
+        else:
+            weights = torch.ones_like(y) / max(float(len(y_error_np)), 1.0)
+
+        for iteration in range(self.epochs):
+            optimizer.zero_grad(set_to_none=True)
+
+            slope = F.softplus(raw_slope) + self.min_slope
+            logits = bias + slope * x
+
+            loss_elementwise = F.binary_cross_entropy_with_logits(
+                logits,
+                y,
+                reduction="none",
+            )
+            loss = torch.sum(loss_elementwise * weights)
+
+            loss.backward()
+            optimizer.step()
+
+            if self.verbose and (iteration % 100 == 0 or iteration == self.epochs - 1):
+                with torch.no_grad():
+                    p_error = torch.sigmoid(logits)
+                    pred = p_error > 0.5
+                    acc = (pred == (y > 0.5)).double().mean().item()
+                    print(
+                        f"[ScalarRiskCalibration] iter={iteration:04d} "
+                        f"loss={loss.item():.6f} acc={acc:.4f} "
+                        f"slope={slope.item():.6f} bias={bias.item():.6f}"
+                    )
+
+        with torch.no_grad():
+            self.slope_ = float((F.softplus(raw_slope) + self.min_slope).cpu())
+            self.bias_ = float(bias.cpu())
+
+        self.is_trained = True
+
+    def apply_calibration_transform(
+        self,
+        kl_1: np.ndarray,
+        kl_2: np.ndarray,
+        error_calc: Optional[Any] = None,
+        dataset_name: str = "test",
+        far: Optional[float] = None,
+    ) -> np.ndarray:
+        if not self.is_trained:
+            raise RuntimeError(
+                "ScalarRiskCalibration must be trained before use."
+            )
+
+        risk = self._prepare_risk(kl_1)
+        x = self._apply_normalization(risk)
+
+        logits = self.bias_ + self.slope_ * x
+        logits = np.clip(logits, -50.0, 50.0)
+
+        p_error = 1.0 / (1.0 + np.exp(-logits))
+
+        # Repository convention:
+        # predicted_unc is sorted ascending; smaller = more confident.
+        # Returning -P(correct) = P(error)-1 keeps this convention and also
+        # makes CalibrationPlot compute predicted_conf = -predicted_unc.
+        return p_error - 1.0
+    
 # Correctly spelled alias for new code.
 Standardization = Standartization

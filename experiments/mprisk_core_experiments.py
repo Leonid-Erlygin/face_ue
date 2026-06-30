@@ -128,7 +128,7 @@ def sampled_rank_inversion_rate(
 
 
 def np_trapz(y: np.ndarray, x: np.ndarray) -> float:
-    return float(np.trapz(np.asarray(y, dtype=np.float64), np.asarray(x, dtype=np.float64)))
+    return float(np.trapezoid(np.asarray(y, dtype=np.float64), np.asarray(x, dtype=np.float64)))
 
 
 # ---------------------------------------------------------------------

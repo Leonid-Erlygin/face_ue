@@ -239,8 +239,8 @@ def tune_lambdas_for_components(
         fractions=fractions,
     )
 
-    random_area = float(np.trapz(random_curve["f1_class"].values, random_curve["fraction"].values))
-    oracle_area = float(np.trapz(oracle_curve["f1_class"].values, oracle_curve["fraction"].values))
+    random_area = float(np.trapezoid(random_curve["f1_class"].values, random_curve["fraction"].values))
+    oracle_area = float(np.trapezoid(oracle_curve["f1_class"].values, oracle_curve["fraction"].values))
     denom = oracle_area - random_area
 
     best_l = np.ones(4, dtype=np.float64)
@@ -259,7 +259,7 @@ def tune_lambdas_for_components(
             fractions=fractions,
         )
 
-        area = float(np.trapz(curve["f1_class"].values, curve["fraction"].values))
+        area = float(np.trapezoid(curve["f1_class"].values, curve["fraction"].values))
         if abs(denom) < 1e-12:
             prr = area
         else:
