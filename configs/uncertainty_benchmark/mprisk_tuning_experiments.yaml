@@ -125,8 +125,8 @@ base_mprisk_method:
 validation_size_ablation:
   enabled: True
 
-  validation_fractions: [0.01, 0.05, 0.10, 0.25, 0.50, 1.0]
-  repeats: 5
+  validation_fractions: [0.05, 0.25, 0.50, 1.0]
+  repeats: 3
   min_subset_size: 100
 
 
@@ -196,12 +196,12 @@ hyperparameter_sensitivity:
       recognition_method:
         kappa_input_scale: 2.0
 
-    - name: "weighted_mc_M10"
-      recognition_method:
-        nonspecificity_mode: weighted_mc
-        M: 10
+    # - name: "weighted_mc_M10"
+    #   recognition_method:
+    #     nonspecificity_mode: weighted_mc
+    #     M: 10
 
-    - name: "weighted_mc_M50"
-      recognition_method:
-        nonspecificity_mode: weighted_mc
-        M: 50
+    # - name: "weighted_mc_M50"
+    #   recognition_method:
+    #     nonspecificity_mode: weighted_mc
+    #     M: 50
