@@ -10,4 +10,4 @@ docker run \
  --gpus '"device=2"' \
  -w="/app" \
  ${USER}_$(basename $(dirname "$PWD")) \
- python3 evaluation/evaluate.py -cn=main_table
+ python3 evaluation/evaluate.py -cn=text_osr_clinc150

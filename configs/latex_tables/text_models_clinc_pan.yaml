@@ -12,23 +12,24 @@ defaults:
   - meta_data@metric_order: metric_order
 
 
-datasets: ["clinc150"] #["pan"] #["yahoo_answers"] # ["IJBC", "IJBB"] #, "whale", "large_12k-perspk5"]
+#datasets: ["yahoo", "agnews", "dbpedia"]
+datasets: ["pan_test", "clinc150"]
 
 task: filter
 
 # CHANGE
-#metric_table_path: /app/outputs/experiments/osr_pan/open_set_identification/pan_test/filter_tabels/f1_class_prr_filtering.csv #/app/outputs/experiments/osr_text/open_set_identification/{dataset}/filter_tabels/f1_class_prr_filtering.csv
-metric_table_path: /app/outputs/experiments/osr_clinc150/open_set_identification/clinc150/filter_tabels/f1_class_prr_filtering.csv #/app/outputs/experiments/osr_text/open_set_identification/{dataset}/filter_tabels/f1_class_prr_filtering.csv
+metric_table_path: /app/outputs/experiments/osr_text/open_set_identification/{dataset}/filter_tabels/f1_class_prr_filtering.csv
 
 caption: >
-  Prediction Rejection Ratios (PRR, $\uparrow$) for $F_1$ filtering curve for the CLINC150 dataset.
+  Prediction Rejection Ratios (PRR, $\uparrow$) for the $F_1$ filtering curve on PAN-20-AV authorship attribution and CLINC150 intent classification. Baselines follow the same convention as Table~\ref{tab:topic_classification}; MSP and Entropy use the calibrated temperature $T^\star$. Best results in bold, second-best underlined.
+
 # caption: >
-#   Prediction Rejection Ratios (PRR, $\uparrow$) for $F_1$ filtering curve for the PAN authorship identification dataset.
-# caption: >
-#   Prediction Rejection Ratios (PRR, $\uparrow$) for $F_1$ filtering curve for the yahoo answers dataset.
+#   Prediction Rejection Ratios (PRR, $\uparrow$) for $F_1$ filtering curve for three topic classification datasets.
+
   
 fix_table: False
-table_lable: "tab:${task}"
+table_lable: "tab:pan_and_clinc"
+#table_lable: "tab:topic_classification"
 round_num: 2
 table_size: footnotesize
 tabcolsep: 2
@@ -38,14 +39,7 @@ sort_models_with: "used_models"
 
 used_columns_dict:
   filter:
-    clinc150:
-      [
-        "models",
-        "FAR=0.2",
-        "FAR=0.3",
-        "FAR=0.4",
-      ]
-    pan:
+    dbpedia:
       [
         "models",
         "FAR=0.1",
@@ -54,14 +48,43 @@ used_columns_dict:
         "FAR=0.4",
         "FAR=0.5",
       ]
-    yahoo_answers:
+    yahoo:
       [
         "models",
+        "FAR=0.1",
         "FAR=0.2",
         "FAR=0.3",
         "FAR=0.4",
         "FAR=0.5",
       ]
+    agnews:
+      [
+        "models",
+        "FAR=0.1",
+        "FAR=0.2",
+        "FAR=0.3",
+        "FAR=0.4",
+        "FAR=0.5",
+      ]
+    clinc150:
+      [
+        "models",
+        "FAR=0.1",
+        "FAR=0.2",
+        "FAR=0.3",
+        "FAR=0.4",
+        "FAR=0.5",
+      ]
+    pan_test:
+      [
+        "models",
+        "FAR=0.1",
+        "FAR=0.2",
+        "FAR=0.3",
+        "FAR=0.4",
+        "FAR=0.5",
+      ]
+
     whale:
       [
         "models",

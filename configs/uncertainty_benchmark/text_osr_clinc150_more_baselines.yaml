@@ -2,7 +2,7 @@ hydra:
   run:
     dir: ${exp_dir}
 
-exp_dir: outputs/experiments/osr_blog
+exp_dir: outputs/experiments/osr_text_more_baselines
 use_two_galleries: False
 recompute_template_pooling: True
 metric_pretty_name_path: /app/configs/latex_tables/pretty_names/column_pretty_name.yaml
@@ -10,8 +10,8 @@ create_pool_plot: False
 
 test_datasets:
   - _target_: evaluation.test_datasets.FaceRecogntionDataset
-    dataset_name: blog_test
-    dataset_path: /app/datasets/blog_test
+    dataset_name: clinc150
+    dataset_path: /app/datasets/clinc150_test
 
 
 
@@ -20,13 +20,13 @@ dataset_name_to_calibration_set:
   IJBC: ${calibration_sets.ijb_val}
   whale: ${calibration_sets.whale_val}
   large_12k-perspk5: ${calibration_sets.voxblink_val} 
-  blog_test: ${calibration_sets.blog_val} 
+  clinc150: ${calibration_sets.clinc150_val} 
 dataset_name_to_T_scale:
   IJBB: 7
   IJBC: 7
   whale: 20
   large_12k-perspk5: 20
-  blog_test: 50
+  clinc150: 50
 
 calibration_sets:
   ijb_val:
@@ -41,14 +41,13 @@ calibration_sets:
     _target_: evaluation.test_datasets.FaceRecogntionDataset
     dataset_name: whale_val
     dataset_path: /app/datasets/whale_val
-  # blog_val:
-  #   _target_: evaluation.test_datasets.FaceRecogntionDataset
-  #   dataset_name: blog_test
-  #   dataset_path: /app/datasets/blog_test
-  blog_val:
+  clinc150_val:
+    # _target_: evaluation.test_datasets.FaceRecogntionDataset
+    # dataset_name: clinc150
+    # dataset_path: /app/datasets/clinc150_test
     _target_: evaluation.test_datasets.FaceRecogntionDataset
-    dataset_name: blog_val
-    dataset_path: /app/datasets/blog_val
+    dataset_name: clinc150_val
+    dataset_path: /app/datasets/clinc150_val
 
 
 
@@ -78,7 +77,7 @@ open_set_identification_uncertainty_metrics:
       _target_: evaluation.metrics.F1_classic
 
 beta_list: [0.5] # [1e-5] #[0.5]
-far_list: [0.3] #[0.1, 0.2, 0.3, 0.4, 0.5] #[0.5] #[0.3, 0.4, 0.5] #[0.2, 0.3, 0.4] #[0.2] #[0.2, 0.3, 0.4, 0.5] #[0.01, 0.05, 0.1, 0.2] #[0.1, 0.2] #
+far_list: [0.1, 0.2, 0.3, 0.4, 0.5] # [0.1, 0.2, 0.3, 0.4, 0.5] # #[0.2, 0.3, 0.4, 0.5] #[0.01, 0.05, 0.1, 0.2] #[0.1, 0.2] #
 display_oracle_curve: True
 
 open_set_identification_methods:
@@ -107,6 +106,64 @@ open_set_identification_methods:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
     recognition_method:
       _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
+      calibration_set: True
+      calibration_embs_name: scf
+      distance_function: 
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
+      acceptance_score: 
+        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+      uncertainty_function:
+        _target_: evaluation.open_set_methods.uncertainty_functions.MaximumSoftmaxProbability
+        T: 1
+      alpha: 0
+      calib_strategy: "norm_val"
+    pretty_name: "MSP"
+
+  - embeddings: scf
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    recognition_method:
+      _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
+      calibration_set: True
+      calibration_embs_name: scf
+      distance_function: 
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
+      acceptance_score: 
+        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+      uncertainty_function:
+        _target_: evaluation.open_set_methods.uncertainty_functions.Entropy
+        T: 0.1
+      alpha: 0
+      calib_strategy: "norm_val"
+    pretty_name: "Entropy"
+
+  - embeddings: scf
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    recognition_method:
+      _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
+      distance_function: 
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
+      acceptance_score: 
+        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+      uncertainty_function:
+        _target_: evaluation.open_set_methods.uncertainty_functions.Margin
+      alpha: 0
+      calib_strategy: "norm_val"
+    pretty_name: "Margin"
+
+
+  - embeddings: scf
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    recognition_method:
+      _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
       distance_function: 
         _target_: evaluation.distance_functions.open_set_identification.CosineSim
       acceptance_score: 
@@ -124,6 +181,8 @@ open_set_identification_methods:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
     recognition_method:
       _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
+      calibration_set: True
+      calibration_embs_name: scf
       distance_function: 
         _target_: evaluation.distance_functions.open_set_identification.CosineSim
       class_model: power
@@ -147,10 +206,12 @@ open_set_identification_methods:
       emb_unc_model: vMF
       beta: 0.5
       alpha: 0.5
-      predict_T: 500
+      predict_T: 200
       kappa_input_scale: 1
       pred_uncertainty_type: entropy
       far: null
+      train_predict_T: False #True
+      predict_T_lr: 1e-2
       calibration_set: True
       calibration_embs_name: scf
       calibration_transform:
@@ -166,7 +227,7 @@ open_set_identification_methods:
         use_norm: True
         train_weight: False
         weight_loss_types: False
-        weight_decay: 50
+        weight_decay: 10
         normalize_kl_by_test: False 
         scheduler_params: 
           max_lr: 1e-4
@@ -176,44 +237,44 @@ open_set_identification_methods:
         log_dir: ${exp_dir}
     pretty_name: "HolUE"
 
-  - embeddings: scf
-    gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault  
-    probe_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault
-    recognition_method:
-      _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
-      gallery_prior: power
-      emb_unc_model: vMF
-      beta: 0.5
-      alpha: 0.5
-      predict_T: 500
-      kappa_input_scale: 1
-      pred_uncertainty_type: entropy
-      far: null
-      calibration_set: True
-      calibration_embs_name: scf
-      calibration_transform:
-        _target_: evaluation.open_set_methods.calibration_methods.NNcalibration
-        model:
-          _target_: evaluation.open_set_methods.calibration_methods.ExpTransform
-          use_shift: True
-          use_alpha: True
-        lr: 0.0001
-        epochs: 2000
-        weight: 0
-        use_norm: True
-        train_weight: False
-        weight_loss_types: False
-        weight_decay: 0.1
-        normalize_kl_by_test: False 
-        scheduler_params: 
-          max_lr: 1e-4
-          steps_per_epoch: 1
-          div_factor: 1e1
-          final_div_factor: 1e1
-        log_dir: ${exp_dir}
-    pretty_name: "HolUE exp"
+  # - embeddings: scf
+  #   gallery_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault  
+  #   probe_template_pooling_strategy:
+  #     _target_: evaluation.template_pooling_strategies.PoolingDefault
+  #   recognition_method:
+  #     _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
+  #     gallery_prior: power
+  #     emb_unc_model: vMF
+  #     beta: 0.5
+  #     alpha: 0.5
+  #     predict_T: 200
+  #     kappa_input_scale: 1
+  #     pred_uncertainty_type: entropy
+  #     far: null
+  #     calibration_set: True
+  #     calibration_embs_name: scf
+  #     calibration_transform:
+  #       _target_: evaluation.open_set_methods.calibration_methods.NNcalibration
+  #       model:
+  #         _target_: evaluation.open_set_methods.calibration_methods.ExpTransform
+  #         use_shift: True
+  #         use_alpha: True
+  #       lr: 0.0001
+  #       epochs: 2000
+  #       weight: 0
+  #       use_norm: True
+  #       train_weight: False
+  #       weight_loss_types: False
+  #       weight_decay: 0.1
+  #       normalize_kl_by_test: False 
+  #       scheduler_params: 
+  #         max_lr: 1e-4
+  #         steps_per_epoch: 1
+  #         div_factor: 1e1
+  #         final_div_factor: 1e1
+  #       log_dir: ${exp_dir}
+  #   pretty_name: "HolUE exp"
 
 
   # - embeddings: scf
