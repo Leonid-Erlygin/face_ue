@@ -245,8 +245,8 @@ tables:
     round_num: 2
     highlight_best: True
 
-    dataset: IJBC
-    far: 0.05
+    dataset: whale
+    far: 0.1
     beta: 0.5
     metric: auroc
 
@@ -257,6 +257,7 @@ tables:
     methods:
       - SCF
       - AccScr
+      - MSP
       - GalUE
       - HolUE
       - "MPRisk raw"
@@ -293,9 +294,9 @@ tables:
     round_num: 2
     highlight_best: True
 
-    dataset: IJBC
+    dataset: large_12k-perspk5
     source_method: "MPRisk"
-    far: 0.05
+    far: 0.01
     beta: 0.5
 
     variants:
@@ -341,8 +342,8 @@ tables:
     round_num: 2
     highlight_best: True
 
-    dataset: IJBC
-    far: 0.05
+    dataset: large_12k-perspk5
+    far: 0.01
     beta: 0.5
     kl_reference: empirical_error
 
@@ -414,7 +415,7 @@ tables:
     round_num: 2
     highlight_best: True
 
-    dataset: IJBC
+    dataset: large_12k-perspk5
     variant: MPRisk
     beta: 0.5
     metric: test_prr_f1
@@ -444,8 +445,8 @@ tables:
     round_num: 2
     highlight_best: True
 
-    dataset: IJBC
-    far: 0.05
+    dataset: large_12k-perspk5
+    far: 0.01
     beta: 0.5
 
     sort_by: test_prr_f1
@@ -492,9 +493,9 @@ tables:
     round_num: 2
     highlight_best: True
 
-    dataset: IJBC
+    dataset: whale
     source_method: "MPRisk"
-    far: 0.05
+    far: 0.1
     beta: 0.5
 
     variants:
@@ -539,8 +540,8 @@ tables:
     round_num: 3
     highlight_best: True
 
-    dataset: IJBC
-    far: 0.05
+    dataset: whale
+    far: 0.1
     beta: 0.5
 
     methods:
@@ -586,8 +587,8 @@ tables:
     round_num: 2
 
     selectors:
-      dataset: IJBC
-      far: 0.05
+      dataset: whale
+      far: 0.1
       beta: 0.5
 
 
@@ -614,8 +615,8 @@ tables:
     round_num: 2
     highlight_best: False
 
-    dataset: IJBC
-    far: 0.05
+    dataset: whale
+    far: 0.1
     beta: 0.5
 
     methods:

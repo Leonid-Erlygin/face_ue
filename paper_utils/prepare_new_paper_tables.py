@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-
+import matplotlib.pyplot as plt
 import hydra
 import numpy as np
 import pandas as pd
@@ -328,6 +328,242 @@ def write_outputs(
         csv_path = csv_dir / f"{name}_display.csv"
         display_df.to_csv(csv_path)
         print(f"[saved] {csv_path}")
+
+
+def save_plot(fig, cfg, name: str) -> None:
+    exp_dir = Path(cfg.exp_dir)
+    fig_dir = exp_dir / "figures"
+    ensure_dir(fig_dir)
+
+    png_path = fig_dir / f"{name}.png"
+    pdf_path = fig_dir / f"{name}.pdf"
+
+    fig.savefig(png_path, dpi=300, bbox_inches="tight")
+    fig.savefig(pdf_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"[saved] {png_path}")
+    print(f"[saved] {pdf_path}")
+
+
+def slugify_for_file(x: Any) -> str:
+    x = str(x)
+    for ch in [" ", "/", "\\", "+", ":", ";", ",", "(", ")", "[", "]", "{", "}"]:
+        x = x.replace(ch, "_")
+    while "__" in x:
+        x = x.replace("__", "_")
+    return x.strip("_")
+
+
+def build_rejection_curve_figure(cfg, fcfg, name: str):
+    """
+    Draw rejection curves from all_rejection_curves.csv produced by
+    mprisk_core_experiments.py.
+
+    Expected columns:
+      dataset, far, beta, method, prr_f1, fraction, f1_class, fpir, fnir, ...
+    """
+    input_path = Path(str(fcfg.input_path))
+    df = read_csv_or_empty(input_path)
+
+    if df.empty:
+        print(f"[warning] no rejection-curve data for {name}")
+        return
+
+    df = select_df(
+        df,
+        {
+            "dataset": fcfg.get("dataset"),
+            "far": fcfg.get("far"),
+            "beta": fcfg.get("beta"),
+        },
+    )
+
+    if df.empty:
+        print(f"[warning] empty rejection-curve selection for {name}")
+        return
+
+    metrics = list(fcfg.get("metrics", ["f1_class"]))
+    methods = list(fcfg.get("methods", sorted(df["method"].unique())))
+
+    metric_labels = {
+        "f1_class": "$F_1$",
+        "fpir": "FPIR",
+        "fnir": "FNIR",
+        "error_rate": "Error rate",
+    }
+
+    figsize = tuple(fcfg.get("figsize", [6.4, 4.8]))
+    legend_fontsize = float(fcfg.get("legend_fontsize", 8))
+    prr_in_legend = bool(fcfg.get("prr_in_legend", True))
+
+    for metric in metrics:
+        fig, ax = plt.subplots(figsize=figsize)
+
+        for method in methods:
+            sub = df[df["method"].astype(str) == str(method)].copy()
+            if sub.empty or metric not in sub.columns:
+                continue
+
+            sub = sub.sort_values("fraction")
+
+            prr = np.nan
+            if "prr_f1" in sub.columns:
+                prr_vals = pd.to_numeric(sub["prr_f1"], errors="coerce").dropna().values
+                if len(prr_vals) > 0:
+                    prr = float(prr_vals[0])
+
+            if prr_in_legend and np.isfinite(prr):
+                label = f"{get_pretty(cfg, 'model', method)}, PRR={prr:.2f}"
+            else:
+                label = get_pretty(cfg, "model", method)
+
+            if method == "Random":
+                style = {
+                    "color": "gray",
+                    "linestyle": "--",
+                    "linewidth": 2.0,
+                    "alpha": 0.8,
+                }
+            elif method == "Oracle":
+                style = {
+                    "color": "black",
+                    "linestyle": "--",
+                    "linewidth": 2.0,
+                    "alpha": 0.8,
+                }
+            else:
+                style = {
+                    "linewidth": (
+                        2.5
+                        if "MPRisk" in str(method) or "HolUE" in str(method)
+                        else 1.7
+                    )
+                }
+
+            ax.plot(
+                sub["fraction"].values,
+                sub[metric].values,
+                label=label,
+                **style,
+            )
+
+        ax.set_xlabel("Filtered-out probe fraction")
+        ax.set_ylabel(metric_labels.get(metric, metric))
+        title = str(fcfg.get("title", ""))
+        if title:
+            ax.set_title(title)
+        else:
+            ax.set_title(
+                f"{get_pretty(cfg, 'dataset', fcfg.get('dataset'))}, "
+                f"FPIR={fcfg.get('far')}"
+            )
+
+        ax.grid(True, linestyle="--", alpha=0.4)
+        ax.legend(fontsize=legend_fontsize)
+        fig.tight_layout()
+
+        save_plot(fig, cfg, f"{name}_{metric}")
+
+
+def find_reliability_bin_file(
+    input_dir: Path, dataset: str, method: str, far: Any, beta: Any
+) -> Optional[Path]:
+    method_slug = slugify_for_file(method)
+    dataset_slug = slugify_for_file(dataset)
+
+    patterns = [
+        f"{dataset_slug}_{method_slug}_far_{far}_beta_{beta}.csv",
+        f"{dataset_slug}*{method_slug}*far_{far}*beta_{beta}*.csv",
+        f"*{dataset_slug}*{method_slug}*.csv",
+    ]
+
+    for pattern in patterns:
+        matches = sorted(input_dir.glob(pattern))
+        if len(matches) > 0:
+            return matches[0]
+
+    return None
+
+
+def build_calibration_diagram_figure(cfg, fcfg, name: str):
+    """
+    Draw calibration/reliability diagrams from bin CSV files produced by
+    mprisk_diagnostics_experiments.py.
+
+    Expected bin columns:
+      left, right, count, mean_pred_error, empirical_error
+    """
+    input_dir = Path(str(fcfg.input_dir))
+    dataset = str(fcfg.dataset)
+    far = fcfg.far
+    beta = fcfg.beta
+    methods = list(fcfg.methods)
+
+    figsize = tuple(fcfg.get("figsize", [5.2, 5.2]))
+
+    for method in methods:
+        bin_path = find_reliability_bin_file(
+            input_dir=input_dir,
+            dataset=dataset,
+            method=method,
+            far=far,
+            beta=beta,
+        )
+
+        if bin_path is None:
+            print(
+                f"[warning] reliability bins not found for "
+                f"dataset={dataset}, method={method}, far={far}, beta={beta}"
+            )
+            continue
+
+        bin_df = pd.read_csv(bin_path)
+        bin_df = bin_df[bin_df["count"] > 0].copy()
+
+        if bin_df.empty:
+            print(f"[warning] empty reliability bins: {bin_path}")
+            continue
+
+        fig, ax = plt.subplots(figsize=figsize)
+
+        ax.plot([0, 1], [0, 1], "--", color="gray", linewidth=1.5)
+
+        widths = bin_df["right"].values - bin_df["left"].values
+        centers = 0.5 * (bin_df["left"].values + bin_df["right"].values)
+
+        ax.bar(
+            centers,
+            bin_df["empirical_error"].values,
+            width=0.9 * widths,
+            alpha=0.65,
+            edgecolor="black",
+            label="empirical error",
+        )
+
+        ax.scatter(
+            bin_df["mean_pred_error"].values,
+            bin_df["empirical_error"].values,
+            c="red",
+            s=35,
+            zorder=5,
+            label="bins",
+        )
+
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.set_xlabel("Predicted error probability")
+        ax.set_ylabel("Empirical error frequency")
+        ax.set_title(
+            f"{get_pretty(cfg, 'model', method)}, "
+            f"{get_pretty(cfg, 'dataset', dataset)}, FPIR={far}"
+        )
+        ax.grid(True, linestyle="--", alpha=0.35)
+        ax.legend(fontsize=8)
+
+        fig.tight_layout()
+
+        save_plot(fig, cfg, f"{name}_{slugify_for_file(method)}")
 
 
 # ---------------------------------------------------------------------
@@ -1119,6 +1355,10 @@ BUILDERS = {
     "bootstrap": build_bootstrap_table,
     "runtime": build_runtime_table,
 }
+FIGURE_BUILDERS = {
+    "rejection_curve": build_rejection_curve_figure,
+    "calibration_diagram": build_calibration_diagram_figure,
+}
 
 
 @hydra.main(
@@ -1150,7 +1390,25 @@ def main(cfg):
         print("=" * 100)
 
         BUILDERS[table_type](cfg, tcfg, table_name)
+    if "figures" in cfg:
+        figures = to_plain(cfg.figures)
 
+        for fig_name, fig_cfg_plain in figures.items():
+            if not fig_cfg_plain.get("enabled", True):
+                print(f"[skip] figure {fig_name}")
+                continue
+
+            fcfg = OmegaConf.create(fig_cfg_plain)
+            fig_type = str(fcfg.type)
+
+            if fig_type not in FIGURE_BUILDERS:
+                raise ValueError(f"Unknown figure type {fig_type!r} for {fig_name}")
+
+            print("=" * 100)
+            print(f"[figure] {fig_name} ({fig_type})")
+            print("=" * 100)
+
+            FIGURE_BUILDERS[fig_type](cfg, fcfg, fig_name)
     hydra_cfg = HydraConfig.get()
     print("\nAll requested tables are created.")
     print(f"Hydra job: {hydra_cfg.job.name}")

@@ -5,39 +5,57 @@ hydra:
 seed: 777
 deterministic: true
 
-exp_dir: outputs/experiments/mprisk_diagnostics
+exp_dir: outputs/experiments/mprisk_core_bio_complete
 
 use_two_galleries: False
 recompute_template_pooling: True
+create_pool_plot: False
 
+rank_inversion_num_pairs: 200000
 rejection_fractions: [0.0, 0.5, 20]
 
-beta_list: [0.5]
-far_list: [0.1]
+plots:
+  kl_scatter:
+    enabled: True
+    max_points: 5000
 
-
-# ---------------------------------------------------------------------
-# Datasets
-# ---------------------------------------------------------------------
+  rejection_curves:
+    enabled: True
+    metrics: [f1_class, fpir, fnir]
+    display_random_curve: True
+    display_oracle_curve: True
+    prr_in_legend: True
+    reference_method: "HolUE"
+    figsize: [6.4, 4.8]
+    legend_fontsize: 8
+    method_order:
+      - SCF
+      - AccScr
+      - MSP
+      - Margin
+      - GalUE
+      - HolUE
+      - MPRisk raw
+      - MPRisk no NS
+      - MPRisk
+      - MPRisk cal
 
 test_datasets:
-  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
-  #   dataset_name: IJBC
-  #   dataset_path: /app/datasets/arcface_ijb/IJBC
+  - _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: IJBC
+    dataset_path: /app/datasets/arcface_ijb/IJBC
 
-  # Uncomment after IJBC works.
-  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
-  #   dataset_name: IJBB
-  #   dataset_path: /app/datasets/arcface_ijb/IJBB
+  - _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: IJBB
+    dataset_path: /app/datasets/arcface_ijb/IJBB
 
   - _target_: evaluation.test_datasets.FaceRecogntionDataset
     dataset_name: whale
     dataset_path: /app/datasets/whale
 
-  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
-  #   dataset_name: large_12k-perspk5
-  #   dataset_path: /app/datasets/vb-clean_ident/Large_12k/perspk5
-
+  - _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: large_12k-perspk5
+    dataset_path: /app/datasets/vb-clean_ident/Large_12k/perspk5
 
 calibration_sets:
   ijb_val:
@@ -55,7 +73,6 @@ calibration_sets:
     dataset_name: whale_val
     dataset_path: /app/datasets/whale_val
 
-
 dataset_name_to_calibration_set:
   IJBB: ${calibration_sets.ijb_val}
   IJBC: ${calibration_sets.ijb_val}
@@ -68,13 +85,115 @@ dataset_name_to_T_scale:
   whale: 20
   large_12k-perspk5: 20
 
+beta_list: [0.5]
 
-# ---------------------------------------------------------------------
-# Methods to run
-# ---------------------------------------------------------------------
+# Superset. Tables will select the relevant operating points.
+# For face/whale use [0.05,0.1,0.2]; for VoxBlink use [0.01,0.05,0.1].
+far_list: [0.01, 0.05, 0.1, 0.2]
 
 open_set_identification_methods:
 
+  # ------------------------------------------------------------------
+  # Baselines
+  # ------------------------------------------------------------------
+
+  - embeddings: scf
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
+      distance_function:
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
+      acceptance_score:
+        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+      uncertainty_function:
+        _target_: evaluation.open_set_methods.uncertainty_functions.BernoulliVariance
+      alpha: 1
+      calib_strategy: "norm_val"
+    pretty_name: "SCF"
+
+  - embeddings: scf
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
+      distance_function:
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
+      acceptance_score:
+        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+      uncertainty_function:
+        _target_: evaluation.open_set_methods.uncertainty_functions.BernoulliVariance
+      alpha: 0
+      calib_strategy: "norm_val"
+    pretty_name: "AccScr"
+
+  - embeddings: scf
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    recognition_method:
+      _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
+      calibration_set: True
+      calibration_embs_name: scf
+      distance_function: 
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
+      acceptance_score: 
+        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+      uncertainty_function:
+        _target_: evaluation.open_set_methods.uncertainty_functions.MaximumSoftmaxProbability
+        T: 1
+      alpha: 0
+      calib_strategy: "norm_val"
+    pretty_name: "MSP"
+
+  - embeddings: scf
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    recognition_method:
+      _target_: evaluation.open_set_methods.score_function_based.SimilarityBasedPrediction
+      distance_function: 
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
+      acceptance_score: 
+        _target_: evaluation.confidence_functions.MaxSimilarity_confidence
+      uncertainty_function:
+        _target_: evaluation.open_set_methods.uncertainty_functions.Margin
+      alpha: 0
+      calib_strategy: "norm_val"
+    pretty_name: "Margin"
+
+  - embeddings: scf
+    gallery_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    probe_template_pooling_strategy:
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
+    use_detector_score: False
+    recognition_method:
+      _target_: evaluation.open_set_methods.posterior_prob_based.PosteriorProbability
+      distance_function:
+        _target_: evaluation.distance_functions.open_set_identification.CosineSim
+      class_model: power
+      far: null
+      beta: 0.5
+      uncertainty_type: maxprob
+      alpha: 0
+      aggregation: sum
+      predict_T: null
+      T_data_unc: 1
+    pretty_name: "GalUE"
+
+
+  # ------------------------------------------------------------------
+  # Original HolUE
+  # ------------------------------------------------------------------
   - embeddings: scf
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault  
@@ -114,6 +233,10 @@ open_set_identification_methods:
     pretty_name: "HolUE"
 
 
+  # ------------------------------------------------------------------
+  # MPRisk variants
+  # ------------------------------------------------------------------
+
   - embeddings: scf
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
@@ -139,6 +262,7 @@ open_set_identification_methods:
       use_calibration: False
     pretty_name: "MPRisk raw"
 
+
   - embeddings: scf
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
@@ -163,6 +287,7 @@ open_set_identification_methods:
       tune_lambdas: False
       use_calibration: False
     pretty_name: "MPRisk no NS"
+
 
   - embeddings: scf
     gallery_template_pooling_strategy:
@@ -246,123 +371,3 @@ open_set_identification_methods:
         log_dir: ${exp_dir}
         verbose: False
     pretty_name: "MPRisk cal"
-
-# ---------------------------------------------------------------------
-# Experiments
-# ---------------------------------------------------------------------
-
-mixed_prior_necessity:
-  enabled: True
-
-  # Only methods whose pretty_name contains this substring are used.
-  # This avoids applying mixed-prior decomposition to HolUE.
-  method_filter: "MPRisk"
-
-
-reliability:
-  enabled: True
-  num_bins: 20
-
-  # Only probability-like methods are used.
-  # HolUE NNcalibration and MPRisk cal return predicted_unc = -P(correct).
-  methods:
-    - "HolUE"
-    - "MPRisk cal"
-
-
-bootstrap:
-  enabled: True
-
-  # Use 1000 for final paper; use 100 or 200 for debugging.
-  num_bootstrap: 1000
-
-  pairs:
-    - dataset: whale
-      far: 0.1
-      beta: 0.5
-      method_a: "MPRisk"
-      method_b: "HolUE"
-
-    - dataset: whale
-      far: 0.1
-      beta: 0.5
-      method_a: "MPRisk cal"
-      method_b: "HolUE"
-
-    - dataset: whale
-      far: 0.1
-      beta: 0.5
-      method_a: "MPRisk"
-      method_b: "MPRisk raw"
-
-    - dataset: whale
-      far: 0.1
-      beta: 0.5
-      method_a: "MPRisk"
-      method_b: "MPRisk no NS"
-
-
-qualitative:
-  enabled: True
-
-  top_k_per_group: 10
-  num_nearest_gallery: 5
-
-  methods:
-    - dataset: whale
-      method: "MPRisk"
-      far: 0.1
-      beta: 0.5
-
-    - dataset: whale
-      method: "MPRisk raw"
-      far: 0.1
-      beta: 0.5
-
-    - dataset: whale
-      method: "HolUE"
-      far: 0.1
-      beta: 0.5
-
-
-# ---------------------------------------------------------------------
-# Optional embedding-quality stress test
-# ---------------------------------------------------------------------
-
-quality_stress:
-  enabled: False
-
-  fars: [0.1]
-  kappa_input_scales: [0.25, 0.5, 1.0, 2.0, 5.0]
-
-
-quality_stress_base_method:
-  embeddings: scf
-  gallery_template_pooling_strategy:
-    _target_: evaluation.template_pooling_strategies.PoolingDefault
-  probe_template_pooling_strategy:
-    _target_: evaluation.template_pooling_strategies.PoolingDefault
-  use_detector_score: False
-  recognition_method:
-    _target_: evaluation.open_set_methods.class_prob_models.MPRiskPredictiveProb
-
-    gallery_prior: power
-    emb_unc_model: vMF
-    beta: 0.5
-    predict_T: 20
-    M: 0
-    far: null
-
-    lambda_fa: 1.0
-    lambda_id: 1.0
-    lambda_fr: 1.0
-    lambda_ns: 1.0
-
-    nonspecificity_mode: analytic_vmf
-
-    tune_lambdas: False
-    use_calibration: False
-
-    calibration_set: True
-    calibration_embs_name: scf
-  pretty_name: "MPRisk quality stress"

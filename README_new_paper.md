@@ -229,8 +229,8 @@ GalUE
 HolUE
 MPRisk raw
 MPRisk no NS
-MPRisk tuned
-MPRisk tuned+cal
+MPRisk
+MPRisk cal
 ```
 
 ### SCF
@@ -267,7 +267,7 @@ $$
 
 This is used to test whether mixed-prior reject non-specificity helps.
 
-### MPRisk tuned
+### MPRisk
 
 MPRisk with validation-tuned weights:
 
@@ -278,9 +278,9 @@ $$
 \mathrm{PRR}_{\mathrm{val}}^{F_1}(u_\lambda).
 $$
 
-### MPRisk tuned+cal
+### MPRisk cal
 
-MPRisk tuned, followed by scalar monotone probability calibration.
+MPRisk, followed by scalar monotone probability calibration.
 
 ## A.4 Outputs
 
@@ -348,7 +348,7 @@ Use this table for the main new-paper result.
 
 Recommended paper table:
 
-| Dataset | FPIR | HolUE | MPRisk raw | MPRisk no NS | MPRisk tuned | MPRisk tuned+cal |
+| Dataset | FPIR | HolUE | MPRisk raw | MPRisk no NS | MPRisk | MPRisk cal |
 |---|---:|---:|---:|---:|---:|---:|
 
 Metric:
@@ -902,7 +902,7 @@ Methods evaluated by default:
 ```yaml
 methods:
   - "HolUE"
-  - "MPRisk tuned+cal"
+  - "MPRisk cal"
 ```
 
 Metrics:
@@ -956,10 +956,10 @@ bootstrap_prr_differences.csv
 Default comparisons:
 
 ```text
-MPRisk tuned      vs HolUE
-MPRisk tuned+cal  vs HolUE
-MPRisk tuned      vs MPRisk raw
-MPRisk tuned      vs MPRisk no NS
+MPRisk      vs HolUE
+MPRisk cal  vs HolUE
+MPRisk      vs MPRisk raw
+MPRisk      vs MPRisk no NS
 ```
 
 Important columns:
@@ -1056,8 +1056,8 @@ Recommended table:
 |---|---:|---|
 | HolUE | ... | KL components + calibration |
 | MPRisk raw | ... | risk components |
-| MPRisk tuned | ... | risk components + tuned weights |
-| MPRisk tuned+cal | ... | scalar calibration |
+| MPRisk | ... | risk components + tuned weights |
+| MPRisk cal | ... | scalar calibration |
 
 ---
 
@@ -1122,8 +1122,8 @@ GalUE
 HolUE
 MPRisk raw
 MPRisk no NS
-MPRisk tuned
-MPRisk tuned+cal
+MPRisk
+MPRisk cal
 ```
 
 ## Component ablation
@@ -1208,7 +1208,7 @@ Use:
 outputs/experiments/mprisk_diagnostics/tables/reliability_metrics.csv
 ```
 
-Compare HolUE calibrated vs MPRisk tuned+cal.
+Compare HolUE calibrated vs MPRisk cal.
 
 ## Bootstrap significance
 
@@ -1363,7 +1363,7 @@ If tuned MPRisk improves over raw MPRisk and is stable with validation-size abla
 
 ## 9.5 Calibration is separate from tuning
 
-If MPRisk tuned and MPRisk tuned+cal have similar PRR but tuned+cal has better ECE/Brier/NLL, this supports:
+If MPRisk and MPRisk cal have similar PRR but tuned+cal has better ECE/Brier/NLL, this supports:
 
 > Tuning determines ranking; scalar calibration improves probability interpretability.
 
@@ -1377,7 +1377,7 @@ If MPRisk tuned and MPRisk tuned+cal have similar PRR but tuned+cal has better E
 4. **KL-vs-risk scatter:** KL uncertainty vs MPRisk, colored by error type.
 5. **Mixed-prior necessity plot:** collapsed unknown risk vs no-NS vs full MPRisk.
 6. **Validation-size plot:** validation fraction vs test PRR.
-7. **Reliability diagrams:** HolUE vs MPRisk tuned+cal.
+7. **Reliability diagrams:** HolUE vs MPRisk cal.
 8. **Qualitative examples:** top false rejects with high `r_NS`.
 
 ---

@@ -2,27 +2,28 @@ hydra:
   run:
     dir: ${exp_dir}
 
-exp_dir: outputs/latex_tables_new_paper_text
+exp_dir: outputs/latex_tables_new_paper_bio
 round_num: 2
 
 paths:
-  core_tables: /app/outputs/experiments/mprisk_core_text_complete/tables
-  tuning_tables: /app/outputs/experiments/mprisk_tuning_text_complete/tables
-  diagnostics_tables: /app/outputs/experiments/mprisk_diagnostics_text_complete/tables
-  core_plots: /app/outputs/experiments/mprisk_core_text_complete/plots
-  diagnostics_reliability_bins: /app/outputs/experiments/mprisk_diagnostics_text_complete/tables/reliability_bins
+  core_tables: /app/outputs/experiments/mprisk_core_bio_complete/tables
+  tuning_tables: /app/outputs/experiments/mprisk_tuning_bio_complete/tables
+  diagnostics_tables: /app/outputs/experiments/mprisk_diagnostics_bio_complete/tables
+  core_plots: /app/outputs/experiments/mprisk_core_bio_complete/plots
+  diagnostics_reliability_bins: /app/outputs/experiments/mprisk_diagnostics_bio_complete/tables/reliability_bins
 
 
 pretty_name:
   dataset:
-    yahoo: "Yahoo Answers"
-    dbpedia: "DBPedia"
-    agnews: "AGNews"
-    clinc150: "CLINC150"
-    pan_test: "PAN-20-AV"
+    IJBC: "IJB-C"
+    IJBB: "IJB-B"
+    whale: "Whale"
+    large_12k-perspk5: "VB-Eval-L-5"
 
   model:
+    PFE: "PFE"
     SCF: "SCF"
+    ScaleFace: "SF"
     AccScr: "AccScr"
     MSP: "MSP"
     Entropy: "Entropy"
@@ -61,13 +62,16 @@ pretty_name:
     r_NS: "$r_{NS}$"
     unknown_nonspecificity: "$\\mathcal{N}_0$"
 
-    T_100: "$T=100$"
-    T_200: "$T=200$"
-    T_300: "$T=300$"
-    T_500: "$T=500$"
+    T_7: "$T=7$"
+    T_10: "$T=10$"
+    T_20: "$T=20$"
+    T_30: "$T=30$"
+    T_50: "$T=50$"
     kappa_input_0.5: "$s_{\\kappa}=0.5$"
     kappa_input_1: "$s_{\\kappa}=1$"
     kappa_input_2: "$s_{\\kappa}=2$"
+    weighted_mc_M10: "Weighted MC, $M=10$"
+    weighted_mc_M50: "Weighted MC, $M=50$"
 
   column:
     prr_f1: "PRR $F_1$"
@@ -134,22 +138,21 @@ metric_order:
 
 tables:
 
-  main_prr_text:
+  main_prr_bio:
     enabled: True
     type: main_prr
     input_path: ${paths.core_tables}/main_mprisk_core_comparison.csv
 
     caption: >
       Prediction Rejection Ratios (PRR, $\uparrow$) for $F_1$ filtering
-      on open-set text classification benchmarks.
+      on image, wildlife, and audio open-set recognition benchmarks.
 
-    label: "tab:mprisk_main_prr_text"
+    label: "tab:mprisk_main_prr_bio"
 
     placement: t
     table_size: footnotesize
     tabcolsep: 2
-    use_adjustbox: True
-    adjustbox_width: '\textwidth'
+    use_adjustbox: False
     round_num: 2
     highlight_best: True
 
@@ -171,28 +174,26 @@ tables:
       - "MPRisk"
 
     datasets:
-      - yahoo
-      - agnews
-      - dbpedia
-      - clinc150
-      - pan_test
+      - IJBC
+      - IJBB
+      - whale
+      - large_12k-perspk5
 
     fars:
-      yahoo: [0.1, 0.2, 0.3, 0.4, 0.5]
-      agnews: [0.1, 0.2, 0.3, 0.4, 0.5]
-      dbpedia: [0.1, 0.2, 0.3, 0.4, 0.5]
-      clinc150: [0.1, 0.2, 0.3, 0.4, 0.5]
-      pan_test: [0.1, 0.2, 0.3, 0.4, 0.5]
+      IJBC: [0.05, 0.1, 0.2]
+      IJBB: [0.05, 0.1, 0.2]
+      whale: [0.05, 0.1, 0.2]
+      large_12k-perspk5: [0.01, 0.05, 0.1]
 
 
 figures:
 
-  rejection_yahoo_01:
+  rejection_ijbc_005:
     enabled: True
     type: rejection_curve
-    input_path: ${paths.core_plots}/rejection_curves/yahoo/far_0.1_beta_0.5/all_rejection_curves.csv
-    dataset: yahoo
-    far: 0.1
+    input_path: ${paths.core_plots}/rejection_curves/IJBC/far_0.05_beta_0.5/all_rejection_curves.csv
+    dataset: IJBC
+    far: 0.05
     beta: 0.5
     metrics: [f1_class, fpir, fnir]
     methods:
@@ -207,14 +208,14 @@ figures:
     figsize: [6.4, 4.8]
     legend_fontsize: 8
     prr_in_legend: True
-    title: "Yahoo Answers, FPIR=0.1"
+    title: "IJB-C, FPIR=0.05"
 
-  rejection_dbpedia_01:
+  rejection_ijbb_005:
     enabled: True
     type: rejection_curve
-    input_path: ${paths.core_plots}/rejection_curves/dbpedia/far_0.1_beta_0.5/all_rejection_curves.csv
-    dataset: dbpedia
-    far: 0.1
+    input_path: ${paths.core_plots}/rejection_curves/IJBB/far_0.05_beta_0.5/all_rejection_curves.csv
+    dataset: IJBB
+    far: 0.05
     beta: 0.5
     metrics: [f1_class, fpir, fnir]
     methods:
@@ -229,13 +230,13 @@ figures:
     figsize: [6.4, 4.8]
     legend_fontsize: 8
     prr_in_legend: True
-    title: "DBPedia, FPIR=0.1"
+    title: "IJB-B, FPIR=0.05"
 
-  rejection_clinc150_01:
+  rejection_whale_01:
     enabled: True
     type: rejection_curve
-    input_path: ${paths.core_plots}/rejection_curves/clinc150/far_0.1_beta_0.5/all_rejection_curves.csv
-    dataset: clinc150
+    input_path: ${paths.core_plots}/rejection_curves/whale/far_0.1_beta_0.5/all_rejection_curves.csv
+    dataset: whale
     far: 0.1
     beta: 0.5
     metrics: [f1_class, fpir, fnir]
@@ -251,14 +252,14 @@ figures:
     figsize: [6.4, 4.8]
     legend_fontsize: 8
     prr_in_legend: True
-    title: "CLINC150, FPIR=0.1"
+    title: "Whale, FPIR=0.1"
 
-  rejection_pan_01:
+  rejection_voxblink_005:
     enabled: True
     type: rejection_curve
-    input_path: ${paths.core_plots}/rejection_curves/pan_test/far_0.1_beta_0.5/all_rejection_curves.csv
-    dataset: pan_test
-    far: 0.1
+    input_path: ${paths.core_plots}/rejection_curves/large_12k-perspk5/far_0.05_beta_0.5/all_rejection_curves.csv
+    dataset: large_12k-perspk5
+    far: 0.05
     beta: 0.5
     metrics: [f1_class, fpir, fnir]
     methods:
@@ -273,4 +274,4 @@ figures:
     figsize: [6.4, 4.8]
     legend_fontsize: 8
     prr_in_legend: True
-    title: "PAN-20-AV, FPIR=0.1"
+    title: "VoxBlink, FPIR=0.05"

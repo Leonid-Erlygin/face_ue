@@ -49,8 +49,8 @@ plots:
       - HolUE
       - MPRisk raw
       - MPRisk no NS
-      - MPRisk tuned
-      - MPRisk tuned+cal
+      - MPRisk
+      - MPRisk cal
 
 test_datasets:
   - _target_: evaluation.test_datasets.FaceRecogntionDataset

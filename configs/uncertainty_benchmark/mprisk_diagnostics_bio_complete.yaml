@@ -5,7 +5,7 @@ hydra:
 seed: 777
 deterministic: true
 
-exp_dir: outputs/experiments/mprisk_diagnostics
+exp_dir: outputs/experiments/mprisk_diagnostics_bio_complete
 
 use_two_galleries: False
 recompute_template_pooling: True
@@ -13,7 +13,12 @@ recompute_template_pooling: True
 rejection_fractions: [0.0, 0.5, 20]
 
 beta_list: [0.5]
-far_list: [0.1]
+
+# We compute a superset of operating points.
+# Tables can later select only:
+#   IJB-C/IJB-B/Whale: [0.05, 0.1, 0.2]
+#   VoxBlink: [0.01, 0.05, 0.1]
+far_list: [0.01, 0.05, 0.1, 0.2]
 
 
 # ---------------------------------------------------------------------
@@ -21,23 +26,26 @@ far_list: [0.1]
 # ---------------------------------------------------------------------
 
 test_datasets:
-  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
-  #   dataset_name: IJBC
-  #   dataset_path: /app/datasets/arcface_ijb/IJBC
+  - _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: IJBC
+    dataset_path: /app/datasets/arcface_ijb/IJBC
 
-  # Uncomment after IJBC works.
-  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
-  #   dataset_name: IJBB
-  #   dataset_path: /app/datasets/arcface_ijb/IJBB
+  - _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: IJBB
+    dataset_path: /app/datasets/arcface_ijb/IJBB
 
   - _target_: evaluation.test_datasets.FaceRecogntionDataset
     dataset_name: whale
     dataset_path: /app/datasets/whale
 
-  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
-  #   dataset_name: large_12k-perspk5
-  #   dataset_path: /app/datasets/vb-clean_ident/Large_12k/perspk5
+  - _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: large_12k-perspk5
+    dataset_path: /app/datasets/vb-clean_ident/Large_12k/perspk5
 
+
+# ---------------------------------------------------------------------
+# Calibration sets
+# ---------------------------------------------------------------------
 
 calibration_sets:
   ijb_val:
@@ -62,6 +70,7 @@ dataset_name_to_calibration_set:
   whale: ${calibration_sets.whale_val}
   large_12k-perspk5: ${calibration_sets.voxblink_val}
 
+
 dataset_name_to_T_scale:
   IJBB: 7
   IJBC: 7
@@ -70,16 +79,21 @@ dataset_name_to_T_scale:
 
 
 # ---------------------------------------------------------------------
-# Methods to run
+# Methods
 # ---------------------------------------------------------------------
 
 open_set_identification_methods:
 
+  # -------------------------------------------------------------------
+  # HolUE baseline
+  # -------------------------------------------------------------------
+
   - embeddings: scf
     gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault  
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
     probe_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
+    use_detector_score: False
     recognition_method:
       _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
       gallery_prior: power
@@ -101,11 +115,13 @@ open_set_identification_methods:
         lr: 0.001
         epochs: 2000
         weight: 0
+        use_norm: True
+        balanced_loss: True
         weight_loss_types: False
         train_weight: False
         weight_decay: 0.001
         normalize_kl_by_test: False
-        scheduler_params: 
+        scheduler_params:
           max_lr: 1e-3
           steps_per_epoch: 1
           div_factor: 1e1
@@ -113,6 +129,10 @@ open_set_identification_methods:
         log_dir: ${exp_dir}
     pretty_name: "HolUE"
 
+
+  # -------------------------------------------------------------------
+  # MPRisk raw
+  # -------------------------------------------------------------------
 
   - embeddings: scf
     gallery_template_pooling_strategy:
@@ -139,6 +159,11 @@ open_set_identification_methods:
       use_calibration: False
     pretty_name: "MPRisk raw"
 
+
+  # -------------------------------------------------------------------
+  # MPRisk without mixed-prior non-specificity
+  # -------------------------------------------------------------------
+
   - embeddings: scf
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
@@ -163,6 +188,11 @@ open_set_identification_methods:
       tune_lambdas: False
       use_calibration: False
     pretty_name: "MPRisk no NS"
+
+
+  # -------------------------------------------------------------------
+  # MPRisk tuned on validation
+  # -------------------------------------------------------------------
 
   - embeddings: scf
     gallery_template_pooling_strategy:
@@ -199,6 +229,10 @@ open_set_identification_methods:
       calibration_embs_name: scf
     pretty_name: "MPRisk"
 
+
+  # -------------------------------------------------------------------
+  # MPRisk tuned + scalar calibration
+  # -------------------------------------------------------------------
 
   - embeddings: scf
     gallery_template_pooling_strategy:
@@ -247,15 +281,19 @@ open_set_identification_methods:
         verbose: False
     pretty_name: "MPRisk cal"
 
+
 # ---------------------------------------------------------------------
-# Experiments
+# Diagnostics experiments
 # ---------------------------------------------------------------------
 
 mixed_prior_necessity:
   enabled: True
 
-  # Only methods whose pretty_name contains this substring are used.
-  # This avoids applying mixed-prior decomposition to HolUE.
+  # Applies to:
+  #   MPRisk raw
+  #   MPRisk no NS
+  #   MPRisk
+  #   MPRisk cal
   method_filter: "MPRisk"
 
 
@@ -263,8 +301,8 @@ reliability:
   enabled: True
   num_bins: 20
 
-  # Only probability-like methods are used.
-  # HolUE NNcalibration and MPRisk cal return predicted_unc = -P(correct).
+  # Only probability-like methods.
+  # HolUE and MPRisk cal both return predicted_unc = -P(correct).
   methods:
     - "HolUE"
     - "MPRisk cal"
@@ -273,12 +311,22 @@ reliability:
 bootstrap:
   enabled: True
 
-  # Use 1000 for final paper; use 100 or 200 for debugging.
+  # Use 100 for quick debugging, 1000 for final paper.
   num_bootstrap: 1000
 
   pairs:
-    - dataset: whale
-      far: 0.1
+    # ---------------------------------------------------------------
+    # Main MPRisk vs HolUE comparisons
+    # ---------------------------------------------------------------
+
+    - dataset: IJBC
+      far: 0.05
+      beta: 0.5
+      method_a: "MPRisk"
+      method_b: "HolUE"
+
+    - dataset: IJBB
+      far: 0.05
       beta: 0.5
       method_a: "MPRisk"
       method_b: "HolUE"
@@ -286,8 +334,60 @@ bootstrap:
     - dataset: whale
       far: 0.1
       beta: 0.5
+      method_a: "MPRisk"
+      method_b: "HolUE"
+
+    - dataset: large_12k-perspk5
+      far: 0.05
+      beta: 0.5
+      method_a: "MPRisk"
+      method_b: "HolUE"
+
+
+    # ---------------------------------------------------------------
+    # Tuned+calibrated MPRisk vs HolUE
+    # ---------------------------------------------------------------
+
+    - dataset: IJBC
+      far: 0.05
+      beta: 0.5
       method_a: "MPRisk cal"
       method_b: "HolUE"
+
+    - dataset: IJBB
+      far: 0.05
+      beta: 0.5
+      method_a: "MPRisk cal"
+      method_b: "HolUE"
+
+    - dataset: whale
+      far: 0.1
+      beta: 0.5
+      method_a: "MPRisk cal"
+      method_b: "HolUE"
+
+    - dataset: large_12k-perspk5
+      far: 0.05
+      beta: 0.5
+      method_a: "MPRisk cal"
+      method_b: "HolUE"
+
+
+    # ---------------------------------------------------------------
+    # Ablation comparisons
+    # ---------------------------------------------------------------
+
+    - dataset: IJBC
+      far: 0.05
+      beta: 0.5
+      method_a: "MPRisk"
+      method_b: "MPRisk raw"
+
+    - dataset: IJBC
+      far: 0.05
+      beta: 0.5
+      method_a: "MPRisk"
+      method_b: "MPRisk no NS"
 
     - dataset: whale
       far: 0.1
@@ -309,6 +409,21 @@ qualitative:
   num_nearest_gallery: 5
 
   methods:
+    - dataset: IJBC
+      method: "MPRisk"
+      far: 0.05
+      beta: 0.5
+
+    - dataset: IJBC
+      method: "MPRisk raw"
+      far: 0.05
+      beta: 0.5
+
+    - dataset: IJBC
+      method: "HolUE"
+      far: 0.05
+      beta: 0.5
+
     - dataset: whale
       method: "MPRisk"
       far: 0.1
@@ -324,6 +439,16 @@ qualitative:
       far: 0.1
       beta: 0.5
 
+    - dataset: large_12k-perspk5
+      method: "MPRisk"
+      far: 0.05
+      beta: 0.5
+
+    - dataset: large_12k-perspk5
+      method: "HolUE"
+      far: 0.05
+      beta: 0.5
+
 
 # ---------------------------------------------------------------------
 # Optional embedding-quality stress test
@@ -332,7 +457,7 @@ qualitative:
 quality_stress:
   enabled: False
 
-  fars: [0.1]
+  fars: [0.05, 0.1]
   kappa_input_scales: [0.25, 0.5, 1.0, 2.0, 5.0]
 
 

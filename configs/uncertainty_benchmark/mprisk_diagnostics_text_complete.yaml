@@ -5,7 +5,7 @@ hydra:
 seed: 777
 deterministic: true
 
-exp_dir: outputs/experiments/mprisk_diagnostics
+exp_dir: outputs/experiments/mprisk_diagnostics_text_complete
 
 use_two_galleries: False
 recompute_template_pooling: True
@@ -13,7 +13,7 @@ recompute_template_pooling: True
 rejection_fractions: [0.0, 0.5, 20]
 
 beta_list: [0.5]
-far_list: [0.1]
+far_list: [0.1, 0.2, 0.3, 0.4, 0.5]
 
 
 # ---------------------------------------------------------------------
@@ -21,98 +21,135 @@ far_list: [0.1]
 # ---------------------------------------------------------------------
 
 test_datasets:
-  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
-  #   dataset_name: IJBC
-  #   dataset_path: /app/datasets/arcface_ijb/IJBC
-
-  # Uncomment after IJBC works.
-  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
-  #   dataset_name: IJBB
-  #   dataset_path: /app/datasets/arcface_ijb/IJBB
+  - _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: yahoo
+    dataset_path: /app/datasets/text-ident/yahoo
 
   - _target_: evaluation.test_datasets.FaceRecogntionDataset
-    dataset_name: whale
-    dataset_path: /app/datasets/whale
+    dataset_name: dbpedia
+    dataset_path: /app/datasets/text-ident/dbpedia
 
-  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
-  #   dataset_name: large_12k-perspk5
-  #   dataset_path: /app/datasets/vb-clean_ident/Large_12k/perspk5
+  - _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: agnews
+    dataset_path: /app/datasets/text-ident/agnews
 
+  - _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: clinc150
+    dataset_path: /app/datasets/clinc150_test
 
-calibration_sets:
-  ijb_val:
-    _target_: evaluation.test_datasets.FaceRecogntionDataset
-    dataset_name: ms1m
-    dataset_path: /app/datasets/ms1m_ident
-
-  voxblink_val:
-    _target_: evaluation.test_datasets.FaceRecogntionDataset
-    dataset_name: medium_1.2k-perspk5
-    dataset_path: /app/datasets/vb-clean_ident/Medium_1.2k/perspk5
-
-  whale_val:
-    _target_: evaluation.test_datasets.FaceRecogntionDataset
-    dataset_name: whale_val
-    dataset_path: /app/datasets/whale_val
-
-
-dataset_name_to_calibration_set:
-  IJBB: ${calibration_sets.ijb_val}
-  IJBC: ${calibration_sets.ijb_val}
-  whale: ${calibration_sets.whale_val}
-  large_12k-perspk5: ${calibration_sets.voxblink_val}
-
-dataset_name_to_T_scale:
-  IJBB: 7
-  IJBC: 7
-  whale: 20
-  large_12k-perspk5: 20
+  - _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: pan_test
+    dataset_path: /app/datasets/pan_test
 
 
 # ---------------------------------------------------------------------
-# Methods to run
+# Calibration sets
+# ---------------------------------------------------------------------
+
+calibration_sets:
+  yahoo_val:
+    _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: yahoo
+    dataset_path: /app/datasets/text-ident-val/yahoo
+
+  dbpedia_val:
+    _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: dbpedia
+    dataset_path: /app/datasets/text-ident-val/dbpedia
+
+  agnews_val:
+    _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: agnews
+    dataset_path: /app/datasets/text-ident-val/agnews
+
+  clinc150_val:
+    _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: clinc150_val
+    dataset_path: /app/datasets/clinc150_val
+
+  pan_val:
+    _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: pan_val
+    dataset_path: /app/datasets/pan_val
+
+
+dataset_name_to_calibration_set:
+  yahoo: ${calibration_sets.yahoo_val}
+  dbpedia: ${calibration_sets.dbpedia_val}
+  agnews: ${calibration_sets.agnews_val}
+  clinc150: ${calibration_sets.clinc150_val}
+  pan_test: ${calibration_sets.pan_val}
+
+
+dataset_name_to_T_scale:
+  yahoo: 100
+  agnews: 100
+  dbpedia: 300
+  clinc150: 50
+  pan_test: 50
+
+
+# ---------------------------------------------------------------------
+# Methods
 # ---------------------------------------------------------------------
 
 open_set_identification_methods:
 
+  # -------------------------------------------------------------------
+  # HolUE baseline for text
+  # -------------------------------------------------------------------
+
   - embeddings: scf
     gallery_template_pooling_strategy:
-      _target_: evaluation.template_pooling_strategies.PoolingDefault  
+      _target_: evaluation.template_pooling_strategies.PoolingDefault
     probe_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
+    use_detector_score: False
     recognition_method:
       _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
       gallery_prior: power
       emb_unc_model: vMF
       beta: 0.5
       alpha: 0.5
-      predict_T: 20
+      predict_T: 200
+      kappa_input_scale: 1
       M: 0
       pred_uncertainty_type: entropy
       far: null
+
+      train_predict_T: False
+      predict_T_lr: 1e-2
+
       calibration_set: True
       calibration_embs_name: scf
       calibration_transform:
         _target_: evaluation.open_set_methods.calibration_methods.NNcalibration
         model:
-          _target_: evaluation.open_set_methods.calibration_methods.ExpTransform
-          use_shift: True
-          use_alpha: True
-        lr: 0.001
+          _target_: evaluation.open_set_methods.calibration_methods.MLP
+          hidden_size: 8
+          num_layers: 3
+          use_bn: True
+        lr: 0.0001
         epochs: 2000
         weight: 0
-        weight_loss_types: False
+        use_norm: True
+        balanced_loss: True
         train_weight: False
-        weight_decay: 0.001
+        weight_loss_types: False
+        weight_decay: 10
         normalize_kl_by_test: False
-        scheduler_params: 
-          max_lr: 1e-3
+        scheduler_params:
+          max_lr: 1e-4
           steps_per_epoch: 1
           div_factor: 1e1
           final_div_factor: 1e1
         log_dir: ${exp_dir}
     pretty_name: "HolUE"
 
+
+  # -------------------------------------------------------------------
+  # MPRisk raw
+  # -------------------------------------------------------------------
 
   - embeddings: scf
     gallery_template_pooling_strategy:
@@ -125,7 +162,7 @@ open_set_identification_methods:
       gallery_prior: power
       emb_unc_model: vMF
       beta: 0.5
-      predict_T: 20
+      predict_T: 300
       M: 0
       far: null
 
@@ -139,6 +176,11 @@ open_set_identification_methods:
       use_calibration: False
     pretty_name: "MPRisk raw"
 
+
+  # -------------------------------------------------------------------
+  # MPRisk without mixed-prior non-specificity
+  # -------------------------------------------------------------------
+
   - embeddings: scf
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
@@ -150,7 +192,7 @@ open_set_identification_methods:
       gallery_prior: power
       emb_unc_model: vMF
       beta: 0.5
-      predict_T: 20
+      predict_T: 300
       M: 0
       far: null
 
@@ -164,6 +206,11 @@ open_set_identification_methods:
       use_calibration: False
     pretty_name: "MPRisk no NS"
 
+
+  # -------------------------------------------------------------------
+  # MPRisk tuned on validation
+  # -------------------------------------------------------------------
+
   - embeddings: scf
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
@@ -175,7 +222,7 @@ open_set_identification_methods:
       gallery_prior: power
       emb_unc_model: vMF
       beta: 0.5
-      predict_T: 20
+      predict_T: 300
       M: 0
       far: null
 
@@ -200,6 +247,10 @@ open_set_identification_methods:
     pretty_name: "MPRisk"
 
 
+  # -------------------------------------------------------------------
+  # MPRisk tuned + scalar calibration
+  # -------------------------------------------------------------------
+
   - embeddings: scf
     gallery_template_pooling_strategy:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
@@ -211,7 +262,7 @@ open_set_identification_methods:
       gallery_prior: power
       emb_unc_model: vMF
       beta: 0.5
-      predict_T: 20
+      predict_T: 300
       M: 0
       far: null
 
@@ -247,15 +298,13 @@ open_set_identification_methods:
         verbose: False
     pretty_name: "MPRisk cal"
 
+
 # ---------------------------------------------------------------------
-# Experiments
+# Diagnostics experiments
 # ---------------------------------------------------------------------
 
 mixed_prior_necessity:
   enabled: True
-
-  # Only methods whose pretty_name contains this substring are used.
-  # This avoids applying mixed-prior decomposition to HolUE.
   method_filter: "MPRisk"
 
 
@@ -263,8 +312,6 @@ reliability:
   enabled: True
   num_bins: 20
 
-  # Only probability-like methods are used.
-  # HolUE NNcalibration and MPRisk cal return predicted_unc = -P(correct).
   methods:
     - "HolUE"
     - "MPRisk cal"
@@ -273,29 +320,103 @@ reliability:
 bootstrap:
   enabled: True
 
-  # Use 1000 for final paper; use 100 or 200 for debugging.
+  # Use 100 for quick debugging, 1000 for final paper.
   num_bootstrap: 1000
 
   pairs:
-    - dataset: whale
+    # ---------------------------------------------------------------
+    # MPRisk vs HolUE
+    # ---------------------------------------------------------------
+
+    - dataset: yahoo
       far: 0.1
       beta: 0.5
       method_a: "MPRisk"
       method_b: "HolUE"
 
-    - dataset: whale
+    - dataset: agnews
+      far: 0.1
+      beta: 0.5
+      method_a: "MPRisk"
+      method_b: "HolUE"
+
+    - dataset: dbpedia
+      far: 0.1
+      beta: 0.5
+      method_a: "MPRisk"
+      method_b: "HolUE"
+
+    - dataset: clinc150
+      far: 0.1
+      beta: 0.5
+      method_a: "MPRisk"
+      method_b: "HolUE"
+
+    - dataset: pan_test
+      far: 0.1
+      beta: 0.5
+      method_a: "MPRisk"
+      method_b: "HolUE"
+
+
+    # ---------------------------------------------------------------
+    # MPRisk cal vs HolUE
+    # ---------------------------------------------------------------
+
+    - dataset: yahoo
       far: 0.1
       beta: 0.5
       method_a: "MPRisk cal"
       method_b: "HolUE"
 
-    - dataset: whale
+    - dataset: agnews
+      far: 0.1
+      beta: 0.5
+      method_a: "MPRisk cal"
+      method_b: "HolUE"
+
+    - dataset: dbpedia
+      far: 0.1
+      beta: 0.5
+      method_a: "MPRisk cal"
+      method_b: "HolUE"
+
+    - dataset: clinc150
+      far: 0.1
+      beta: 0.5
+      method_a: "MPRisk cal"
+      method_b: "HolUE"
+
+    - dataset: pan_test
+      far: 0.1
+      beta: 0.5
+      method_a: "MPRisk cal"
+      method_b: "HolUE"
+
+
+    # ---------------------------------------------------------------
+    # Ablation comparisons on representative text datasets
+    # ---------------------------------------------------------------
+
+    - dataset: yahoo
       far: 0.1
       beta: 0.5
       method_a: "MPRisk"
       method_b: "MPRisk raw"
 
-    - dataset: whale
+    - dataset: yahoo
+      far: 0.1
+      beta: 0.5
+      method_a: "MPRisk"
+      method_b: "MPRisk no NS"
+
+    - dataset: pan_test
+      far: 0.1
+      beta: 0.5
+      method_a: "MPRisk"
+      method_b: "MPRisk raw"
+
+    - dataset: pan_test
       far: 0.1
       beta: 0.5
       method_a: "MPRisk"
@@ -309,17 +430,42 @@ qualitative:
   num_nearest_gallery: 5
 
   methods:
-    - dataset: whale
+    - dataset: yahoo
       method: "MPRisk"
       far: 0.1
       beta: 0.5
 
-    - dataset: whale
+    - dataset: yahoo
+      method: "HolUE"
+      far: 0.1
+      beta: 0.5
+
+    - dataset: dbpedia
+      method: "MPRisk"
+      far: 0.1
+      beta: 0.5
+
+    - dataset: agnews
+      method: "MPRisk"
+      far: 0.1
+      beta: 0.5
+
+    - dataset: clinc150
+      method: "MPRisk"
+      far: 0.1
+      beta: 0.5
+
+    - dataset: pan_test
+      method: "MPRisk"
+      far: 0.1
+      beta: 0.5
+
+    - dataset: pan_test
       method: "MPRisk raw"
       far: 0.1
       beta: 0.5
 
-    - dataset: whale
+    - dataset: pan_test
       method: "HolUE"
       far: 0.1
       beta: 0.5
@@ -332,7 +478,7 @@ qualitative:
 quality_stress:
   enabled: False
 
-  fars: [0.1]
+  fars: [0.1, 0.3, 0.5]
   kappa_input_scales: [0.25, 0.5, 1.0, 2.0, 5.0]
 
 
@@ -349,7 +495,7 @@ quality_stress_base_method:
     gallery_prior: power
     emb_unc_model: vMF
     beta: 0.5
-    predict_T: 20
+    predict_T: 300
     M: 0
     far: null
 

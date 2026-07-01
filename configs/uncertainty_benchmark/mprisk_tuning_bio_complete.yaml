@@ -5,50 +5,37 @@ hydra:
 seed: 777
 deterministic: true
 
-exp_dir: outputs/experiments/mprisk_tuning
+exp_dir: outputs/experiments/mprisk_tuning_bio_complete
 
 use_two_galleries: False
 recompute_template_pooling: True
-
 rejection_fractions: [0.0, 0.5, 20]
 
-# Main far/beta values used for the cache and validation-size ablation.
+# Representative value for validation-size ablation.
 far_list: [0.05]
 beta_list: [0.5]
-
-
-# ---------------------------------------------------------------------
-# Lambda random search settings
-# ---------------------------------------------------------------------
 
 lambda_search:
   num_random: 4096
   log_low: -10.0
   log_high: 10.0
 
-
-# ---------------------------------------------------------------------
-# Datasets
-# ---------------------------------------------------------------------
-
 test_datasets:
-  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
-  #   dataset_name: IJBC
-  #   dataset_path: /app/datasets/arcface_ijb/IJBC
+  - _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: IJBC
+    dataset_path: /app/datasets/arcface_ijb/IJBC
 
-  # Uncomment when IJBC works.
-  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
-  #   dataset_name: IJBB
-  #   dataset_path: /app/datasets/arcface_ijb/IJBB
+  - _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: IJBB
+    dataset_path: /app/datasets/arcface_ijb/IJBB
 
-  # - _target_: evaluation.test_datasets.FaceRecogntionDataset
-  #   dataset_name: whale
-  #   dataset_path: /app/datasets/whale
+  - _target_: evaluation.test_datasets.FaceRecogntionDataset
+    dataset_name: whale
+    dataset_path: /app/datasets/whale
 
   - _target_: evaluation.test_datasets.FaceRecogntionDataset
     dataset_name: large_12k-perspk5
     dataset_path: /app/datasets/vb-clean_ident/Large_12k/perspk5
-
 
 calibration_sets:
   ijb_val:
@@ -66,7 +53,6 @@ calibration_sets:
     dataset_name: whale_val
     dataset_path: /app/datasets/whale_val
 
-
 dataset_name_to_calibration_set:
   IJBB: ${calibration_sets.ijb_val}
   IJBC: ${calibration_sets.ijb_val}
@@ -79,13 +65,6 @@ dataset_name_to_T_scale:
   whale: 20
   large_12k-perspk5: 20
 
-
-# ---------------------------------------------------------------------
-# Base MPRisk method.
-# This runner disables internal tune_lambdas and use_calibration. It extracts
-# the components and tunes lambdas outside the method.
-# ---------------------------------------------------------------------
-
 base_mprisk_method:
   embeddings: scf
   gallery_template_pooling_strategy:
@@ -95,113 +74,63 @@ base_mprisk_method:
   use_detector_score: False
   recognition_method:
     _target_: evaluation.open_set_methods.class_prob_models.MPRiskPredictiveProb
-
     gallery_prior: power
     emb_unc_model: vMF
     beta: 0.5
     predict_T: 20
     M: 0
     far: null
-
     lambda_fa: 1.0
     lambda_id: 1.0
     lambda_fr: 1.0
     lambda_ns: 1.0
-
     nonspecificity_mode: analytic_vmf
-
     tune_lambdas: False
     use_calibration: False
-
     calibration_set: True
     calibration_embs_name: scf
   pretty_name: "MPRisk"
 
-
-# ---------------------------------------------------------------------
-# Experiment 1: validation-size ablation
-# ---------------------------------------------------------------------
-
 validation_size_ablation:
   enabled: True
-
-  validation_fractions: [0.1, 0.25, 0.50, 1.0]
-  repeats: 3
+  validation_fractions: [0.05, 0.10, 0.25, 0.50, 1.0]
+  repeats: 5
   min_subset_size: 100
-
-
-# ---------------------------------------------------------------------
-# Experiment 2: operating-point transfer
-# Tune lambdas at one FPIR and evaluate at other FPIR values.
-# ---------------------------------------------------------------------
 
 operating_point_transfer:
   enabled: True
-
-  train_fars: [0.1]
+  train_fars: [0.05]
   eval_fars: [0.01, 0.05, 0.1, 0.2]
 
-
-# ---------------------------------------------------------------------
-# Experiment 3: cross-dataset transfer
-# Meaningful after you uncomment multiple datasets above.
-# ---------------------------------------------------------------------
-
 cross_dataset_transfer:
-  enabled: False
-
+  enabled: True
   fars: [0.05]
-
-
-# ---------------------------------------------------------------------
-# Experiment 4: hyperparameter sensitivity
-# This runs extra MPRisk variants and tunes lambdas for each.
-# ---------------------------------------------------------------------
 
 hyperparameter_sensitivity:
   enabled: True
-
-  fars: [0.01]
-
+  fars: [0.05]
   variants:
     - name: "T_7"
       recognition_method:
         predict_T: 7
-
     - name: "T_10"
       recognition_method:
         predict_T: 10
-
     - name: "T_20"
       recognition_method:
         predict_T: 20
-
     - name: "T_30"
       recognition_method:
         predict_T: 30
-
     - name: "T_50"
       recognition_method:
         predict_T: 50
-
     - name: "kappa_input_0.5"
       recognition_method:
         kappa_input_scale: 0.5
-
     - name: "kappa_input_1"
       recognition_method:
         kappa_input_scale: 1.0
-
     - name: "kappa_input_2"
       recognition_method:
         kappa_input_scale: 2.0
-
-    # - name: "weighted_mc_M10"
-    #   recognition_method:
-    #     nonspecificity_mode: weighted_mc
-    #     M: 10
-
-    # - name: "weighted_mc_M50"
-    #   recognition_method:
-    #     nonspecificity_mode: weighted_mc
-    #     M: 50

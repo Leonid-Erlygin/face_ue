@@ -375,7 +375,7 @@ open_set_identification_methods:
       # Still needed, because lambdas are tuned on this validation protocol.
       calibration_set: True
       calibration_embs_name: scf
-    pretty_name: "MPRisk tuned"
+    pretty_name: "MPRisk"
 
   # - embeddings: scf
   #   gallery_template_pooling_strategy:

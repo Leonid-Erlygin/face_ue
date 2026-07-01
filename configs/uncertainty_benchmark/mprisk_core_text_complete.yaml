@@ -5,14 +5,13 @@ hydra:
 seed: 777
 deterministic: true
 
-exp_dir: outputs/experiments/mprisk_core_text
+exp_dir: outputs/experiments/mprisk_core_text_complete
 
 use_two_galleries: False
 recompute_template_pooling: True
 create_pool_plot: False
 
 rank_inversion_num_pairs: 200000
-
 rejection_fractions: [0.0, 0.5, 20]
 
 plots:
@@ -22,24 +21,13 @@ plots:
 
   rejection_curves:
     enabled: True
-
-    # Curves to draw. These columns are present in rejection_curve_for_score().
     metrics: [f1_class, fpir, fnir]
-
-    # Add Random and Oracle curves like in the original HolUE paper.
     display_random_curve: True
     display_oracle_curve: True
-
-    # Add PRR value to legend labels.
     prr_in_legend: True
-
-    # Use this method's Random/Oracle reference curves if present.
-    # If missing, the first evaluated method for the dataset/far/beta is used.
     reference_method: "HolUE"
-
     figsize: [6.4, 4.8]
     legend_fontsize: 8
-
     method_order:
       - SCF
       - AccScr
@@ -60,7 +48,7 @@ test_datasets:
   - _target_: evaluation.test_datasets.FaceRecogntionDataset
     dataset_name: dbpedia
     dataset_path: /app/datasets/text-ident/dbpedia
-    
+
   - _target_: evaluation.test_datasets.FaceRecogntionDataset
     dataset_name: agnews
     dataset_path: /app/datasets/text-ident/agnews
@@ -74,45 +62,32 @@ test_datasets:
     dataset_path: /app/datasets/pan_test
 
 calibration_sets:
-  ijb_val:
-    _target_: evaluation.test_datasets.FaceRecogntionDataset
-    dataset_name: ms1m
-    dataset_path: /app/datasets/ms1m_ident
-  voxblink_val:
-    _target_: evaluation.test_datasets.FaceRecogntionDataset
-    dataset_name: medium_1.2k-perspk5
-    dataset_path: /app/datasets/vb-clean_ident/Medium_1.2k/perspk5
-  whale_val:
-    _target_: evaluation.test_datasets.FaceRecogntionDataset
-    dataset_name: whale_val
-    dataset_path: /app/datasets/whale_val
   agnews_val:
     _target_: evaluation.test_datasets.FaceRecogntionDataset
     dataset_name: agnews
     dataset_path: /app/datasets/text-ident-val/agnews
+
   dbpedia_val:
     _target_: evaluation.test_datasets.FaceRecogntionDataset
     dataset_name: dbpedia
     dataset_path: /app/datasets/text-ident-val/dbpedia
+
   yahoo_val:
     _target_: evaluation.test_datasets.FaceRecogntionDataset
     dataset_name: yahoo
     dataset_path: /app/datasets/text-ident-val/yahoo
+
   clinc150_val:
     _target_: evaluation.test_datasets.FaceRecogntionDataset
     dataset_name: clinc150_val
     dataset_path: /app/datasets/clinc150_val
+
   pan_val:
     _target_: evaluation.test_datasets.FaceRecogntionDataset
     dataset_name: pan_val
     dataset_path: /app/datasets/pan_val
 
-
 dataset_name_to_calibration_set:
-  IJBB: ${calibration_sets.ijb_val}
-  IJBC: ${calibration_sets.ijb_val}
-  whale: ${calibration_sets.whale_val}
-  large_12k-perspk5: ${calibration_sets.voxblink_val} 
   agnews: ${calibration_sets.agnews_val}
   dbpedia: ${calibration_sets.dbpedia_val}
   yahoo: ${calibration_sets.yahoo_val}
@@ -120,20 +95,14 @@ dataset_name_to_calibration_set:
   pan_test: ${calibration_sets.pan_val}
 
 dataset_name_to_T_scale:
-  IJBB: 7
-  IJBC: 7
-  whale: 20
-  large_12k-perspk5: 20
   yahoo: 100
   agnews: 100
   dbpedia: 300
   clinc150: 50
   pan_test: 50
-beta_list: [0.5]
-#far_list: [0.1]
-# After first successful run, use:
-far_list: [0.1, 0.2, 0.3, 0.4, 0.5]
 
+beta_list: [0.5]
+far_list: [0.1, 0.2, 0.3, 0.4, 0.5]
 
 open_set_identification_methods:
 
