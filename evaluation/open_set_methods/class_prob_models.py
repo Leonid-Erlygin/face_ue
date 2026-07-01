@@ -164,7 +164,7 @@ class MonteCarloPredictiveProb:
         self.calibration_set = calibration_set
         self.calibration_embs_name = calibration_embs_name
         self.calibration_transform = calibration_transform
-        self.kappa_high = 100000
+        self.kappa_high = 1000000
         self.kappa_low = 10
         self.eps = 1e-3
         self.max_iter = 100

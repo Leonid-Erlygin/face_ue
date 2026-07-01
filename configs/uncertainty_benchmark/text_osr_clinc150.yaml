@@ -42,9 +42,6 @@ calibration_sets:
     dataset_name: whale_val
     dataset_path: /app/datasets/whale_val
   clinc150_val:
-    # _target_: evaluation.test_datasets.FaceRecogntionDataset
-    # dataset_name: clinc150
-    # dataset_path: /app/datasets/clinc150_test
     _target_: evaluation.test_datasets.FaceRecogntionDataset
     dataset_name: clinc150_val
     dataset_path: /app/datasets/clinc150_val

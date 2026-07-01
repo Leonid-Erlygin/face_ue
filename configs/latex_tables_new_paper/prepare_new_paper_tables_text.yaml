@@ -2,12 +2,12 @@ hydra:
   run:
     dir: ${exp_dir}
 
-exp_dir: outputs/latex_tables_new_paper
+exp_dir: outputs/latex_tables_new_paper_text
 
 round_num: 2
 
 paths:
-  core_tables: /app/outputs/experiments/mprisk_core/tables
+  core_tables: /app/outputs/experiments/mprisk_core_text/tables # /app/outputs/experiments/mprisk_core/tables
   tuning_tables: /app/outputs/experiments/mprisk_tuning/tables
   diagnostics_tables: /app/outputs/experiments/mprisk_diagnostics/tables
 
@@ -41,7 +41,8 @@ pretty_name:
     "MPRisk raw": "MPRisk raw"
     "MPRisk": "MPRisk"
     "MPRisk no NS": "MPRisk no $r_{NS}$"
-    "MPRisk cal": "MPRisk cal"
+    "MPRisk tuned": "MPRisk tuned"
+    "MPRisk tuned+cal": "MPRisk tuned+cal"
     Random: "Random"
     Oracle: "Oracle"
 
@@ -200,15 +201,15 @@ tables:
       - "MPRisk"
 
     datasets:
-      - IJBC
-      - IJBB
-      - whale
-      - large_12k-perspk5
-      # - yahoo
-      # - agnews
-      # - dbpedia
-      # - clinc150
-      # - pan_test
+      # - IJBC
+      # - IJBB
+      # - whale
+      # - large_12k-perspk5
+      - yahoo
+      - agnews
+      - dbpedia
+      - clinc150
+      - pan_test
     fars:
       IJBC: [0.05, 0.1, 0.2]
       IJBB: [0.05, 0.1, 0.2]
@@ -260,8 +261,8 @@ tables:
       - GalUE
       - HolUE
       - "MPRisk raw"
-      - "MPRisk"
-      - "MPRisk cal"
+      - "MPRisk tuned"
+      - "MPRisk tuned+cal"
 
     targets:
       - any_error
@@ -294,7 +295,7 @@ tables:
     highlight_best: True
 
     dataset: IJBC
-    source_method: "MPRisk"
+    source_method: "MPRisk tuned"
     far: 0.05
     beta: 0.5
 
@@ -349,8 +350,8 @@ tables:
     methods:
       - HolUE
       - "MPRisk raw"
-      - "MPRisk"
-      - "MPRisk cal"
+      - "MPRisk tuned"
+      - "MPRisk tuned+cal"
 
     metrics:
       - spearman
@@ -387,9 +388,9 @@ tables:
     use_adjustbox: False
     round_num: 2
 
-    dataset: large_12k-perspk5
+    dataset: IJBC
     variant: MPRisk
-    far: 0.01
+    far: 0.05
     beta: 0.5
   # -------------------------------------------------------------------
   # 6. Operating-point transfer
@@ -493,7 +494,7 @@ tables:
     highlight_best: True
 
     dataset: IJBC
-    source_method: "MPRisk"
+    source_method: "MPRisk tuned"
     far: 0.05
     beta: 0.5
 
@@ -545,7 +546,7 @@ tables:
 
     methods:
       - HolUE
-      - "MPRisk cal"
+      - "MPRisk tuned+cal"
 
     metrics:
       - ece
@@ -621,8 +622,8 @@ tables:
     methods:
       - HolUE
       - "MPRisk raw"
-      - "MPRisk"
-      - "MPRisk cal"
+      - "MPRisk tuned"
+      - "MPRisk tuned+cal"
 
     metrics:
       - elapsed_ms_per_probe

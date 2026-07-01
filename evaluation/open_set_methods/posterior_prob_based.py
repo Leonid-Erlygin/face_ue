@@ -127,7 +127,7 @@ class PosteriorProbability(OpenSetMethod):
         if self.gallery_kappa is None:
             kappa_low = 300
             kappa_high = 1000000
-            max_iter = 50
+            max_iter = 100
             eps = 0.0005
             far_loss_func = FarLossCalc(
                 self.beta, T, self.class_model, self.far, is_seen, similarity_matrix
@@ -196,7 +196,7 @@ class PosteriorProbability(OpenSetMethod):
             )
             kappa_low = 300
             kappa_high = 1000000
-            max_iter = 50
+            max_iter = 100
             eps = 0.0001
             far_loss_func = FarLossCalc(
                 self.beta,
