@@ -34,6 +34,7 @@ pretty_name:
     GalUE: "GalUE"
     HolUE: "HolUE"
     "MPRisk raw": "MPRisk raw"
+    "MPRisk": "MPRisk"
     "MPRisk no NS": "MPRisk no $r_{NS}$"
     "MPRisk tuned": "MPRisk tuned"
     "MPRisk tuned+cal": "MPRisk tuned+cal"
@@ -184,14 +185,15 @@ tables:
       - Oracle
 
     methods:
+
       - SCF
       - AccScr
+      - MSP
+      - Margin
       - GalUE
       - HolUE
       - "MPRisk raw"
-      - "MPRisk no NS"
-      - "MPRisk tuned"
-      - "MPRisk tuned+cal"
+      - "MPRisk"
 
     datasets:
       - IJBC
