@@ -548,6 +548,7 @@ figures:
     dataset: IJBC
     far: 0.05
     beta: 0.5
+    n_bins: 8
     methods:
       - HolUE
       - MPRisk cal
@@ -560,6 +561,19 @@ figures:
     dataset: whale
     far: 0.1
     beta: 0.5
+    n_bins: 8
+    methods:
+      - HolUE
+      - MPRisk cal
+    figsize: [5.2, 5.2]
+  calibration_voxblink:
+    enabled: True
+    type: calibration_diagram
+    input_dir: ${paths.diagnostics_reliability_bins}
+    dataset: large_12k-perspk5
+    far: 0.1
+    beta: 0.5
+    n_bins: 8
     methods:
       - HolUE
       - MPRisk cal

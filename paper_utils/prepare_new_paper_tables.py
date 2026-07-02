@@ -485,6 +485,37 @@ def find_reliability_bin_file(
 
     return None
 
+def rebin_reliability(bin_df: pd.DataFrame, n_bins: int) -> pd.DataFrame:
+    """
+    Merge fine-grained reliability bins into `n_bins` equal-width bins over [0, 1].
+
+    Averages (mean_pred_error, empirical_error) are combined using count-weighting,
+    while `count` is summed.
+    """
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    centers = 0.5 * (bin_df["left"].values + bin_df["right"].values)
+
+    # Assign each original bin to a target coarse bin by its center.
+    idx = np.clip(np.digitize(centers, edges) - 1, 0, n_bins - 1)
+
+    rows = []
+    for b in range(n_bins):
+        sub = bin_df[idx == b]
+        total = sub["count"].sum()
+        if total <= 0:
+            continue
+        w = sub["count"].values
+        rows.append(
+            {
+                "left": edges[b],
+                "right": edges[b + 1],
+                "count": total,
+                "mean_pred_error": np.average(sub["mean_pred_error"].values, weights=w),
+                "empirical_error": np.average(sub["empirical_error"].values, weights=w),
+            }
+        )
+
+    return pd.DataFrame(rows)
 
 def build_calibration_diagram_figure(cfg, fcfg, name: str):
     """
@@ -501,6 +532,7 @@ def build_calibration_diagram_figure(cfg, fcfg, name: str):
     methods = list(fcfg.methods)
 
     figsize = tuple(fcfg.get("figsize", [5.2, 5.2]))
+    n_bins = fcfg.get("n_bins", None)  # optional: reduce number of bins
 
     for method in methods:
         bin_path = find_reliability_bin_file(
@@ -524,6 +556,13 @@ def build_calibration_diagram_figure(cfg, fcfg, name: str):
         if bin_df.empty:
             print(f"[warning] empty reliability bins: {bin_path}")
             continue
+
+        # Optionally merge into fewer, wider bins.
+        if n_bins is not None and int(n_bins) < len(bin_df):
+            bin_df = rebin_reliability(bin_df, int(n_bins))
+            if bin_df.empty:
+                print(f"[warning] empty reliability bins after rebin: {bin_path}")
+                continue
 
         fig, ax = plt.subplots(figsize=figsize)
 
