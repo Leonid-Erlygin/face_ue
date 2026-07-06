@@ -4,7 +4,7 @@ hydra:
 
 seed: 777
 deterministic: true
-
+recompute_template_pooling: False
 exp_dir: outputs/experiments/mprisk_fair_tuning_text
 
 core_config_path: /app/configs/uncertainty_benchmark/mprisk_core_text_complete.yaml
@@ -21,14 +21,13 @@ datasets:
 far_list: [0.1, 0.2, 0.3, 0.4, 0.5]
 beta_list: [0.5]
 
-mprisk_method_name: "MPRisk raw"
+mprisk_method_name: "MPRisk"
 
 simple_methods:
   - SCF
   - AccScr
   - MSP
   - Margin
-  - GalUE
 
 lambda_search:
   num_random: 4096

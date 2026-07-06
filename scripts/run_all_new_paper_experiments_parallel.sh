@@ -56,16 +56,16 @@ wait_all () {
   fi
 }
 
-echo "============================================================"
-echo "STAGE 1: Core experiments and cache warm-up"
-echo "============================================================"
+# echo "============================================================"
+# echo "STAGE 1: Core experiments and cache warm-up"
+# echo "============================================================"
 
-# These two jobs create the main template caches and core outputs.
-# Running all later stages before these finish can cause cache races.
-run_bg "core_bio"  python experiments/mprisk_core_experiments.py -cn=mprisk_core_bio_complete
-run_bg "core_text" python experiments/mprisk_core_experiments.py -cn=mprisk_core_text_complete
+# # These two jobs create the main template caches and core outputs.
+# # Running all later stages before these finish can cause cache races.
+# run_bg "core_bio"  python experiments/mprisk_core_experiments.py -cn=mprisk_core_bio_complete
+# run_bg "core_text" python experiments/mprisk_core_experiments.py -cn=mprisk_core_text_complete
 
-wait_all
+# wait_all
 
 echo "============================================================"
 echo "STAGE 2: Tuning, diagnostics, and fair comparisons"

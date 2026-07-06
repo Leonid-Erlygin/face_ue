@@ -15,6 +15,9 @@ multirun
 datasets
 external
 notebooks/misc
+*.svg
+*.png
+*.drawio
 unsorted_data
 downloads_torrent
 combined.txt

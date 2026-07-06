@@ -24,14 +24,13 @@ far_list: [0.01, 0.05, 0.1, 0.2]
 
 beta_list: [0.5]
 
-mprisk_method_name: "MPRisk raw"
+mprisk_method_name: "MPRisk"
 
 simple_methods:
   - SCF
   - AccScr
   - MSP
   - Margin
-  - GalUE
 
 lambda_search:
   num_random: 4096

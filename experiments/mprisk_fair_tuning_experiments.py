@@ -15,6 +15,216 @@ from omegaconf import OmegaConf
 
 from evaluation.reproducibility import seed_everything
 
+
+def _first_dim(x) -> int:
+    return int(np.asarray(x).shape[0])
+
+
+def trim_feature_matrix(X: np.ndarray, n: int, name: str) -> np.ndarray:
+    X = np.asarray(X)
+
+    if X.shape[0] == n:
+        return X
+
+    print(f"[fair-tuning][align] trimming {name}: " f"{X.shape[0]} -> {n}")
+
+    return X[:n]
+
+
+def trim_vector(x: np.ndarray, n: int, name: str) -> np.ndarray:
+    x = np.asarray(x)
+
+    if x.shape[0] == n:
+        return x
+
+    print(f"[fair-tuning][align] trimming {name}: " f"{x.shape[0]} -> {n}")
+
+    return x[:n]
+
+
+def trim_components_to_n(
+    components: Dict[str, np.ndarray],
+    n: int,
+    name: str,
+) -> Dict[str, np.ndarray]:
+    out = {}
+
+    for key, value in components.items():
+        value_np = np.asarray(value)
+
+        if value_np.shape[0] == n:
+            out[key] = value_np
+        else:
+            print(
+                f"[fair-tuning][align] trimming {name}.{key}: "
+                f"{value_np.shape[0]} -> {n}"
+            )
+            out[key] = value_np[:n]
+
+    return out
+
+
+def trim_result_to_n(result: Dict[str, Any], n: int, name: str) -> Dict[str, Any]:
+    """
+    Trim a result dictionary to the first n probes and recompute masks.
+    g_unique_ids is not trimmed.
+    """
+    out = dict(result)
+
+    for key in ["predicted_id", "was_rejected", "predicted_unc", "probe_unique_ids"]:
+        if key in out:
+            out[key] = trim_vector(out[key], n, f"{name}.{key}")
+
+    out["masks"] = compute_osr_error_masks(
+        predicted_id=out["predicted_id"],
+        was_rejected=out["was_rejected"],
+        g_unique_ids=out["g_unique_ids"],
+        probe_unique_ids=out["probe_unique_ids"],
+    )
+
+    return out
+
+
+def align_validation_blocks(
+    X_simple_val: np.ndarray,
+    X_post_val: np.ndarray,
+    comps_val: Dict[str, np.ndarray],
+    probe_ids_val: np.ndarray,
+):
+    lengths = [
+        _first_dim(X_simple_val),
+        _first_dim(X_post_val),
+        _first_dim(comps_val["predicted_id"]),
+        _first_dim(probe_ids_val),
+    ]
+    n = min(lengths)
+
+    if len(set(lengths)) != 1:
+        print(
+            "[fair-tuning][align] validation length mismatch: "
+            f"X_simple_val={lengths[0]}, X_post_val={lengths[1]}, "
+            f"components={lengths[2]}, probe_ids={lengths[3]}; "
+            f"using n={n}"
+        )
+
+    X_simple_val = trim_feature_matrix(X_simple_val, n, "X_simple_val")
+    X_post_val = trim_feature_matrix(X_post_val, n, "X_post_val")
+    comps_val = trim_components_to_n(comps_val, n, "calib_components")
+    probe_ids_val = trim_vector(probe_ids_val, n, "probe_ids_val")
+
+    return X_simple_val, X_post_val, comps_val, probe_ids_val
+
+
+def align_test_blocks(
+    X_simple_test: np.ndarray,
+    X_post_test: np.ndarray,
+    comps_test: Dict[str, np.ndarray],
+    result_test: Dict[str, Any],
+):
+    lengths = [
+        _first_dim(X_simple_test),
+        _first_dim(X_post_test),
+        _first_dim(comps_test["predicted_id"]),
+        _first_dim(result_test["predicted_id"]),
+        _first_dim(result_test["probe_unique_ids"]),
+    ]
+    n = min(lengths)
+
+    if len(set(lengths)) != 1:
+        print(
+            "[fair-tuning][align] test length mismatch: "
+            f"X_simple_test={lengths[0]}, X_post_test={lengths[1]}, "
+            f"components={lengths[2]}, result_pred={lengths[3]}, "
+            f"result_ids={lengths[4]}; using n={n}"
+        )
+
+    X_simple_test = trim_feature_matrix(X_simple_test, n, "X_simple_test")
+    X_post_test = trim_feature_matrix(X_post_test, n, "X_post_test")
+    comps_test = trim_components_to_n(comps_test, n, "test_components")
+    result_test = trim_result_to_n(result_test, n, "result_test")
+
+    return X_simple_test, X_post_test, comps_test, result_test
+
+
+def maybe_set_predict_T_from_dataset(
+    core_cfg,
+    recognition_method,
+    dataset_name_for_T: str,
+):
+    """
+    Normal evaluation.evaluate.py sets GalUE predict_T from cfg.dataset_name_to_T_scale.
+    Fair-tuning runs methods manually, so reproduce the same behavior here.
+
+    Any method with predict_T=None gets a dataset-specific value.
+    """
+    if not hasattr(recognition_method, "predict_T"):
+        return
+
+    if getattr(recognition_method, "predict_T") is not None:
+        return
+
+    try:
+        predict_T = getattr(core_cfg.dataset_name_to_T_scale, dataset_name_for_T)
+        recognition_method.predict_T = predict_T
+        print(
+            f"[fair-tuning] set predict_T={predict_T} "
+            f"for dataset={dataset_name_for_T}"
+        )
+    except Exception:
+        recognition_method.predict_T = 1.0
+        print(
+            f"[fair-tuning] warning: no dataset-specific predict_T for "
+            f"{dataset_name_for_T}; using predict_T=1.0"
+        )
+
+
+def ensure_calibration_dataset_for_mprisk(
+    core_cfg,
+    recognition_method,
+    dataset_name: str,
+):
+    """
+    External fair-tuning needs validation components for MPRisk.
+    Attach the instantiated calibration set if needed.
+    """
+    if (
+        not hasattr(recognition_method, "calibration_set")
+        or recognition_method.calibration_set is None
+        or recognition_method.calibration_set is True
+    ):
+        calib_set_cfg = getattr(core_cfg.dataset_name_to_calibration_set, dataset_name)
+        recognition_method.calibration_set = instantiate(calib_set_cfg)
+
+    if (
+        not hasattr(recognition_method, "calibration_embs_name")
+        or recognition_method.calibration_embs_name is None
+    ):
+        recognition_method.calibration_embs_name = "scf"
+
+
+def ensure_calibration_dataset_for_mprisk(
+    core_cfg, recognition_method, dataset_name: str
+):
+    """
+    External fair-tuning needs validation components for MPRisk. If the method
+    is instantiated from a config where calibration_set=True or None, this
+    function attaches the instantiated validation dataset.
+    """
+    if (
+        not hasattr(recognition_method, "calibration_set")
+        or recognition_method.calibration_set is None
+        or recognition_method.calibration_set is True
+    ):
+        calib_set_cfg = getattr(core_cfg.dataset_name_to_calibration_set, dataset_name)
+        recognition_method.calibration_set = instantiate(calib_set_cfg)
+
+    if (
+        not hasattr(recognition_method, "calibration_embs_name")
+        or recognition_method.calibration_embs_name is None
+    ):
+        recognition_method.calibration_embs_name = "scf"
+
+
 from experiments.mprisk_core_experiments import (
     build_tester,
     compute_osr_error_masks,
@@ -388,6 +598,7 @@ def run_plain_method(
     far: float,
     beta: float,
     suffix: str,
+    temperature_dataset_name: Optional[str] = None,
 ):
     method_cfg = disable_internal_supervision(method_cfg)
 
@@ -395,6 +606,15 @@ def run_plain_method(
     rm = instantiate(method_cfg.recognition_method)
     rm.far = far
     rm.beta = beta
+
+    if temperature_dataset_name is None:
+        temperature_dataset_name = str(dataset.dataset_name)
+
+    maybe_set_predict_T_from_dataset(
+        core_cfg=core_cfg,
+        recognition_method=rm,
+        dataset_name_for_T=temperature_dataset_name,
+    )
 
     method_name = (
         f"fair_{slugify(str(method_cfg.pretty_name))}"
@@ -430,6 +650,8 @@ def build_simple_feature_matrix(
     simple_results_test = {}
     simple_results_val = {}
 
+    main_dataset_name = str(test_dataset_cfg.dataset_name)
+
     for method_name in simple_method_names:
         method_cfg = get_method_cfg(core_cfg, method_name)
 
@@ -441,6 +663,7 @@ def build_simple_feature_matrix(
             far=far,
             beta=beta,
             suffix="test",
+            temperature_dataset_name=main_dataset_name,
         )
 
         print(f"[features] running simple method={method_name} on validation")
@@ -451,6 +674,7 @@ def build_simple_feature_matrix(
             far=far,
             beta=beta,
             suffix="val",
+            temperature_dataset_name=main_dataset_name,
         )
 
         simple_results_test[method_name] = res_test
@@ -464,8 +688,27 @@ def build_simple_feature_matrix(
         )
         names.append(method_name)
 
-    X_test = np.stack(X_test_cols, axis=1)
-    X_val = np.stack(X_val_cols, axis=1)
+    # Robustly align columns. This handles rare one-template differences
+    # between Recognition_test and prepare_calibration_dataset.
+    n_test = min(len(x) for x in X_test_cols)
+    n_val = min(len(x) for x in X_val_cols)
+
+    if len(set(len(x) for x in X_test_cols)) != 1:
+        print(
+            "[fair-tuning][align] simple test feature length mismatch: "
+            + ", ".join(f"{n}:{len(x)}" for n, x in zip(names, X_test_cols))
+            + f"; using n={n_test}"
+        )
+
+    if len(set(len(x) for x in X_val_cols)) != 1:
+        print(
+            "[fair-tuning][align] simple val feature length mismatch: "
+            + ", ".join(f"{n}:{len(x)}" for n, x in zip(names, X_val_cols))
+            + f"; using n={n_val}"
+        )
+
+    X_test = np.stack([x[:n_test] for x in X_test_cols], axis=1)
+    X_val = np.stack([x[:n_val] for x in X_val_cols], axis=1)
 
     return X_val, X_test, names, simple_results_val, simple_results_test
 
@@ -572,6 +815,18 @@ def run_one_dataset_far(
         beta=beta,
         method_name_suffix="fair_base",
     )
+    ensure_calibration_dataset_for_mprisk(
+        core_cfg=core_cfg,
+        recognition_method=entry["recognition_method"],
+        dataset_name=dataset_name,
+    )
+
+    ensure_calibration_dataset_for_mprisk(
+        core_cfg=core_cfg,
+        recognition_method=entry["recognition_method"],
+        dataset_name=dataset_name,
+    )
+
     ensure_calibration_dataset_for_mprisk(
         core_cfg=core_cfg,
         recognition_method=entry["recognition_method"],
@@ -733,7 +988,36 @@ def run_one_dataset_far(
         entry,
         calib,
     )
+    # ------------------------------------------------------------------
+    # Align all validation/test feature blocks and MPRisk components.
+    # This prevents one-template mismatches from causing broadcast errors.
+    # ------------------------------------------------------------------
+    X_simple_val, X_post_val, comps_val, probe_ids_val = align_validation_blocks(
+        X_simple_val=X_simple_val,
+        X_post_val=X_post_val,
+        comps_val=comps_val,
+        probe_ids_val=probe_ids_val,
+    )
 
+    X_simple_test, X_post_test, comps_test, result_test = align_test_blocks(
+        X_simple_test=X_simple_test,
+        X_post_test=X_post_test,
+        comps_test=comps_test,
+        result_test=result_test,
+    )
+
+    # Recompute validation masks after alignment.
+    masks_val = compute_osr_error_masks(
+        predicted_id=comps_val["predicted_id"],
+        was_rejected=comps_val["was_rejected"],
+        g_unique_ids=g_ids_val,
+        probe_unique_ids=probe_ids_val,
+    )
+    y_error_val = masks_val["any_error"].astype(bool)
+
+    # Recompute aligned full MPRisk score.
+    score_full_test = component_score(comps_test, tune_full["lambdas"])
+    score_full_val = component_score(comps_val, tune_full["lambdas"])
     # --------------------------------------------------------------
     # Tuned HolUE/KL linear
     # --------------------------------------------------------------
@@ -917,7 +1201,7 @@ def run_one_dataset_far(
     X_hybrid_val = np.stack(
         [
             tuned_kl["score_val"],
-            component_score(comps_val, tune_full["lambdas"]),
+            score_full_val,
         ],
         axis=1,
     )
@@ -1219,6 +1503,8 @@ def main(cfg):
         path=str(cfg.core_config_path),
         exp_dir=str(exp_dir),
     )
+    if "recompute_template_pooling" in cfg:
+        core_cfg.recompute_template_pooling = bool(cfg.recompute_template_pooling)
     if "recompute_template_pooling" in cfg:
         core_cfg.recompute_template_pooling = bool(cfg.recompute_template_pooling)
     fractions = make_fraction_grid(cfg.rejection_fractions)

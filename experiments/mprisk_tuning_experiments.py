@@ -95,12 +95,27 @@ def component_score(
 ) -> np.ndarray:
     lambdas = np.asarray(lambdas, dtype=np.float64).reshape(4)
 
-    return (
-        lambdas[0] * np.asarray(components["r_fa"], dtype=np.float64)
-        + lambdas[1] * np.asarray(components["r_id"], dtype=np.float64)
-        + lambdas[2] * np.asarray(components["r_fr"], dtype=np.float64)
-        + lambdas[3] * np.asarray(components["r_ns"], dtype=np.float64)
+    r_fa = np.asarray(components["r_fa"], dtype=np.float64)
+    r_id = np.asarray(components["r_id"], dtype=np.float64)
+    r_fr = np.asarray(components["r_fr"], dtype=np.float64)
+    r_ns = np.asarray(components["r_ns"], dtype=np.float64)
+
+    with np.errstate(under="ignore", over="ignore", invalid="ignore"):
+        score = (
+            lambdas[0] * r_fa
+            + lambdas[1] * r_id
+            + lambdas[2] * r_fr
+            + lambdas[3] * r_ns
+        )
+
+    score = np.nan_to_num(
+        score,
+        nan=0.0,
+        posinf=np.finfo(np.float64).max / 100.0,
+        neginf=np.finfo(np.float64).min / 100.0,
     )
+
+    return score
 
 
 def slice_components(
