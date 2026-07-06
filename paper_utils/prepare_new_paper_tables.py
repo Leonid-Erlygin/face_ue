@@ -485,6 +485,7 @@ def find_reliability_bin_file(
 
     return None
 
+
 def rebin_reliability(bin_df: pd.DataFrame, n_bins: int) -> pd.DataFrame:
     """
     Merge fine-grained reliability bins into `n_bins` equal-width bins over [0, 1].
@@ -516,6 +517,7 @@ def rebin_reliability(bin_df: pd.DataFrame, n_bins: int) -> pd.DataFrame:
         )
 
     return pd.DataFrame(rows)
+
 
 def build_calibration_diagram_figure(cfg, fcfg, name: str):
     """
@@ -1381,6 +1383,113 @@ def build_runtime_table(cfg, tcfg, name: str):
     write_outputs(cfg, name, latex, numeric_df=numeric, display_df=display)
 
 
+def build_grouped_metric_table(cfg, tcfg, name: str):
+    """
+    Generic grouped table.
+
+    It creates a table with:
+      rows = methods / variants / any row_key
+      columns = dataset x FPIR grid
+      values = chosen metric
+
+    Expected CSV columns usually include:
+      dataset, far, beta, method or variant, metric columns.
+
+    Config fields:
+      input_path: path to CSV
+      row_key: method | variant | ...
+      rows: list of row names
+      row_pretty_category: model | variant | target | column
+      datasets: list of dataset names
+      fars: mapping dataset -> list of FPIRs
+      metric: metric column to display
+      beta: optional beta selector
+      extra_selectors: optional dict of additional fixed selectors
+    """
+    df = read_csv_or_empty(tcfg.input_path)
+
+    if df.empty:
+        print(f"[warning] grouped metric table {name} has no rows")
+        return
+
+    row_key = str(tcfg.row_key)
+    rows = list(tcfg.rows)
+    datasets = list(tcfg.datasets)
+    fars_by_dataset = to_plain(tcfg.fars)
+    metric = str(tcfg.metric)
+    beta = tcfg.get("beta", None)
+    extra_selectors = to_plain(tcfg.get("extra_selectors", {}))
+
+    if row_key not in df.columns:
+        raise ValueError(f"row_key={row_key!r} is missing in {tcfg.input_path}")
+
+    if metric not in df.columns:
+        raise ValueError(f"metric={metric!r} is missing in {tcfg.input_path}")
+
+    col_keys = []
+    groups = []
+    subheaders = []
+
+    for dataset in datasets:
+        fars = fars_by_dataset[dataset]
+        groups.append((get_pretty(cfg, "dataset", dataset), len(fars)))
+
+        for far in fars:
+            key = f"{dataset}|{far}"
+            col_keys.append(key)
+            subheaders.append(f"${far}$")
+
+    numeric = pd.DataFrame(index=rows, columns=col_keys, dtype=float)
+
+    for row_name in rows:
+        for dataset in datasets:
+            for far in fars_by_dataset[dataset]:
+                selectors = {
+                    row_key: row_name,
+                    "dataset": dataset,
+                    "far": far,
+                    "beta": beta,
+                }
+                selectors.update(extra_selectors)
+
+                selected = select_df(df, selectors)
+                numeric.loc[row_name, f"{dataset}|{far}"] = first_or_mean(
+                    selected, metric
+                )
+
+    direction = str(tcfg.get("direction", get_metric_direction(cfg, metric, "high")))
+    directions = {c: direction for c in numeric.columns}
+
+    display_numeric = format_highlighted_numeric_df(
+        numeric,
+        directions=directions,
+        digits=int(tcfg.get("round_num", cfg.round_num)),
+        exclude_rows=list(tcfg.get("exclude_from_best", [])),
+        highlight=bool(tcfg.get("highlight_best", True)),
+    )
+
+    pretty_category = str(tcfg.get("row_pretty_category", "model"))
+
+    display = display_numeric.copy()
+    first_col_name = str(tcfg.get("first_column_name", "Method"))
+    display.insert(
+        0,
+        first_col_name,
+        [get_pretty(cfg, pretty_category, r) for r in display.index],
+    )
+
+    latex = render_grouped_column_table(
+        display.reset_index(drop=True),
+        groups=groups,
+        subheaders=subheaders,
+        caption=str(tcfg.caption),
+        label=str(tcfg.label),
+        tcfg=tcfg,
+    )
+
+    write_outputs(cfg, name, latex, numeric_df=numeric, display_df=display)
+
+
 BUILDERS = {
     "main_prr": build_main_prr_table,
     "error_type_detection": build_error_type_detection_table,
@@ -1393,6 +1502,7 @@ BUILDERS = {
     "reliability": build_reliability_table,
     "bootstrap": build_bootstrap_table,
     "runtime": build_runtime_table,
+    "grouped_metric": build_grouped_metric_table,
 }
 FIGURE_BUILDERS = {
     "rejection_curve": build_rejection_curve_figure,

@@ -8,7 +8,8 @@ deterministic: true
 exp_dir: outputs/experiments/mprisk_tuning_text_complete
 
 use_two_galleries: False
-recompute_template_pooling: True
+recompute_template_pooling: False
+
 rejection_fractions: [0.0, 0.5, 20]
 
 far_list: [0.1]
@@ -99,11 +100,11 @@ validation_size_ablation:
 
 operating_point_transfer:
   enabled: True
-  train_fars: [0.1]
+  train_fars: [0.1, 0.2, 0.3, 0.4, 0.5]
   eval_fars: [0.1, 0.2, 0.3, 0.4, 0.5]
 
 cross_dataset_transfer:
-  enabled: False
+  enabled: True
   fars: [0.1]
 
 hyperparameter_sensitivity:

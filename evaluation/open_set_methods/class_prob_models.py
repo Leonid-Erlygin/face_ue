@@ -801,6 +801,19 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
         oog_prob: np.ndarray,
         oog_nonspecificity: np.ndarray,
     ) -> dict:
+        """
+        Decision-conditioned MPRisk components.
+
+        Important semantics:
+          - r_FA is active only for accepted probes.
+          - r_ID is active only for accepted probes.
+          - r_FR is active only for rejected probes.
+          - r_NS is active only for rejected probes.
+
+        Therefore P_0 is not interpreted as false-acceptance risk for
+        a rejected sample. It contributes to false-acceptance risk only
+        when the OSR system accepted the probe.
+        """
         mean_probs = np.asarray(mean_probs, dtype=np.float64)
         oog_prob = np.asarray(oog_prob, dtype=np.float64).reshape(-1)
         oog_nonspecificity = np.asarray(oog_nonspecificity, dtype=np.float64).reshape(
@@ -831,21 +844,20 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
         r_fr = np.zeros(n, dtype=np.float64)
         r_ns = np.zeros(n, dtype=np.float64)
 
-        # If accepted as gallery identity i:
-        # false acceptance risk = probability of unknown.
+        # Accepted as gallery identity i:
+        # false acceptance means "actually unknown".
         r_fa[accepted] = oog_prob[accepted]
 
-        # If accepted as gallery identity i:
-        # misidentification risk = probability of another known identity.
+        # Accepted as gallery identity i:
+        # misidentification means "actually another known identity".
         r_id[accepted] = other_known_prob[accepted]
 
-        # If rejected:
-        # false rejection risk = probability of any known identity.
+        # Rejected:
+        # false rejection means "actually known".
         r_fr[rejected] = 1.0 - oog_prob[rejected]
 
-        # Mixed-prior correction:
-        # high only when sample is rejected, unknown probability is high,
-        # but the unknown identity posterior is diffuse.
+        # Rejected:
+        # non-specific reject means "high unknown mass but diffuse unknown explanation".
         r_ns[rejected] = oog_prob[rejected] * oog_nonspecificity[rejected]
 
         components = {
@@ -862,7 +874,6 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
         )
 
         mixed_prior_penalty = r_ns
-
         mprisk = self._score_from_components(components)
 
         components.update(
@@ -874,22 +885,6 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
         )
 
         return components
-
-        # mixed_prior_penalty = r_ns
-
-        # mprisk = ordinary_risk + self.lambda_ns * mixed_prior_penalty
-
-        # return {
-        #     "predicted_id": predicted_id,
-        #     "was_rejected": was_rejected,
-        #     "r_fa": r_fa,
-        #     "r_id": r_id,
-        #     "r_fr": r_fr,
-        #     "r_ns": r_ns,
-        #     "ordinary_risk": ordinary_risk,
-        #     "mixed_prior_penalty": mixed_prior_penalty,
-        #     "mprisk": mprisk,
-        # }
 
     def _store_test_risk_components(self, components: dict) -> None:
         self.predicted_id = components["predicted_id"]

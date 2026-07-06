@@ -9,9 +9,15 @@ paths:
   core_tables: /app/outputs/experiments/mprisk_core_bio_complete/tables
   tuning_tables: /app/outputs/experiments/mprisk_tuning_bio_complete/tables
   diagnostics_tables: /app/outputs/experiments/mprisk_diagnostics_bio_complete/tables
+  fair_tables: /app/outputs/experiments/mprisk_fair_tuning_bio/tables
+
   core_plots: /app/outputs/experiments/mprisk_core_bio_complete/plots
   diagnostics_reliability_bins: /app/outputs/experiments/mprisk_diagnostics_bio_complete/tables/reliability_bins
 
+
+# ---------------------------------------------------------------------
+# Pretty names
+# ---------------------------------------------------------------------
 
 pretty_name:
   dataset:
@@ -30,10 +36,22 @@ pretty_name:
     Margin: "Margin"
     GalUE: "GalUE"
     HolUE: "HolUE"
+
     "MPRisk raw": "MPRisk raw"
     "MPRisk no NS": "MPRisk no $r_{NS}$"
     "MPRisk": "MPRisk"
     "MPRisk cal": "MPRisk cal"
+
+    "MPRisk raw external": "MPRisk raw"
+    "MPRisk tuned external": "MPRisk"
+    "MPRisk tuned no NS external": "MPRisk tuned no $r_{NS}$"
+    "Tuned HolUE KL-linear": "Tuned HolUE KL"
+    "Tuned simple linear": "Tuned simple"
+    "Rejected-SCF": "Rejected-SCF"
+    "Supervised logistic": "Supervised logistic"
+    "Supervised mlp": "Supervised MLP"
+    "Hybrid KL+MPRisk": "Hybrid KL+MPRisk"
+
     Random: "Random"
     Oracle: "Oracle"
 
@@ -44,6 +62,18 @@ pretty_name:
     misidentification: "ID"
 
   variant:
+    "r_FA only": "$r_{FA}$"
+    "r_ID only": "$r_{ID}$"
+    "r_FR only": "$r_{FR}$"
+    "r_NS only": "$r_{NS}$"
+    "r_FA+r_ID": "$r_{FA}+r_{ID}$"
+    "r_FR+r_NS": "$r_{FR}+r_{NS}$"
+    "ordinary no NS": "Ordinary no $r_{NS}$"
+    "full raw": "Full raw"
+    "tuned no NS": "Tuned no $r_{NS}$"
+    "full tuned": "MPRisk"
+    "Rejected-SCF": "Rejected-SCF"
+
     "FA only": "$r_{FA}$"
     "ID only": "$r_{ID}$"
     "FR only": "$r_{FR}$"
@@ -62,6 +92,13 @@ pretty_name:
     r_NS: "$r_{NS}$"
     unknown_nonspecificity: "$\\mathcal{N}_0$"
 
+    mean_analytic_M0: "Mean, analytic $\\mathcal{N}_0$"
+    mc_M8_analytic: "MC $M=8$, analytic"
+    mc_M16_analytic: "MC $M=16$, analytic"
+    mc_M32_analytic: "MC $M=32$, analytic"
+    mc_M16_weighted_n0: "MC $M=16$, weighted $\\mathcal{N}_0$"
+    mc_M32_weighted_n0: "MC $M=32$, weighted $\\mathcal{N}_0$"
+
     T_7: "$T=7$"
     T_10: "$T=10$"
     T_20: "$T=20$"
@@ -70,8 +107,6 @@ pretty_name:
     kappa_input_0.5: "$s_{\\kappa}=0.5$"
     kappa_input_1: "$s_{\\kappa}=1$"
     kappa_input_2: "$s_{\\kappa}=2$"
-    weighted_mc_M10: "Weighted MC, $M=10$"
-    weighted_mc_M50: "Weighted MC, $M=50$"
 
   column:
     prr_f1: "PRR $F_1$"
@@ -89,10 +124,20 @@ pretty_name:
     false_reject_auroc: "FR AUROC"
     misidentification_auroc: "ID AUROC"
 
+    test_error_auroc: "Error AUROC"
+    test_error_auprc: "Error AUPRC"
+    test_fr_auroc: "FR AUROC"
+    test_fa_auroc: "FA AUROC"
+    test_id_auroc: "ID AUROC"
+
     spearman: "Spearman"
+    abs_spearman: "$|\\rho|$"
     rank_inversion_rate: "Inv. rate"
     kl_error_auroc: "KL AUROC"
     kl_error_auprc: "KL AUPRC"
+
+    score_spearman_vs_base: "Score corr."
+    rns_spearman_vs_base: "$r_{NS}$ corr."
 
     ece: "ECE"
     brier: "Brier"
@@ -106,6 +151,10 @@ pretty_name:
     lambda_fr: "$\\lambda_{FR}$"
     lambda_ns: "$\\lambda_{NS}$"
 
+
+# ---------------------------------------------------------------------
+# Metric directions
+# ---------------------------------------------------------------------
 
 metric_order:
   prr_f1: high
@@ -122,11 +171,20 @@ metric_order:
   false_accept_auroc: high
   false_reject_auroc: high
   misidentification_auroc: high
+  test_error_auroc: high
+  test_error_auprc: high
+  test_fr_auroc: high
+  test_fa_auroc: high
+  test_id_auroc: high
 
   spearman: high
+  abs_spearman: low
   rank_inversion_rate: low
   kl_error_auroc: high
   kl_error_auprc: high
+
+  score_spearman_vs_base: high
+  rns_spearman_vs_base: high
 
   ece: low
   brier: low
@@ -136,16 +194,25 @@ metric_order:
   elapsed_sec_total: low
 
 
+# ---------------------------------------------------------------------
+# Tables
+# ---------------------------------------------------------------------
+
 tables:
+
+  # -------------------------------------------------------------------
+  # Main PRR table
+  # -------------------------------------------------------------------
 
   main_prr_bio:
     enabled: True
     type: main_prr
+
     input_path: ${paths.core_tables}/main_mprisk_core_comparison.csv
 
     caption: >
       Prediction Rejection Ratios (PRR, $\uparrow$) for $F_1$ filtering
-      on image, wildlife, and audio open-set recognition benchmarks.
+      on image, Whale, and audio open-set recognition benchmarks.
 
     label: "tab:mprisk_main_prr_bio"
 
@@ -186,6 +253,438 @@ tables:
       large_12k-perspk5: [0.01, 0.05, 0.1]
 
 
+  # -------------------------------------------------------------------
+  # Fair tuning comparison: does MPRisk beat equally tuned baselines?
+  # -------------------------------------------------------------------
+
+  fair_tuning_bio:
+    enabled: True
+    type: grouped_metric
+
+    input_path: ${paths.fair_tables}/fair_tuning_comparison.csv
+
+    caption: >
+      Fair validation-tuning comparison on image, Whale, and audio benchmarks.
+      All rows are tuned on the same validation objective when applicable.
+
+    label: "tab:fair_tuning_bio"
+
+    placement: t
+    table_size: scriptsize
+    tabcolsep: 2
+    use_adjustbox: True
+    adjustbox_width: '\textwidth'
+    round_num: 2
+    highlight_best: True
+
+    row_key: method
+    row_pretty_category: model
+    first_column_name: "Method"
+    metric: test_prr_f1
+    direction: high
+    beta: 0.5
+
+    rows:
+      - "MPRisk raw external"
+      - "MPRisk tuned no NS external"
+      - "MPRisk tuned external"
+      - "Tuned HolUE KL-linear"
+      - "Tuned simple linear"
+      - "Rejected-SCF"
+      - "Supervised logistic"
+      - "Supervised mlp"
+      - "Hybrid KL+MPRisk"
+
+    datasets:
+      - IJBC
+      - IJBB
+      - whale
+      - large_12k-perspk5
+
+    fars:
+      IJBC: [0.05, 0.1, 0.2]
+      IJBB: [0.05, 0.1, 0.2]
+      whale: [0.05, 0.1, 0.2]
+      large_12k-perspk5: [0.01, 0.05, 0.1]
+
+
+  # -------------------------------------------------------------------
+  # Full component ablation across datasets and FPIRs
+  # -------------------------------------------------------------------
+
+  full_component_ablation_bio:
+    enabled: True
+    type: grouped_metric
+
+    input_path: ${paths.fair_tables}/full_component_ablation.csv
+
+    caption: >
+      Full MPRisk component ablation on image, Whale, and audio benchmarks.
+      PRR for $F_1$ filtering is reported.
+
+    label: "tab:full_component_ablation_bio"
+
+    placement: t
+    table_size: scriptsize
+    tabcolsep: 2
+    use_adjustbox: True
+    adjustbox_width: '\textwidth'
+    round_num: 2
+    highlight_best: True
+
+    row_key: variant
+    row_pretty_category: variant
+    first_column_name: "Variant"
+    metric: test_prr_f1
+    direction: high
+    beta: 0.5
+
+    rows:
+      - "r_FA only"
+      - "r_ID only"
+      - "r_FR only"
+      - "r_NS only"
+      - "r_FA+r_ID"
+      - "r_FR+r_NS"
+      - "ordinary no NS"
+      - "full raw"
+      - "tuned no NS"
+      - "full tuned"
+      - "Rejected-SCF"
+
+    datasets:
+      - IJBC
+      - IJBB
+      - whale
+      - large_12k-perspk5
+
+    fars:
+      IJBC: [0.05, 0.1, 0.2]
+      IJBB: [0.05, 0.1, 0.2]
+      whale: [0.05, 0.1, 0.2]
+      large_12k-perspk5: [0.01, 0.05, 0.1]
+
+
+  # -------------------------------------------------------------------
+  # Error-type detection
+  # -------------------------------------------------------------------
+
+  error_type_detection_ijbc:
+    enabled: True
+    type: error_type_detection
+
+    input_path: ${paths.core_tables}/error_type_detection.csv
+
+    caption: >
+      Error-type detection quality on IJB-C at FPIR $0.05$.
+      AUROC is reported for detecting any OSR error, false acceptance,
+      false rejection, and misidentification.
+
+    label: "tab:error_type_detection_ijbc"
+
+    placement: t
+    table_size: footnotesize
+    tabcolsep: 4
+    use_adjustbox: False
+    round_num: 2
+    highlight_best: True
+
+    dataset: IJBC
+    far: 0.05
+    beta: 0.5
+    metric: auroc
+
+    exclude_from_best:
+      - Random
+      - Oracle
+
+    methods:
+      - SCF
+      - AccScr
+      - MSP
+      - GalUE
+      - HolUE
+      - "MPRisk raw"
+      - "MPRisk"
+      - "MPRisk cal"
+
+    targets:
+      - any_error
+      - false_accept
+      - false_reject
+      - misidentification
+
+
+  error_type_detection_whale:
+    enabled: True
+    type: error_type_detection
+
+    input_path: ${paths.core_tables}/error_type_detection.csv
+
+    caption: >
+      Error-type detection quality on Whale at FPIR $0.1$.
+      AUROC is reported for detecting any OSR error, false acceptance,
+      false rejection, and misidentification.
+
+    label: "tab:error_type_detection_whale"
+
+    placement: t
+    table_size: footnotesize
+    tabcolsep: 4
+    use_adjustbox: False
+    round_num: 2
+    highlight_best: True
+
+    dataset: whale
+    far: 0.1
+    beta: 0.5
+    metric: auroc
+
+    exclude_from_best:
+      - Random
+      - Oracle
+
+    methods:
+      - SCF
+      - AccScr
+      - MSP
+      - GalUE
+      - HolUE
+      - "MPRisk raw"
+      - "MPRisk"
+      - "MPRisk cal"
+
+    targets:
+      - any_error
+      - false_accept
+      - false_reject
+      - misidentification
+
+
+  # -------------------------------------------------------------------
+  # Mixed-prior necessity
+  # -------------------------------------------------------------------
+
+  mixed_prior_necessity_bio:
+    enabled: True
+    type: grouped_metric
+
+    input_path: ${paths.diagnostics_tables}/mixed_prior_necessity.csv
+
+    caption: >
+      Mixed-prior necessity ablation. PRR for $F_1$ filtering is reported.
+
+    label: "tab:mixed_prior_necessity_bio"
+
+    placement: t
+    table_size: scriptsize
+    tabcolsep: 2
+    use_adjustbox: True
+    adjustbox_width: '\textwidth'
+    round_num: 2
+    highlight_best: True
+
+    row_key: variant
+    row_pretty_category: variant
+    first_column_name: "Variant"
+    metric: prr_f1
+    direction: high
+    beta: 0.5
+
+    extra_selectors:
+      source_method: "MPRisk"
+
+    rows:
+      - collapsed_unknown_risk
+      - ordinary_risk_no_NS
+      - equal_full_risk
+      - r_NS
+      - unknown_nonspecificity
+      - MPRisk_current
+
+    datasets:
+      - IJBC
+      - whale
+
+    fars:
+      IJBC: [0.05, 0.1, 0.2]
+      whale: [0.05, 0.1, 0.2]
+
+
+  # -------------------------------------------------------------------
+  # Reliability
+  # -------------------------------------------------------------------
+
+  reliability_bio:
+    enabled: True
+    type: grouped_metric
+
+    input_path: ${paths.diagnostics_tables}/reliability_metrics.csv
+
+    caption: >
+      Calibration quality on image and Whale benchmarks.
+      ECE is reported; lower is better.
+
+    label: "tab:reliability_bio"
+
+    placement: t
+    table_size: footnotesize
+    tabcolsep: 3
+    use_adjustbox: True
+    adjustbox_width: '\textwidth'
+    round_num: 3
+    highlight_best: True
+
+    row_key: method
+    row_pretty_category: model
+    first_column_name: "Method"
+    metric: ece
+    direction: low
+    beta: 0.5
+
+    rows:
+      - HolUE
+      - "MPRisk cal"
+
+    datasets:
+      - IJBC
+      - whale
+      - large_12k-perspk5
+
+    fars:
+      IJBC: [0.05]
+      whale: [0.1]
+      large_12k-perspk5: [0.05]
+
+
+  # -------------------------------------------------------------------
+  # Bootstrap
+  # -------------------------------------------------------------------
+
+  bootstrap_bio:
+    enabled: True
+    type: bootstrap
+
+    input_path: ${paths.diagnostics_tables}/bootstrap_prr_differences.csv
+
+    caption: >
+      Paired bootstrap confidence intervals for PRR differences on image,
+      Whale, and audio benchmarks.
+
+    label: "tab:bootstrap_bio"
+
+    placement: t
+    table_size: footnotesize
+    tabcolsep: 3
+    use_adjustbox: True
+    adjustbox_width: '\textwidth'
+    round_num: 2
+
+    selectors: {}
+
+
+  # -------------------------------------------------------------------
+  # Runtime
+  # -------------------------------------------------------------------
+
+  runtime_bio:
+    enabled: True
+    type: grouped_metric
+
+    input_path: ${paths.diagnostics_tables}/runtime_overhead.csv
+
+    caption: >
+      Runtime overhead on image, Whale, and audio benchmarks.
+      Online time in milliseconds per probe is reported.
+
+    label: "tab:runtime_bio"
+
+    placement: t
+    table_size: footnotesize
+    tabcolsep: 3
+    use_adjustbox: True
+    adjustbox_width: '\textwidth'
+    round_num: 2
+    highlight_best: False
+
+    row_key: method
+    row_pretty_category: model
+    first_column_name: "Method"
+    metric: elapsed_ms_per_probe
+    direction: low
+    beta: 0.5
+
+    rows:
+      - HolUE
+      - "MPRisk raw"
+      - "MPRisk"
+      - "MPRisk cal"
+
+    datasets:
+      - IJBC
+      - whale
+      - large_12k-perspk5
+
+    fars:
+      IJBC: [0.05]
+      whale: [0.1]
+      large_12k-perspk5: [0.05]
+
+
+  # -------------------------------------------------------------------
+  # Approximation checks
+  # -------------------------------------------------------------------
+
+  approximation_check_bio:
+    enabled: True
+    type: grouped_metric
+
+    input_path: ${paths.fair_tables}/approximation_check.csv
+
+    caption: >
+      Mean-embedding and Monte Carlo approximation check.
+      PRR for $F_1$ filtering is reported.
+
+    label: "tab:approximation_check_bio"
+
+    placement: t
+    table_size: scriptsize
+    tabcolsep: 2
+    use_adjustbox: True
+    adjustbox_width: '\textwidth'
+    round_num: 2
+    highlight_best: True
+
+    row_key: variant
+    row_pretty_category: variant
+    first_column_name: "Approximation"
+    metric: test_prr_f1
+    direction: high
+    beta: 0.5
+
+    rows:
+      - mean_analytic_M0
+      - mc_M8_analytic
+      - mc_M16_analytic
+      - mc_M32_analytic
+      - mc_M16_weighted_n0
+      - mc_M32_weighted_n0
+
+    datasets:
+      - IJBC
+      - whale
+      - large_12k-perspk5
+
+    fars:
+      IJBC: [0.05]
+      whale: [0.1]
+      large_12k-perspk5: [0.05]
+
+
+# ---------------------------------------------------------------------
+# Figures
+# ---------------------------------------------------------------------
+
 figures:
 
   rejection_ijbc_005:
@@ -209,28 +708,6 @@ figures:
     legend_fontsize: 8
     prr_in_legend: True
     title: "IJB-C, FPIR=0.05"
-
-  rejection_ijbb_005:
-    enabled: True
-    type: rejection_curve
-    input_path: ${paths.core_plots}/rejection_curves/IJBB/far_0.05_beta_0.5/all_rejection_curves.csv
-    dataset: IJBB
-    far: 0.05
-    beta: 0.5
-    metrics: [f1_class, fpir, fnir]
-    methods:
-      - Random
-      - Oracle
-      - SCF
-      - AccScr
-      - GalUE
-      - HolUE
-      - MPRisk raw
-      - MPRisk
-    figsize: [6.4, 4.8]
-    legend_fontsize: 8
-    prr_in_legend: True
-    title: "IJB-B, FPIR=0.05"
 
   rejection_whale_01:
     enabled: True
@@ -275,3 +752,27 @@ figures:
     legend_fontsize: 8
     prr_in_legend: True
     title: "VoxBlink, FPIR=0.05"
+
+  calibration_ijbc:
+    enabled: True
+    type: calibration_diagram
+    input_dir: ${paths.diagnostics_reliability_bins}
+    dataset: IJBC
+    far: 0.05
+    beta: 0.5
+    methods:
+      - HolUE
+      - MPRisk cal
+    figsize: [5.2, 5.2]
+
+  calibration_whale:
+    enabled: True
+    type: calibration_diagram
+    input_dir: ${paths.diagnostics_reliability_bins}
+    dataset: whale
+    far: 0.1
+    beta: 0.5
+    methods:
+      - HolUE
+      - MPRisk cal
+    figsize: [5.2, 5.2]

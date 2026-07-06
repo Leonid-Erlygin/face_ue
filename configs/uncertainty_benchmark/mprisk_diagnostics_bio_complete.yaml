@@ -8,7 +8,7 @@ deterministic: true
 exp_dir: outputs/experiments/mprisk_diagnostics_bio_complete
 
 use_two_galleries: False
-recompute_template_pooling: True
+recompute_template_pooling: False
 
 rejection_fractions: [0.0, 0.5, 20]
 

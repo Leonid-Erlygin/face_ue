@@ -4,15 +4,14 @@ hydra:
 
 seed: 777
 deterministic: true
-
 exp_dir: outputs/experiments/mprisk_tuning_bio_complete
 
 use_two_galleries: False
-recompute_template_pooling: True
+recompute_template_pooling: False
 rejection_fractions: [0.0, 0.5, 20]
 
 # Representative value for validation-size ablation.
-far_list: [0.05]
+far_list: [0.1]
 beta_list: [0.5]
 
 lambda_search:
@@ -99,12 +98,12 @@ validation_size_ablation:
 
 operating_point_transfer:
   enabled: True
-  train_fars: [0.05]
+  train_fars: [0.01, 0.05, 0.1, 0.2]
   eval_fars: [0.01, 0.05, 0.1, 0.2]
 
 cross_dataset_transfer:
-  enabled: False
-  fars: [0.05]
+  enabled: True
+  fars: [0.1]
 
 hyperparameter_sensitivity:
   enabled: True

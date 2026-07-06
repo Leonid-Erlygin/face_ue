@@ -1,0 +1,82 @@
+hydra:
+  run:
+    dir: ${exp_dir}
+
+seed: 777
+deterministic: true
+
+exp_dir: outputs/experiments/mprisk_fair_tuning_text
+
+core_config_path: /app/configs/uncertainty_benchmark/mprisk_core_text_complete.yaml
+
+rejection_fractions: [0.0, 0.5, 20]
+
+datasets:
+  - yahoo
+  - agnews
+  - dbpedia
+  - clinc150
+  - pan_test
+
+far_list: [0.1, 0.2, 0.3, 0.4, 0.5]
+beta_list: [0.5]
+
+mprisk_method_name: "MPRisk raw"
+
+simple_methods:
+  - SCF
+  - AccScr
+  - MSP
+  - Margin
+  - GalUE
+
+lambda_search:
+  num_random: 4096
+  log_low: -10.0
+  log_high: 10.0
+
+linear_search:
+  num_random: 4096
+  log_low: -10.0
+  log_high: 10.0
+
+lambda_stability:
+  enabled: True
+  fars: [0.1]
+  validation_fractions: [0.01, 0.05, 0.10, 0.25, 0.50, 1.0]
+  repeats: 5
+  min_subset_size: 100
+
+approximation_check:
+  enabled: True
+  fars: [0.1]
+  variants:
+    - name: "mean_analytic_M0"
+      recognition_method:
+        M: 0
+        nonspecificity_mode: analytic_vmf
+
+    - name: "mc_M8_analytic"
+      recognition_method:
+        M: 8
+        nonspecificity_mode: analytic_vmf
+
+    - name: "mc_M16_analytic"
+      recognition_method:
+        M: 16
+        nonspecificity_mode: analytic_vmf
+
+    - name: "mc_M32_analytic"
+      recognition_method:
+        M: 32
+        nonspecificity_mode: analytic_vmf
+
+    - name: "mc_M16_weighted_n0"
+      recognition_method:
+        M: 16
+        nonspecificity_mode: weighted_mc
+
+    - name: "mc_M32_weighted_n0"
+      recognition_method:
+        M: 32
+        nonspecificity_mode: weighted_mc

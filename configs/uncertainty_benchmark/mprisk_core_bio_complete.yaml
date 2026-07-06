@@ -90,7 +90,6 @@ beta_list: [0.5]
 # Superset. Tables will select the relevant operating points.
 # For face/whale use [0.05,0.1,0.2]; for VoxBlink use [0.01,0.05,0.1].
 far_list: [0.01, 0.05, 0.1, 0.2]
-
 open_set_identification_methods:
 
   # ------------------------------------------------------------------
