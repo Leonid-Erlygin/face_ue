@@ -56,34 +56,56 @@ lambda_stability:
 
 approximation_check:
   enabled: True
-  fars: [0.05]
+
+  # Run approximation check only at representative operating point.
+  fars: [0.1]
+
+  # Conservative batching for MC posterior computation.
+  prob_batch_size: 32
+  max_prob_elements: 2000000
+
+  # Set to 16 for quick run, 32 for final if memory/time allows.
+  max_M: 32
+
   variants:
     - name: "mean_analytic_M0"
       recognition_method:
         M: 0
         nonspecificity_mode: analytic_vmf
+        prob_batch_size: 256
+        max_prob_elements: 8000000
 
     - name: "mc_M8_analytic"
       recognition_method:
         M: 8
         nonspecificity_mode: analytic_vmf
+        prob_batch_size: 64
+        max_prob_elements: 2000000
 
     - name: "mc_M16_analytic"
       recognition_method:
         M: 16
         nonspecificity_mode: analytic_vmf
+        prob_batch_size: 32
+        max_prob_elements: 2000000
 
     - name: "mc_M32_analytic"
       recognition_method:
         M: 32
         nonspecificity_mode: analytic_vmf
+        prob_batch_size: 16
+        max_prob_elements: 1000000
 
     - name: "mc_M16_weighted_n0"
       recognition_method:
         M: 16
         nonspecificity_mode: weighted_mc
+        prob_batch_size: 32
+        max_prob_elements: 2000000
 
     - name: "mc_M32_weighted_n0"
       recognition_method:
         M: 32
         nonspecificity_mode: weighted_mc
+        prob_batch_size: 16
+        max_prob_elements: 1000000

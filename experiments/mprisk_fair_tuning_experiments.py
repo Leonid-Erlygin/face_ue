@@ -15,6 +15,50 @@ from omegaconf import OmegaConf
 
 from evaluation.reproducibility import seed_everything
 
+import gc
+from contextlib import nullcontext
+
+try:
+    import torch
+except Exception:
+    torch = None
+
+
+def torch_inference_context():
+    if torch is None:
+        return nullcontext()
+    return torch.inference_mode()
+
+
+def cuda_cleanup(tag: str = ""):
+    gc.collect()
+    if torch is not None and torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        try:
+            torch.cuda.ipc_collect()
+        except Exception:
+            pass
+
+        # Optional debug print:
+        # allocated = torch.cuda.memory_allocated() / 2**30
+        # reserved = torch.cuda.memory_reserved() / 2**30
+        # print(f"[cuda-cleanup] {tag}: allocated={allocated:.2f} GiB reserved={reserved:.2f} GiB")
+
+
+def as_numpy_copy(x):
+    if torch is not None and torch.is_tensor(x):
+        return x.detach().cpu().numpy().copy()
+    return np.asarray(x).copy()
+
+
+def run_base_mprisk_safe(*args, **kwargs):
+    cuda_cleanup("before run_base_mprisk")
+    try:
+        with torch_inference_context():
+            return run_base_mprisk(*args, **kwargs)
+    finally:
+        cuda_cleanup("after run_base_mprisk")
+
 
 def _first_dim(x) -> int:
     return int(np.asarray(x).shape[0])
@@ -202,29 +246,6 @@ def ensure_calibration_dataset_for_mprisk(
         recognition_method.calibration_embs_name = "scf"
 
 
-def ensure_calibration_dataset_for_mprisk(
-    core_cfg, recognition_method, dataset_name: str
-):
-    """
-    External fair-tuning needs validation components for MPRisk. If the method
-    is instantiated from a config where calibration_set=True or None, this
-    function attaches the instantiated validation dataset.
-    """
-    if (
-        not hasattr(recognition_method, "calibration_set")
-        or recognition_method.calibration_set is None
-        or recognition_method.calibration_set is True
-    ):
-        calib_set_cfg = getattr(core_cfg.dataset_name_to_calibration_set, dataset_name)
-        recognition_method.calibration_set = instantiate(calib_set_cfg)
-
-    if (
-        not hasattr(recognition_method, "calibration_embs_name")
-        or recognition_method.calibration_embs_name is None
-    ):
-        recognition_method.calibration_embs_name = "scf"
-
-
 from experiments.mprisk_core_experiments import (
     build_tester,
     compute_osr_error_masks,
@@ -324,29 +345,6 @@ def disable_internal_supervision(method_cfg):
 # ---------------------------------------------------------------------
 # Generic scoring utilities
 # ---------------------------------------------------------------------
-def ensure_calibration_dataset_for_mprisk(
-    core_cfg, recognition_method, dataset_name: str
-):
-    """
-    External fair-tuning experiments need calibration-set components even if
-    the base method is MPRisk raw and does not use internal calibration.
-
-    This helper guarantees that recognition_method.calibration_set is an
-    instantiated dataset.
-    """
-    if (
-        not hasattr(recognition_method, "calibration_set")
-        or recognition_method.calibration_set is None
-        or recognition_method.calibration_set is True
-    ):
-        calib_set_cfg = getattr(core_cfg.dataset_name_to_calibration_set, dataset_name)
-        recognition_method.calibration_set = instantiate(calib_set_cfg)
-
-    if (
-        not hasattr(recognition_method, "calibration_embs_name")
-        or recognition_method.calibration_embs_name is None
-    ):
-        recognition_method.calibration_embs_name = "scf"
 
 
 def make_fraction_grid(spec) -> np.ndarray:
@@ -631,7 +629,15 @@ def run_plain_method(
         pretty_name=str(method_cfg.pretty_name),
     )
 
-    return run_method_raw(tt, gallery_name="g1")
+    try:
+        with torch_inference_context():
+            result = run_method_raw(tt, gallery_name="g1")
+        return result
+    finally:
+        del tt
+        del rm
+        del dataset
+        cuda_cleanup(f"after plain method {method_name}")
 
 
 def build_simple_feature_matrix(
@@ -807,7 +813,7 @@ def run_one_dataset_far(
     mprisk_method_cfg = get_method_cfg(core_cfg, cfg.mprisk_method_name)
 
     print(f"[MPRisk base] dataset={dataset_name}, far={far}, beta={beta}")
-    entry = run_base_mprisk(
+    entry = run_base_mprisk_safe(
         cfg=core_cfg,
         method_cfg=mprisk_method_cfg,
         test_dataset=instantiate(dataset_cfg),
@@ -821,18 +827,6 @@ def run_one_dataset_far(
         dataset_name=dataset_name,
     )
 
-    ensure_calibration_dataset_for_mprisk(
-        core_cfg=core_cfg,
-        recognition_method=entry["recognition_method"],
-        dataset_name=dataset_name,
-    )
-
-    ensure_calibration_dataset_for_mprisk(
-        core_cfg=core_cfg,
-        recognition_method=entry["recognition_method"],
-        dataset_name=dataset_name,
-    )
-
     calib = compute_mprisk_calibration_components(entry["recognition_method"])
     result_test = entry["result"]
     comps_test = entry["test_components"]
@@ -840,6 +834,27 @@ def run_one_dataset_far(
 
     g_ids_val = calib["g_unique_ids_calib"]
     probe_ids_val = calib["probe_unique_ids_calib"]
+
+    # Extract posterior/KL features while recognition_method is still alive.
+    X_post_val, X_post_test, post_names = posterior_feature_matrix_from_mprisk(
+        entry,
+        calib,
+    )
+
+    # Now the GPU-heavy recognition_method is no longer needed.
+    entry["recognition_method"] = None
+
+    # These calibration arrays are already copied into X_post_val, so remove them
+    # if present.
+    for k in [
+        "kl_1_calib",
+        "kl_2_calib",
+        "oog_prob_calib",
+        "oog_nonspecificity_calib",
+    ]:
+        calib.pop(k, None)
+
+    cuda_cleanup("after extracting MPRisk posterior features")
 
     masks_val = compute_osr_error_masks(
         predicted_id=comps_val["predicted_id"],
@@ -984,10 +999,6 @@ def run_one_dataset_far(
     # Posterior / KL / MPRisk features
     # --------------------------------------------------------------
 
-    X_post_val, X_post_test, post_names = posterior_feature_matrix_from_mprisk(
-        entry,
-        calib,
-    )
     # ------------------------------------------------------------------
     # Align all validation/test feature blocks and MPRisk components.
     # This prevents one-template mismatches from causing broadcast errors.
@@ -1272,15 +1283,31 @@ def run_one_dataset_far(
         rej_scf_test=rej_scf_test if "SCF" in simple_names else None,
     )
 
+    base_score_for_approx = as_numpy_copy(component_score(comps_test, np.ones(4)))
+    base_rns_for_approx = as_numpy_copy(comps_test["r_ns"])
+
+    calib_for_stability = {
+        "calib_components": {k: as_numpy_copy(v) for k, v in comps_val.items()},
+        "g_unique_ids_calib": as_numpy_copy(g_ids_val),
+        "probe_unique_ids_calib": as_numpy_copy(probe_ids_val),
+    }
+
+    # Drop large references before returning.
+    entry = None
+    calib = None
+    simple_test_results = None
+    simple_val_results = None
+
+    cuda_cleanup("leaving run_one_dataset_far")
+
     return (
         rows,
         weight_rows,
         component_rows,
         {
-            "entry": entry,
-            "calib": calib,
-            "simple_test": simple_test_results,
-            "simple_val": simple_val_results,
+            "calib": calib_for_stability,
+            "base_score": base_score_for_approx,
+            "base_rns": base_rns_for_approx,
         },
     )
 
@@ -1424,7 +1451,6 @@ def run_approximation_variants(
     beta,
     base_score,
     base_rns,
-    result_test,
     fractions,
 ):
     if not bool(cfg.approximation_check.enabled):
@@ -1441,39 +1467,74 @@ def run_approximation_variants(
     for variant in cfg.approximation_check.variants:
         overrides = cfg_to_container(variant.get("recognition_method", {}))
         method_cfg = apply_overrides(base_method_cfg, overrides)
+        # Approximation variants with MC samples are memory-heavy.
+        # Force conservative posterior batching unless explicitly specified.
+        if "prob_batch_size" not in overrides:
+            set_method_override(
+                method_cfg,
+                "prob_batch_size",
+                int(cfg.approximation_check.get("prob_batch_size", 32)),
+            )
 
-        entry = run_base_mprisk(
-            cfg=core_cfg,
-            method_cfg=method_cfg,
-            test_dataset=instantiate(dataset_cfg),
-            far=far,
-            beta=beta,
-            method_name_suffix=f"approx_{variant.name}",
-        )
+        if "max_prob_elements" not in overrides:
+            set_method_override(
+                method_cfg,
+                "max_prob_elements",
+                int(cfg.approximation_check.get("max_prob_elements", 2_000_000)),
+            )
+        max_m = cfg.approximation_check.get("max_M", None)
+        if max_m is not None:
+            m_val = overrides.get("M", 0)
+            if int(m_val) > int(max_m):
+                print(
+                    f"[approximation] skip {variant.name}: "
+                    f"M={m_val} > max_M={max_m}"
+                )
+                continue
+        entry = None
+        test_dataset = None
 
-        comps = entry["test_components"]
-        score = component_score(comps, np.ones(4))
-        rns = comps["r_ns"]
+        try:
+            cuda_cleanup(f"before approximation variant {variant.name}")
 
-        eval_test = eval_uncertainty_score(
-            score,
-            entry["result"],
-            fractions,
-            seed=int(cfg.seed),
-        )
+            test_dataset = instantiate(dataset_cfg)
 
-        rows.append(
-            {
-                "dataset": dataset_name,
-                "far": far,
-                "beta": beta,
-                "variant": str(variant.name),
-                "score_spearman_vs_base": safe_spearman(base_score, score),
-                "rns_spearman_vs_base": safe_spearman(base_rns, rns),
-                **eval_test,
-            }
-        )
+            entry = run_base_mprisk_safe(
+                cfg=core_cfg,
+                method_cfg=method_cfg,
+                test_dataset=test_dataset,
+                far=far,
+                beta=beta,
+                method_name_suffix=f"approx_{variant.name}",
+            )
 
+            comps = entry["test_components"]
+            score = as_numpy_copy(component_score(comps, np.ones(4)))
+            rns = as_numpy_copy(comps["r_ns"])
+
+            eval_test = eval_uncertainty_score(
+                score,
+                entry["result"],
+                fractions,
+                seed=int(cfg.seed),
+            )
+
+            rows.append(
+                {
+                    "dataset": dataset_name,
+                    "far": far,
+                    "beta": beta,
+                    "variant": str(variant.name),
+                    "score_spearman_vs_base": safe_spearman(base_score, score),
+                    "rns_spearman_vs_base": safe_spearman(base_rns, rns),
+                    **eval_test,
+                }
+            )
+
+        finally:
+            entry = None
+            test_dataset = None
+            cuda_cleanup(f"after approximation variant {variant.name}")
     return rows
 
 
@@ -1490,6 +1551,9 @@ def run_approximation_variants(
     version_base="1.2",
 )
 def main(cfg):
+    if torch is not None:
+        torch.set_grad_enabled(False)
+
     seed_everything(
         seed=int(cfg.seed),
         deterministic=bool(cfg.get("deterministic", True)),
@@ -1503,8 +1567,6 @@ def main(cfg):
         path=str(cfg.core_config_path),
         exp_dir=str(exp_dir),
     )
-    if "recompute_template_pooling" in cfg:
-        core_cfg.recompute_template_pooling = bool(cfg.recompute_template_pooling)
     if "recompute_template_pooling" in cfg:
         core_cfg.recompute_template_pooling = bool(cfg.recompute_template_pooling)
     fractions = make_fraction_grid(cfg.rejection_fractions)
@@ -1544,11 +1606,12 @@ def main(cfg):
                 )
                 all_lambda_stability.extend(stability_rows)
 
-                base_score = component_score(
-                    cache["entry"]["test_components"],
-                    np.ones(4),
-                )
-                base_rns = cache["entry"]["test_components"]["r_ns"]
+                # Approximation variants do not need calibration.
+                cache.pop("calib", None)
+                cuda_cleanup("before approximation variants")
+
+                base_score = cache["base_score"]
+                base_rns = cache["base_rns"]
 
                 approx_rows = run_approximation_variants(
                     cfg=cfg,
@@ -1558,7 +1621,6 @@ def main(cfg):
                     beta=float(beta),
                     base_score=base_score,
                     base_rns=base_rns,
-                    result_test=cache["entry"]["result"],
                     fractions=fractions,
                 )
                 all_approx.extend(approx_rows)

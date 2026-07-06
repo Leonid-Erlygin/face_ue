@@ -108,6 +108,8 @@ class MonteCarloPredictiveProb:
         alpha: float = 0.5,
         log_dir: str = None,
         predictor=None,
+        prob_batch_size: int = None,
+        max_prob_elements: int = 8_000_000,
     ) -> None:
         """
         params:
@@ -117,6 +119,8 @@ class MonteCarloPredictiveProb:
         emb_unc_model -- form of p(z|x)
         """
         self.M = M
+        self.prob_batch_size = prob_batch_size
+        self.max_prob_elements = int(max_prob_elements)
         if not (0.0 < beta < 1.0):
             raise ValueError(f"beta must be in (0, 1), got {beta}")
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -434,6 +438,7 @@ class MonteCarloPredictiveProb:
         gallery_kappas,
         T,
         return_mprisk_aux: bool = False,
+        _disable_batching: bool = False,
     ) -> Any:
         """
         Stable log-space computation of:
@@ -441,6 +446,56 @@ class MonteCarloPredictiveProb:
 
         Works for M=0 deterministic HolUE and for MC samples.
         """
+        # --------------------------------------------------------------
+        # Batched posterior computation.
+        #
+        # The full tensor has shape roughly:
+        #   num_probes x num_embedding_samples x num_gallery_classes.
+        # For MC approximation this can easily require many GiB.
+        # We therefore split probes into chunks and concatenate outputs.
+        # --------------------------------------------------------------
+        mean_len = int(np.asarray(mean).shape[0])
+
+        if torch.is_tensor(gallery_means):
+            K_auto = int(gallery_means.shape[0])
+        else:
+            K_auto = int(np.asarray(gallery_means).shape[0])
+
+        M_eff = int(self.M) if int(self.M) > 0 else 1
+
+        batch_size = getattr(self, "prob_batch_size", None)
+
+        if batch_size is None:
+            max_elements = int(getattr(self, "max_prob_elements", 8_000_000))
+            denom = max(1, M_eff * max(1, K_auto))
+            batch_size = max(1, int(max_elements // denom))
+            batch_size = min(batch_size, 2048)
+
+        batch_size = int(batch_size)
+
+        if not _disable_batching and batch_size > 0 and mean_len > batch_size:
+            outs = []
+
+            for start in range(0, mean_len, batch_size):
+                end = min(start + batch_size, mean_len)
+
+                sub_out = self.compute_mean_probs_and_kl(
+                    mean[start:end],
+                    kappa[start:end],
+                    gallery_means,
+                    gallery_kappas,
+                    T,
+                    return_mprisk_aux=return_mprisk_aux,
+                    _disable_batching=True,
+                )
+                outs.append(sub_out)
+
+            num_outputs = len(outs[0])
+            merged = []
+            for j in range(num_outputs):
+                merged.append(torch.cat([out[j] for out in outs], dim=0))
+
+            return tuple(merged)
         dtype = torch.float64
         device = self.device
 
@@ -702,6 +757,8 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
         lambda_tune_fraction_num: int = 20,
         lambda_tune_seed: int = 777,
         calibration_feature_mode: str = "scalar",
+        prob_batch_size: int = None,
+        max_prob_elements: int = 8_000_000,
     ) -> None:
         if train_predict_T:
             raise NotImplementedError(
@@ -734,6 +791,8 @@ class MPRiskPredictiveProb(MonteCarloPredictiveProb):
             alpha=alpha,
             log_dir=log_dir,
             predictor=predictor,
+            prob_batch_size=prob_batch_size,
+            max_prob_elements=max_prob_elements,
         )
 
         self.lambda_fa = float(lambda_fa)
