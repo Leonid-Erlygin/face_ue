@@ -1,0 +1,58 @@
+defaults:
+  - mprisk_fair_tuning_text
+  - _self_
+
+exp_dir: outputs/experiments/mprisk_fair_tuning_text_approx
+
+datasets: [yahoo]
+far_list: [0.1]
+beta_list: [0.5]
+
+lambda_stability:
+  enabled: False
+
+lambda_search:
+  num_random: 128
+  log_low: -10.0
+  log_high: 10.0
+
+linear_search:
+  num_random: 128
+  log_low: -10.0
+  log_high: 10.0
+
+approximation_check:
+  enabled: True
+  fars: [0.1]
+  prob_batch_size: 16
+  max_prob_elements: 1000000
+  max_M: 16
+
+  variants:
+    - name: "mean_analytic_M0"
+      recognition_method:
+        M: 0
+        nonspecificity_mode: analytic_vmf
+        prob_batch_size: 256
+        max_prob_elements: 8000000
+
+    - name: "mc_M8_analytic"
+      recognition_method:
+        M: 8
+        nonspecificity_mode: analytic_vmf
+        prob_batch_size: 32
+        max_prob_elements: 1000000
+
+    - name: "mc_M16_analytic"
+      recognition_method:
+        M: 16
+        nonspecificity_mode: analytic_vmf
+        prob_batch_size: 16
+        max_prob_elements: 1000000
+
+    - name: "mc_M16_weighted_n0"
+      recognition_method:
+        M: 16
+        nonspecificity_mode: weighted_mc
+        prob_batch_size: 16
+        max_prob_elements: 1000000

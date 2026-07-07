@@ -354,6 +354,125 @@ def make_fraction_grid(spec) -> np.ndarray:
     return spec
 
 
+def category_arrays_from_osr_masks(
+    masks: Dict[str, np.ndarray],
+) -> Dict[str, np.ndarray]:
+    """
+    Convert OSR masks to TP/FP/FN boolean arrays for F1 computation.
+    """
+    tp = np.asarray(masks["true_accept_true_ident"], dtype=bool)
+    fp = np.asarray(masks["false_accept"], dtype=bool)
+    fn = np.logical_or(
+        np.asarray(masks["false_reject"], dtype=bool),
+        np.asarray(masks["misidentification"], dtype=bool),
+    )
+    err = np.asarray(masks["any_error"], dtype=bool)
+
+    return {"tp": tp, "fp": fp, "fn": fn, "err": err}
+
+
+def category_arrays_from_prediction(
+    predicted_id: np.ndarray,
+    was_rejected: np.ndarray,
+    g_unique_ids: np.ndarray,
+    probe_unique_ids: np.ndarray,
+) -> Dict[str, np.ndarray]:
+    masks = compute_osr_error_masks(
+        predicted_id=predicted_id,
+        was_rejected=was_rejected,
+        g_unique_ids=g_unique_ids,
+        probe_unique_ids=probe_unique_ids,
+    )
+    return category_arrays_from_osr_masks(masks)
+
+
+def f1_from_counts(tp: np.ndarray, fp: np.ndarray, fn: np.ndarray) -> np.ndarray:
+    denom = 2.0 * tp + fp + fn
+    out = np.zeros_like(denom, dtype=np.float64)
+    ok = denom > 0
+    out[ok] = 2.0 * tp[ok] / denom[ok]
+    return out
+
+
+def f1_auc_fast(
+    uncertainty: np.ndarray,
+    cats: Dict[str, np.ndarray],
+    fractions: np.ndarray,
+) -> float:
+    """
+    Fast F1 rejection-curve AUC.
+
+    Repository convention:
+      lower uncertainty is kept first,
+      higher uncertainty is filtered first.
+    """
+    uncertainty = np.asarray(uncertainty, dtype=np.float64).reshape(-1)
+    n = len(uncertainty)
+
+    order = np.argsort(uncertainty)
+
+    tp_sorted = cats["tp"][order].astype(np.int64)
+    fp_sorted = cats["fp"][order].astype(np.int64)
+    fn_sorted = cats["fn"][order].astype(np.int64)
+
+    tp_cum = np.concatenate([[0], np.cumsum(tp_sorted)])
+    fp_cum = np.concatenate([[0], np.cumsum(fp_sorted)])
+    fn_cum = np.concatenate([[0], np.cumsum(fn_sorted)])
+
+    keep_counts = np.asarray(
+        [int((1.0 - float(frac)) * n) for frac in fractions],
+        dtype=np.int64,
+    )
+    keep_counts = np.clip(keep_counts, 0, n)
+
+    tp = tp_cum[keep_counts]
+    fp = fp_cum[keep_counts]
+    fn = fn_cum[keep_counts]
+
+    f1_values = f1_from_counts(tp, fp, fn)
+
+    return float(np.trapz(f1_values, fractions))
+
+
+def prr_fast(
+    uncertainty: np.ndarray,
+    cats: Dict[str, np.ndarray],
+    fractions: np.ndarray,
+    random_auc: float,
+    oracle_auc: float,
+) -> float:
+    auc_value = f1_auc_fast(
+        uncertainty=uncertainty,
+        cats=cats,
+        fractions=fractions,
+    )
+
+    denom = oracle_auc - random_auc
+    if abs(denom) < 1e-12:
+        return auc_value
+
+    return float((auc_value - random_auc) / denom)
+
+
+def reference_auc_fast(
+    cats: Dict[str, np.ndarray],
+    fractions: np.ndarray,
+    seed: int,
+) -> Tuple[float, float]:
+    n = len(cats["tp"])
+    rng = np.random.default_rng(seed)
+
+    random_unc = rng.random(n)
+
+    # Oracle should filter errors first, so errors get larger uncertainty.
+    oracle_unc = cats["err"].astype(np.float64) + 1e-9 * rng.random(n)
+
+    random_auc = f1_auc_fast(random_unc, cats, fractions)
+    oracle_auc = f1_auc_fast(oracle_unc, cats, fractions)
+
+    return random_auc, oracle_auc
+
+
 def eval_uncertainty_score(
     score: np.ndarray,
     result: Dict[str, Any],
@@ -443,6 +562,84 @@ def linear_candidates(
     return candidates
 
 
+def slice_components_local(
+    components: Dict[str, np.ndarray],
+    idx: np.ndarray,
+) -> Dict[str, np.ndarray]:
+    idx = np.asarray(idx, dtype=int)
+    return {k: np.asarray(v)[idx] for k, v in components.items()}
+
+
+def tune_lambdas_for_components_fast(
+    calib_components: Dict[str, np.ndarray],
+    g_unique_ids_calib: np.ndarray,
+    probe_unique_ids_calib: np.ndarray,
+    fractions: np.ndarray,
+    num_random: int,
+    log_low: float,
+    log_high: float,
+    seed: int,
+    subset_idx: Optional[np.ndarray] = None,
+) -> Dict[str, Any]:
+    if subset_idx is not None:
+        calib_components_used = slice_components_local(calib_components, subset_idx)
+        probe_ids_used = np.asarray(probe_unique_ids_calib)[subset_idx]
+    else:
+        calib_components_used = calib_components
+        probe_ids_used = np.asarray(probe_unique_ids_calib)
+
+    cats = category_arrays_from_prediction(
+        predicted_id=calib_components_used["predicted_id"],
+        was_rejected=calib_components_used["was_rejected"],
+        g_unique_ids=g_unique_ids_calib,
+        probe_unique_ids=probe_ids_used,
+    )
+
+    random_auc, oracle_auc = reference_auc_fast(
+        cats=cats,
+        fractions=fractions,
+        seed=seed,
+    )
+
+    candidates = build_lambda_candidates(
+        num_random=num_random,
+        log_low=log_low,
+        log_high=log_high,
+        seed=seed,
+    )
+
+    best_lambdas = np.ones(4, dtype=np.float64)
+    best_prr = -np.inf
+    best_score = None
+
+    for lambdas in candidates:
+        score = component_score(calib_components_used, lambdas)
+        prr = prr_fast(
+            uncertainty=score,
+            cats=cats,
+            fractions=fractions,
+            random_auc=random_auc,
+            oracle_auc=oracle_auc,
+        )
+
+        if prr > best_prr:
+            best_prr = float(prr)
+            best_lambdas = np.asarray(lambdas, dtype=np.float64).copy()
+            best_score = score
+
+    return {
+        "lambdas": best_lambdas,
+        "val_prr": float(best_prr),
+        "val_auc": (
+            safe_auc(cats["err"], best_score) if best_score is not None else np.nan
+        ),
+        "val_auprc": (
+            safe_auprc(cats["err"], best_score) if best_score is not None else np.nan
+        ),
+        "subset_size": len(probe_ids_used),
+    }
+
+
 def tune_linear_score(
     X_val: np.ndarray,
     X_test: np.ndarray,
@@ -467,11 +664,17 @@ def tune_linear_score(
 
     X_val_norm, X_test_norm, mean, std = normalize_features(X_val, X_test)
 
-    masks_val = compute_osr_error_masks(
+    cats_val = category_arrays_from_prediction(
         predicted_id=calib_components["predicted_id"],
         was_rejected=calib_components["was_rejected"],
         g_unique_ids=g_unique_ids_calib,
         probe_unique_ids=probe_unique_ids_calib,
+    )
+
+    random_auc, oracle_auc = reference_auc_fast(
+        cats=cats_val,
+        fractions=fractions,
+        seed=seed,
     )
 
     best_w = None
@@ -479,31 +682,28 @@ def tune_linear_score(
     best_score_val = None
     best_score_test = None
 
-    for w in linear_candidates(
+    candidates = linear_candidates(
         dim=X_val_norm.shape[1],
         num_random=num_random,
         log_low=log_low,
         log_high=log_high,
         seed=seed,
-    ):
+    )
+
+    for w in candidates:
         score_val = X_val_norm @ w
 
-        val_eval = eval_uncertainty_score(
-            score=score_val,
-            result={
-                "predicted_id": calib_components["predicted_id"],
-                "was_rejected": calib_components["was_rejected"],
-                "g_unique_ids": g_unique_ids_calib,
-                "probe_unique_ids": probe_unique_ids_calib,
-                "masks": masks_val,
-            },
+        prr = prr_fast(
+            uncertainty=score_val,
+            cats=cats_val,
             fractions=fractions,
-            seed=seed,
+            random_auc=random_auc,
+            oracle_auc=oracle_auc,
         )
 
-        if val_eval["test_prr_f1"] > best_prr:
-            best_prr = val_eval["test_prr_f1"]
-            best_w = w.copy()
+        if prr > best_prr:
+            best_prr = float(prr)
+            best_w = np.asarray(w, dtype=np.float64).copy()
             best_score_val = score_val.copy()
             best_score_test = X_test_norm @ w
 
@@ -889,7 +1089,7 @@ def run_one_dataset_far(
         }
     )
 
-    tune_full = tune_lambdas_for_components(
+    tune_full = tune_lambdas_for_components_fast(
         calib_components=comps_val,
         g_unique_ids_calib=g_ids_val,
         probe_unique_ids_calib=probe_ids_val,
@@ -935,7 +1135,7 @@ def run_one_dataset_far(
     comps_val_no_ns["r_ns"] = np.zeros_like(comps_val_no_ns["r_ns"])
     comps_test_no_ns["r_ns"] = np.zeros_like(comps_test_no_ns["r_ns"])
 
-    tune_no_ns = tune_lambdas_for_components(
+    tune_no_ns = tune_lambdas_for_components_fast(
         calib_components=comps_val_no_ns,
         g_unique_ids_calib=g_ids_val,
         probe_unique_ids_calib=probe_ids_val,
@@ -1412,7 +1612,7 @@ def run_lambda_stability(
             subset_size = min(subset_size, n)
             subset_idx = rng.choice(n, size=subset_size, replace=False)
 
-            tune = tune_lambdas_for_components(
+            tune = tune_lambdas_for_components_fast(
                 calib_components=comps_val,
                 g_unique_ids_calib=g_ids_val,
                 probe_unique_ids_calib=probe_ids_val,
@@ -1538,6 +1738,60 @@ def run_approximation_variants(
     return rows
 
 
+def _row_key_tuple(row: Dict[str, Any]) -> Tuple[str, float, float, str]:
+    return (
+        str(row["dataset"]),
+        float(row["far"]),
+        float(row["beta"]),
+        str(row.get("method", row.get("variant", ""))),
+    )
+
+
+def load_existing_rows(path: Path) -> List[Dict[str, Any]]:
+    if not path.is_file():
+        return []
+    try:
+        return pd.read_csv(path).to_dict("records")
+    except Exception:
+        return []
+
+
+def save_all_tables(
+    tables_dir: Path,
+    all_rows: List[Dict[str, Any]],
+    all_weights: List[Dict[str, Any]],
+    all_components: List[Dict[str, Any]],
+    all_lambda_stability: List[Dict[str, Any]],
+    all_approx: List[Dict[str, Any]],
+) -> None:
+    pd.DataFrame(all_rows).to_csv(
+        tables_dir / "fair_tuning_comparison.csv",
+        index=False,
+    )
+    pd.DataFrame(all_weights).to_csv(
+        tables_dir / "fair_tuning_weights.csv",
+        index=False,
+    )
+    pd.DataFrame(all_components).to_csv(
+        tables_dir / "full_component_ablation.csv",
+        index=False,
+    )
+    pd.DataFrame(all_lambda_stability).to_csv(
+        tables_dir / "lambda_stability.csv",
+        index=False,
+    )
+    pd.DataFrame(all_approx).to_csv(
+        tables_dir / "approximation_check.csv",
+        index=False,
+    )
+
+
+def done_marker_path(tables_dir: Path, dataset: str, far: float, beta: float) -> Path:
+    done_dir = tables_dir / "_done"
+    done_dir.mkdir(parents=True, exist_ok=True)
+    return done_dir / f"{slugify(dataset)}_far_{far}_beta_{beta}.done"
+
+
 # ---------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------
@@ -1562,7 +1816,11 @@ def main(cfg):
     exp_dir = Path(cfg.exp_dir)
     tables_dir = exp_dir / "tables"
     tables_dir.mkdir(parents=True, exist_ok=True)
-
+    all_rows = load_existing_rows(tables_dir / "fair_tuning_comparison.csv")
+    all_weights = load_existing_rows(tables_dir / "fair_tuning_weights.csv")
+    all_components = load_existing_rows(tables_dir / "full_component_ablation.csv")
+    all_lambda_stability = load_existing_rows(tables_dir / "lambda_stability.csv")
+    all_approx = load_existing_rows(tables_dir / "approximation_check.csv")
     core_cfg = load_core_cfg(
         path=str(cfg.core_config_path),
         exp_dir=str(exp_dir),
@@ -1571,15 +1829,28 @@ def main(cfg):
         core_cfg.recompute_template_pooling = bool(cfg.recompute_template_pooling)
     fractions = make_fraction_grid(cfg.rejection_fractions)
 
-    all_rows = []
-    all_weights = []
-    all_components = []
-    all_lambda_stability = []
-    all_approx = []
+    # all_rows = []
+    # all_weights = []
+    # all_components = []
+    # all_lambda_stability = []
+    # all_approx = []
 
     for dataset_name in cfg.datasets:
         for far in cfg.far_list:
             for beta in cfg.beta_list:
+                marker = done_marker_path(
+                    tables_dir=tables_dir,
+                    dataset=str(dataset_name),
+                    far=float(far),
+                    beta=float(beta),
+                )
+
+                if marker.is_file() and not bool(cfg.get("force_recompute", False)):
+                    print(
+                        f"[fair-tuning] skip completed "
+                        f"dataset={dataset_name}, far={far}, beta={beta}"
+                    )
+                    continue
                 print("=" * 100)
                 print(f"[Fair tuning] dataset={dataset_name} far={far} beta={beta}")
                 print("=" * 100)
@@ -1624,26 +1895,25 @@ def main(cfg):
                     fractions=fractions,
                 )
                 all_approx.extend(approx_rows)
+                save_all_tables(
+                    tables_dir=tables_dir,
+                    all_rows=all_rows,
+                    all_weights=all_weights,
+                    all_components=all_components,
+                    all_lambda_stability=all_lambda_stability,
+                    all_approx=all_approx,
+                )
 
-    pd.DataFrame(all_rows).to_csv(
-        tables_dir / "fair_tuning_comparison.csv",
-        index=False,
-    )
-    pd.DataFrame(all_weights).to_csv(
-        tables_dir / "fair_tuning_weights.csv",
-        index=False,
-    )
-    pd.DataFrame(all_components).to_csv(
-        tables_dir / "full_component_ablation.csv",
-        index=False,
-    )
-    pd.DataFrame(all_lambda_stability).to_csv(
-        tables_dir / "lambda_stability.csv",
-        index=False,
-    )
-    pd.DataFrame(all_approx).to_csv(
-        tables_dir / "approximation_check.csv",
-        index=False,
+                marker.write_text("done\n")
+                print(f"[fair-tuning] wrote done marker: {marker}")
+
+    save_all_tables(
+        tables_dir=tables_dir,
+        all_rows=all_rows,
+        all_weights=all_weights,
+        all_components=all_components,
+        all_lambda_stability=all_lambda_stability,
+        all_approx=all_approx,
     )
 
     print("\nSaved:")

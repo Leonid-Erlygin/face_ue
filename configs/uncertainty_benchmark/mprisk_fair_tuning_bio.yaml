@@ -33,12 +33,12 @@ simple_methods:
   - Margin
 
 lambda_search:
-  num_random: 4096
+  num_random: 1024
   log_low: -10.0
   log_high: 10.0
 
 linear_search:
-  num_random: 4096
+  num_random: 1024
   log_low: -10.0
   log_high: 10.0
 
@@ -49,13 +49,13 @@ linear_search:
 
 lambda_stability:
   enabled: True
-  fars: [0.05]
-  validation_fractions: [0.01, 0.05, 0.10, 0.25, 0.50, 1.0]
-  repeats: 5
+  fars: [0.1]
+  validation_fractions: [0.05, 0.1, 0.25, 0.5, 1.0]
+  repeats: 3
   min_subset_size: 100
 
 approximation_check:
-  enabled: True
+  enabled: False
 
   # Run approximation check only at representative operating point.
   fars: [0.1]

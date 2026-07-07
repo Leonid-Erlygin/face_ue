@@ -636,7 +636,7 @@ tables:
   # -------------------------------------------------------------------
 
   approximation_check_bio:
-    enabled: True
+    enabled: False
     type: grouped_metric
 
     input_path: ${paths.fair_tables}/approximation_check.csv

@@ -11,9 +11,9 @@ BASE_DIR = Path("/app/outputs")
 
 SOURCE_DIRS = [
     "latex_tables_new_paper_bio",
-    "latex_tables_new_paper_bio_diagnostics",
+    # "latex_tables_new_paper_bio_diagnostics",
     "latex_tables_new_paper_text",
-    "latex_tables_new_paper_text_diagnostics",
+    # "latex_tables_new_paper_text_diagnostics",
 ]
 
 OUTPUT_FILE = BASE_DIR / "all_tables_combined.tex"

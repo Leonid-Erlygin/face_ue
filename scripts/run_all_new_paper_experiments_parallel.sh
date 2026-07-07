@@ -77,8 +77,8 @@ echo "============================================================"
 #run_bg "diagnostics_bio" python experiments/mprisk_diagnostics_experiments.py -cn=mprisk_diagnostics_bio_complete recompute_template_pooling=False
 #run_bg "diagnostics_text" python experiments/mprisk_diagnostics_experiments.py -cn=mprisk_diagnostics_text_complete recompute_template_pooling=False
 
-run_bg "fair_tuning_bio" python experiments/mprisk_fair_tuning_experiments.py -cn=mprisk_fair_tuning_bio recompute_template_pooling=False
-run_bg "fair_tuning_text" python experiments/mprisk_fair_tuning_experiments.py -cn=mprisk_fair_tuning_text recompute_template_pooling=False
+#run_bg "fair_tuning_bio" python experiments/mprisk_fair_tuning_experiments.py -cn=mprisk_fair_tuning_bio recompute_template_pooling=False
+#run_bg "fair_tuning_text" python experiments/mprisk_fair_tuning_experiments.py -cn=mprisk_fair_tuning_text recompute_template_pooling=False
 
 wait_all
 
