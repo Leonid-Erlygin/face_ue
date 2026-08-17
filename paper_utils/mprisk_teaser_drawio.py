@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """
-MPRisk teaser generator (fixed text layout):
-  - panel (a): matplotlib image embedded as PNG inside the .drawio
+MPRisk teaser generator (theory-only, style-matched to previous paper's teaser):
+  - panel (a): matplotlib -> SVG, embedded as SVG inside .drawio
+      * field = equal-cost MPRisk (decision risk of the taken decision),
+        NOT entropy: u(x) = 1 - max_a p(a|x)
+      * white long-dash decision boundaries, class colors / marker conventions
+        from the previous teaser; BuGn SCF blob only on the low-kappa FR probe
+      * posteriors & risk components computed at the three error probes are
+        RETURNED and reused in panel (c)  -> panels are numerically consistent
   - panels (b), (c), arrows: native editable draw.io shapes
-  - formulas: INLINE LaTeX \( ... \)  (display math $$...$$ broke layout)
+  - formulas: INLINE LaTeX \( ... \)
 
 Outputs:
   mprisk_teaser.drawio
-  mprisk_panel_a.png
+  mprisk_panel_a.svg
 """
 
 import base64
@@ -20,241 +26,167 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
-from matplotlib.patches import Ellipse, FancyArrowPatch
+from matplotlib.patches import FancyArrowPatch
 
 # ======================================================================
-# palette
+# palette  (single source of truth, matched to the previous teaser)
 # ======================================================================
-CLS_LIGHT = ["#DAE8FC", "#D5E8D4", "#FFE6CC", "#E1D5E7"]
-CLS_DARK = ["#6C8EBF", "#82B366", "#D79B00", "#9673A6"]
-PINK, PINK_D = "#F8CECC", "#B85450"
-YEL, GRAY = "#B09500", "#595959"
-R = {"FA": "#CC0000", "ID": "#D79B00", "FR": "#6C8EBF", "NS": "#9673A6"}
+CLASS_COLORS = ["#7f7f7f", "#ff7f0e", "#8c564b", "#0eb451"]   # gallery classes
+OOG, OOG_D = "#e377c2", "#ffffff"                             # out-of-gallery
+EDGE = "DarkSlateGrey"
+GRAY = "#595959"
+# risk components inherit the error-marker colors of the previous teaser
+R = {"FA": "#e377c2", "ID": "#ff7f0e", "FR": "#7f7f7f", "NS": "#9673A6"}
 DIAMOND, STAR, CROSS = "\u25c6", "\u2605", "\u2715"
-HALO = [pe.withStroke(linewidth=3.5, foreground="white")]
+HALO = [pe.withStroke(linewidth=1.5, foreground="white")]
 
 
 # ======================================================================
-# 1. Panel (a) in matplotlib -> PNG bytes
+# 1. Panel (a): MPRisk field + probes -> SVG bytes + computed risk values
+#    model identical to create_uncertainty_image(fig2):
+#    kappa=1, beta=0.5, value_range=8 (M=16)
 # ======================================================================
-def render_panel_a(dpi=220):
+def render_panel_a():
     plt.rcParams["font.family"] = "DejaVu Sans"
     plt.rcParams["mathtext.fontset"] = "dejavusans"
+    font_size = 15
+    means = np.array([[-3.0, 0.0], [-1.8, 1.8], [3.0, 0.0], [3.15, 4.4]])
+    K = means.shape[0]
+    kappa, beta, M = 1.0, 0.5, 16.0
 
-    fig, ax = plt.subplots(figsize=(6.6, 5.35))
-    fig.subplots_adjust(left=0.01, right=0.99, top=0.99, bottom=0.09)
+    fa_pt = np.array([3.72, -1.07])       # false accept   (unknown, accepted)
+    id_pt = np.array([-2.508, 0.719])     # misidentification (between classes)
+    fr_pt = np.array([-0.77, -3.70])      # false reject   (corrupted known)
+    oog_pt = np.array([0.14, -1.95])      # correctly rejected unknown
+    fr_var = 1                          # low-quality SCF variance (low kappa_x)
 
-    centers = np.array([[3.2, 4.6], [5.0, 4.9], [4.2, 2.9], [6.3, 3.3]])
-    s = 0.55
-    r_thr = 1.15
+    # ---- mixed posterior helper (K vMF-analogs + uniform unknown) ----
+    def posterior(px, py):
+        d2 = np.stack([(px - mx) ** 2 + (py - my) ** 2 for mx, my in means])
+        lik = (1 - beta) / K * kappa / (2 * np.pi) * np.exp(-kappa * d2)
+        unk = np.full_like(np.asarray(px, dtype=float), beta / M**2)
+        stack = np.concatenate([lik, unk[None]], axis=0)
+        return stack / stack.sum(0)                     # shape (K+1, ...)
 
-    xs = np.linspace(1.2, 9.3, 640)
-    ys = np.linspace(0.5, 6.8, 500)
+    fig, ax = plt.subplots(figsize=(6.44, 5.52))
+    fig.subplots_adjust(left=0.005, right=0.995, top=0.995, bottom=0.005)
+
+    xs = np.linspace(-7.0, 7.0, 300)
+    ys = np.linspace(-5.0, 7.0, 300)
     X, Y = np.meshgrid(xs, ys)
-    F = np.stack(
-        [np.exp(-((X - cx) ** 2 + (Y - cy) ** 2) / (2 * s * s)) for cx, cy in centers]
-    )
-    Fu = np.full_like(X, np.exp(-(r_thr**2) / (2 * s * s)))
-    stack = np.concatenate([F, Fu[None]], axis=0)
-    P = stack / stack.sum(0)
-    H = -(P * np.log(P + 1e-12)).sum(0)
-    reject = stack.argmax(0) == 4
+    P = posterior(X, Y)
+    reject = P.argmax(0) == K
 
+    # ---- (1) MPRisk field: risk of the decision taken at each point ----
+    # u(x) = 1 - max_a p(a|x)  (Chow's conditional risk; NS ~ 0 for the
+    # high-quality mean embeddings the field represents)
+    U = 1.0 - P.max(0)
+    ax.contourf(X, Y, U, levels=20, cmap="Blues", zorder=0)
+
+    # reject region tint: continuous-unknown component (MPRisk idea)
+    tint = np.zeros(X.shape + (4,))
+    tint[reject] = matplotlib.colors.to_rgba(OOG_D, alpha=0.15)
     ax.imshow(
-        H,
-        extent=[xs[0], xs[-1], ys[0], ys[-1]],
-        origin="lower",
-        cmap="Blues",
-        alpha=0.55,
-        vmin=0,
-        vmax=H.max(),
-        aspect="auto",
-        zorder=0,
-    )
-    pink = np.zeros(X.shape + (4,))
-    pink[reject] = matplotlib.colors.to_rgba(PINK, alpha=0.42)
-    ax.imshow(
-        pink,
-        extent=[xs[0], xs[-1], ys[0], ys[-1]],
-        origin="lower",
-        aspect="auto",
-        zorder=1,
+        tint, extent=[xs[0], xs[-1], ys[0], ys[-1]],
+        origin="lower", aspect="auto", zorder=1,
     )
 
-    ax.contour(
-        X,
-        Y,
-        F.max(0) - Fu,
-        levels=[0.0],
-        colors=YEL,
-        linestyles="--",
-        linewidths=2.2,
-        zorder=3,
-    )
-    lab = F.argmax(0).astype(float)
-    lab[reject] = np.nan
-    ax.contour(
-        X,
-        Y,
-        lab,
-        levels=[0.5, 1.5, 2.5],
-        colors=YEL,
-        linestyles="--",
-        linewidths=1.6,
-        zorder=3,
-    )
-
-    rng = np.random.default_rng(3)
-    for k, (cx, cy) in enumerate(centers):
-        ax.add_patch(
-            Ellipse(
-                (cx, cy),
-                2.5 * s * 2,
-                2.0 * s * 2,
-                facecolor=CLS_LIGHT[k],
-                alpha=0.55,
-                edgecolor="none",
-                zorder=2,
-            )
+    # ---- (2) decision boundaries: white long-dash (previous style) ----
+    d2 = np.stack([(X - mx) ** 2 + (Y - my) ** 2 for mx, my in means])
+    lik = (1 - beta) / K * kappa / (2 * np.pi) * np.exp(-kappa * d2)
+    unk = np.full_like(X, beta / M**2)
+    stack = np.concatenate([lik, unk[None]], axis=0)
+    for i in range(K):
+        b = stack[i] - np.delete(stack, i, axis=0).max(0)
+        ax.contour(
+            X, Y, b, levels=[0.0],
+            colors="white", linewidths=2.0, linestyles=[(0, (8, 4))], zorder=3,
         )
-        pts = np.array([cx, cy]) + 0.32 * rng.standard_normal((6, 2))
+
+    # ---- (3) SCF blob ONLY on the low-quality (low-kappa) FR probe ----
+    scf = np.exp(-((X - fr_pt[0]) ** 2 + (Y - fr_pt[1]) ** 2) / (2 * fr_var)) / (
+        2 * np.pi * fr_var
+    )
+    lv = np.linspace(0.12 * scf.max(), scf.max(), 8)
+    ax.contourf(X, Y, scf, levels=lv, cmap="BuGn", alpha=0.8, zorder=2)
+
+    # ---- (4) class centers and samples (no blob on high-kappa samples) ----
+    rng = np.random.default_rng(4)
+    hi_pt = None
+    for k, (cx, cy) in enumerate(means):
+        pts = np.array([cx, cy]) + 0.2 * rng.standard_normal((3, 2))
         ax.scatter(
-            pts[:, 0],
-            pts[:, 1],
-            marker="s",
-            s=38,
-            color=CLS_DARK[k],
-            edgecolor="white",
-            lw=0.7,
-            zorder=5,
+            pts[:, 0], pts[:, 1], marker="s", s=48,
+            color=CLASS_COLORS[k], edgecolor=EDGE, lw=1.0, zorder=5,
         )
         ax.scatter(
-            [cx],
-            [cy],
-            marker="o",
-            s=130,
-            color=CLS_DARK[k],
-            edgecolor="black",
-            lw=1.1,
-            zorder=6,
+            [cx], [cy], marker="o", s=110,
+            color=CLASS_COLORS[k], edgecolor=EDGE, lw=1.0, zorder=6,
         )
-        if k == 0:
-            gx, gy = pts[0]
-            ax.add_patch(
-                Ellipse(
-                    (gx, gy),
-                    0.42,
-                    0.42,
-                    facecolor="#82B366",
-                    alpha=0.4,
-                    edgecolor="none",
-                    zorder=4,
-                )
-            )
-            ax.annotate(
-                r"high $\kappa_{\mathbf{x}}$",
-                (gx, gy),
-                xytext=(gx - 1.7, gy + 0.8),
-                fontsize=11.5,
-                color=GRAY,
-                arrowprops=dict(arrowstyle="-", color=GRAY, lw=0.9),
-            )
-
-    dpos = (centers[0] + centers[1]) / 2 + np.array([0.0, -0.1])
-    ax.text(
-        *dpos,
-        DIAMOND,
-        fontsize=23,
-        ha="center",
-        va="center",
-        path_effects=HALO,
-        zorder=8,
+        if k == 1:
+            hi_pt = pts[0]
+    ax.annotate(
+        r"high $\kappa_{\mathbf{x}}$",
+        hi_pt, xytext=(hi_pt[0] - 2.9, hi_pt[1] + 1.4),
+        fontsize=font_size, color=GRAY,
+        arrowprops=dict(arrowstyle="-", color=GRAY, lw=0.9),
     )
-    spos = centers[3] + np.array([0.86, -0.66])
     ax.text(
-        *spos, STAR, fontsize=23, ha="center", va="center", path_effects=HALO, zorder=8
+        3.35, -0.42, r"$\mu_c$", fontsize=font_size, color=GRAY,
+        ha="left", va="center", path_effects=HALO, zorder=7,
     )
 
-    xpos = np.array([7.55, 5.35])
-    ax.add_patch(
-        Ellipse(
-            xpos,
-            2.1,
-            1.65,
-            angle=15,
-            facecolor="#82B366",
-            alpha=0.30,
-            edgecolor="none",
-            zorder=4,
+    # ---- (5) out-of-gallery sample: white square, dark edge ----
+    ax.scatter(
+        [oog_pt[0]], [oog_pt[1]], marker="s", s=48,
+        color=OOG, edgecolor=EDGE, lw=1.0, zorder=5,
+    )
+
+    # ---- (6) error markers, previous-teaser convention + risk tags ----
+    def err(pt, mk, sz, comp, dx, dy):
+        ax.scatter(
+            [pt[0]], [pt[1]], marker=mk, s=sz,
+            color=R[comp], edgecolor=EDGE, lw=0.7, zorder=8,
         )
-    )
-    ax.text(
-        *xpos,
-        CROSS,
-        fontsize=26,
-        fontweight="bold",
-        ha="center",
-        va="center",
-        path_effects=HALO,
-        zorder=8,
-    )
+        ax.text(
+            pt[0] + dx, pt[1] + dy, comp,
+            fontsize=font_size, fontweight="bold", color=R[comp],
+            ha="left", va="center", path_effects=HALO, zorder=8,
+        )
+
+    err(fa_pt, "*", 340, "FA", 0.35, -0.42)
+    err(id_pt, "D", 130, "ID", 0.32, 0.42)
+    err(fr_pt, "X", 170, "FR", 0.45, 0.42)
+
+    # ---- (7) MPRisk-specific annotations ----
     ax.add_patch(
         FancyArrowPatch(
-            centers[1] + [0.25, 0.15],
-            xpos - [0.55, 0.20],
-            connectionstyle="arc3,rad=-0.25",
-            arrowstyle="-|>",
-            mutation_scale=14,
-            color="#666666",
-            lw=1.4,
-            zorder=7,
+            means[0] + [0.35, -0.45], fr_pt + [-0.55, 0.95],
+            connectionstyle="arc3,rad=0.3", arrowstyle="-|>",
+            mutation_scale=14, color="#666666", lw=1.4, zorder=7,
         )
     )
     ax.text(
-        6.0,
-        6.05,
-        "corrupted known sample\ndrifts out",
-        fontsize=10.5,
-        color=GRAY,
-        ha="center",
-        style="italic",
+        -4.9, -3.0, "corrupted known\nsample drifts out",
+        fontsize=font_size, color=GRAY, ha="center", style="italic",
     )
     ax.text(
-        8.35,
-        4.42,
+        1.15, -4.55,
         r"low $\kappa_{\mathbf{x}}$"
         "\n"
         r"$\Rightarrow$ high $\mathcal{N}_0(\mathbf{x})$",
-        fontsize=12,
-        color="#7B5EA7",
-        ha="center",
+        fontsize=font_size, color=R["NS"], ha="left", va="center",
+        path_effects=HALO, zorder=8,
     )
-
+    # ax.text(
+    #     -6.8, 6.6,
+    #     "reject region:\ncontinuous unknown\n" + r"$c\in(K,\,K{+}1]$",
+    #     fontsize=11.5, color=OOG_D, va="top",
+    # )
     ax.text(
-        1.95,
-        1.25,
-        "reject region:\ncontinuous unknown\n" + r"$c\in(K,\,K{+}1]$",
-        fontsize=11.5,
-        color=PINK_D,
-    )
-    ax.text(
-        6.35,
-        1.05,
-        r"$\tau$ (accept / reject)",
-        fontsize=12,
-        color=YEL,
-        fontweight="bold",
-    )
-    ax.text(
-        0.01,
-        -0.035,
-        f"{DIAMOND} misidentification    {STAR} false acceptance    "
-        f"{CROSS} false rejection (low-quality known)    "
-        "\u25a0 sample   \u25cf prototype",
-        transform=ax.transAxes,
-        fontsize=9.5,
-        color=GRAY,
-        va="top",
+        3.6, 6.4, r"risk field $u(\mathbf{x})$",
+        fontsize=font_size, color="#2A5B8C", ha="left", va="top",
+        path_effects=HALO,
     )
 
     ax.set_xlim(xs[0], xs[-1])
@@ -265,19 +197,60 @@ def render_panel_a(dpi=220):
         sp.set_color("#CCCCCC")
 
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi)
+    fig.savefig(buf, format="svg")
     plt.close(fig)
-    png = buf.getvalue()
-    with open("mprisk_panel_a.png", "wb") as f:
-        f.write(png)
-    return png
+    svg = buf.getvalue()
+    with open("mprisk_panel_a.svg", "wb") as f:
+        f.write(svg)
+
+    # ================================================================
+    # compute risk components at the three probes -> reused in panel (c)
+    # ================================================================
+    def components(pt):
+        p = posterior(np.array([pt[0]]), np.array([pt[1]]))[:, 0]
+        p0, pcls = p[K], p[:K]
+        if pcls.max() > p0:                     # accepted as chat = argmax
+            chat = int(pcls.argmax())
+            r_fa = p0
+            r_id = pcls.sum() - pcls[chat]
+            return {"segs": [("FA", r_fa), ("ID", r_id)], "u": r_fa + r_id}
+        return None                             # rejected -> handled below
+
+    # rejected FR probe: r_FR = 1 - P0 ; r_NS = P0 * N0(x) with N0 computed
+    # numerically from the unknown-identity posterior induced by the SCF blob
+    def components_rejected(pt, var):
+        p = posterior(np.array([pt[0]]), np.array([pt[1]]))[:, 0]
+        p0 = p[K]
+        m = stack.sum(0)                        # marginal m(z) on the grid
+        scf_g = np.exp(
+            -((X - pt[0]) ** 2 + (Y - pt[1]) ** 2) / (2 * var)
+        ) / (2 * np.pi * var)
+        w = unk * scf_g / m                     # ∝ p(U | x, c unknown)
+        dA = (xs[1] - xs[0]) * (ys[1] - ys[0])
+        area = (xs[-1] - xs[0]) * (ys[-1] - ys[0])
+        p_u = w / (w.sum() * dA)
+        n0 = 1.0 / (area * (p_u**2).sum() * dA)  # normalized 1/collision
+        r_fr, r_ns = 1.0 - p0, p0 * n0
+        return {"segs": [("FR", r_fr), ("NS", r_ns)], "u": r_fr + r_ns, "N0": n0}
+
+    vals = {
+        "star": components(fa_pt),
+        "diamond": components(id_pt),
+        "cross": components_rejected(fr_pt, fr_var),
+    }
+    print("panel (a) risk values:", {
+        k: {"u": round(v["u"], 3),
+            "segs": [(c, round(x, 3)) for c, x in v["segs"]]}
+        for k, v in vals.items()
+    })
+    return svg, vals
 
 
 # ======================================================================
 # 2. draw.io XML builder (math enabled)
 # ======================================================================
 class DrawioDoc:
-    def __init__(self, w=1700, h=620):
+    def __init__(self, w=1270, h=620):
         self.cells, self._i, self.w, self.h = [], 1, w, h
 
     def _nid(self):
@@ -374,249 +347,180 @@ def RECT(
 # ======================================================================
 # 3. Panels  (all math is INLINE:  \( ... \) )
 # ======================================================================
-def panel_a(d, png_bytes):
+def panel_a(d, svg_bytes):
     g = d.group(20, 40, 540, 510)
     d.node(RECT("none", "#CCCCCC", rounded=True), 0, 0, 540, 510, parent=g)
     d.node(
         TXT(16, bold=True),
-        0,
-        4,
-        540,
-        26,
-        r"(a) Mixed-prior Bayesian posterior \(p(c\mid\mathbf{x})\)",
+        0, 4, 540, 26,
+        r"(a) mixed-prior posterior \(p(c\mid\mathbf{x})\) "
+        r"and risk field \(u(\mathbf{x})\)",
         parent=g,
     )
-    b64 = base64.b64encode(png_bytes).decode()
+    b64 = base64.b64encode(svg_bytes).decode()
     d.node(
         f"shape=image;imageAspect=0;aspect=fixed;verticalLabelPosition="
-        f"bottom;verticalAlign=top;image=data:image/png,{b64};",
-        10,
-        34,
-        520,
-        421,
+        f"bottom;verticalAlign=top;image=data:image/svg+xml,{b64};",
+        10, 34, 520, 446,
         parent=g,
     )
     d.node(
         TXT(11, GRAY),
-        10,
-        460,
-        520,
-        40,
-        r"\(P_i(\mathbf{x})=\int_{\mathbb{S}^{d-1}} "
-        r"p(c{=}i\mid\mathbf{z})\,p(\mathbf{z}\mid\mathbf{x})\,"
-        r"d\mathbf{z},\quad P_0+\sum_i P_i = 1\)",
+        10, 482, 520, 26,
+        r"\(u(\mathbf{x}) = 1-\max_a p(a\mid\mathbf{x})\): "
+        r"risk peaks on decision boundaries, vanishes in the deep reject region",
         parent=g,
     )
 
 
-def panel_b(d):
-    g = d.group(610, 40, 420, 510)
-    d.node(RECT("none", "#CCCCCC", rounded=True), 0, 0, 420, 510, parent=g)
+def panel_b(d, vals):
+    g = d.group(610, 40, 620, 510)
+    d.node(RECT("none", "#CCCCCC", rounded=True), 0, 0, 620, 510, parent=g)
     d.node(
         TXT(16, bold=True),
-        0,
-        4,
-        420,
-        26,
-        r"(b) information gain \(\neq\) decision risk",
+        0, 4, 620, 26,
+        "(b) MPRisk: from information gain to decision risk",
         parent=g,
     )
 
+    # ---- strip 1: KL counterexample (compact) --------------------------
+    bar_fill = CLASS_COLORS + [OOG]
+    bar_stroke = ["none"] * 4 + [OOG_D]
     charts = [
-        (
-            20,
-            f"probe {DIAMOND}",
-            [0.48, 0.48, 0.02, 0.01, 0.01],
-            r"\(\mathrm{KL}=0.73\) (lower)",
-            r"\(1-\max_c p = 0.52\) (higher!)",
-            "KL ranks it SAFER \u2717",
-            "#CC0000",
-        ),
-        (
-            240,
-            "probe B",
-            [0.60, 0.38, 0.01, 0.005, 0.005],
-            r"\(\mathrm{KL}=0.84\) (higher)",
-            r"\(1-\max_c p = 0.40\) (lower)",
-            "KL ranks it riskier",
-            GRAY,
-        ),
+        (15, "A: two-way split", [0.48, 0.48, 0.02, 0.01, 0.01]),
+        (125, "B: mildly diffuse", [0.55, 0.13, 0.12, 0.11, 0.09]),
     ]
-    labels = [r"\(c_1\)", r"\(c_2\)", r"\(c_3\)", r"\(c_4\)", "unk"]
-    base_y, hmax = 250, 145
-    for x0, title, p, kl, risk, verdict, vcol in charts:
-        d.node(TXT(12, bold=True), x0, 40, 160, 18, title, parent=g)
-        d.node(
-            TXT(10, GRAY, align="left"),
-            x0 - 8,
-            62,
-            180,
-            40,
-            f"{kl}<br>{risk}",
-            parent=g,
-        )
+    base_y, hmax = 132, 72
+    for x0, title, p in charts:
+        d.node(TXT(10, bold=True), x0 - 15, 38, 120, 16, title, parent=g)
         for i, pi in enumerate(p):
             h = max(2, round(pi * hmax))
-            fill = PINK if i == 4 else "#6C8EBF"
-            stroke = PINK_D if i == 4 else "none"
-            d.node(RECT(fill, stroke), x0 + i * 30, base_y - h, 22, h, parent=g)
             d.node(
-                TXT(9, GRAY), x0 + i * 30 - 4, base_y + 4, 30, 16, labels[i], parent=g
+                RECT(bar_fill[i], bar_stroke[i]),
+                x0 + i * 18, base_y - h, 14, h, parent=g,
             )
         d.edge(
             "endArrow=none;strokeColor=#666666;strokeWidth=1;html=1;",
-            (x0 - 5, base_y),
-            (x0 + 150, base_y),
-            parent=g,
+            (x0 - 4, base_y), (x0 + 94, base_y), parent=g,
         )
-        d.node(TXT(10, vcol, italic=True), x0 - 10, 274, 180, 18, verdict, parent=g)
+        d.node(
+            TXT(9, GRAY), x0 - 15, base_y + 2, 120, 14,
+            r"\(c_1\ c_2\ c_3\ c_4\) unk", parent=g,
+        )
 
     d.node(
-        TXT(12, GRAY),
-        10,
-        306,
-        400,
-        20,
-        rf"KL ordering: {DIAMOND} \((0.73)\) &lt; B \((0.84)\)",
+        TXT(10, GRAY, align="left"),
+        228, 36, 384, 32,
+        r"\(D_{\mathrm{KL}}(p\,\|\,p_{\mathrm{unif}})=\log N-H(p)\): "
+        r"\(\mathrm{KL}_A>\mathrm{KL}_B\) \(\Rightarrow\) A looks safer",
         parent=g,
     )
     d.node(
-        TXT(12),
-        10,
-        330,
-        400,
-        20,
-        rf"decision risk: {DIAMOND} \((0.52)\) &gt; B \((0.40)\)",
+        TXT(10, align="left"),
+        228, 70, 384, 32,
+        r"decision risk \(1-\max_c p\): A is a coin flip, B is confident "
+        r"\(\Rightarrow\) A is riskier",
         parent=g,
     )
     d.node(
-        TXT(15, "#CC0000", bold=True),
-        10,
-        358,
-        400,
-        24,
-        "risk ordering inverted!",
+        TXT(10.5, "#CC0000", bold=True, align="left"),
+        228, 104, 384, 44,
+        r"orderings invert for \(N\geq 3\) \(\Rightarrow\) KL features need "
+        "a supervised nonlinear calibrator (HolUE); "
+        "risk-aligned features do not",
         parent=g,
     )
+    d.edge(
+        "endArrow=none;strokeColor=#DDDDDD;strokeWidth=1;html=1;",
+        (10, 158), (610, 158), parent=g,
+    )
+
+    # ---- strip 2: decision-conditioned components (values from panel a) --
+    legend = [
+        ("FA", r"\(r_{\mathrm{FA}}{=}P_0\)"),
+        ("ID", r"\(r_{\mathrm{ID}}{=}\sum_{j\neq\hat c}P_j\)"),
+        ("FR", r"\(r_{\mathrm{FR}}{=}1{-}P_0\)"),
+        ("NS", r"\(r_{\mathrm{NS}}{=}P_0\,\mathcal{N}_0\)"),
+    ]
+    for i, (comp, formula) in enumerate(legend):
+        x = 14 + i * 152
+        d.node(RECT(R[comp]), x, 170, 13, 13, parent=g)
+        d.node(TXT(10.5, align="left"), x + 17, 166, 132, 22, formula, parent=g)
+
+    rows = [
+        (f"{STAR}&nbsp; accepted, truly unknown", vals["star"], 198, ""),
+        (f"{DIAMOND}&nbsp; accepted, wrong identity", vals["diamond"], 234, ""),
+        (
+            f"{CROSS}&nbsp; rejected, low-quality known",
+            vals["cross"], 270,
+            r"\(r_{\mathrm{FR}}\!\approx\!0\): only \(r_{\mathrm{NS}}\) "
+            "flags the confident wrong reject",
+        ),
+    ]
+    u_max = max(v["u"] for v in vals.values())
+    scale, x_bar, bh = 210.0 / u_max, 200, 28
+    for label, v, y, note in rows:
+        d.node(TXT(10.5, align="right"), 0, y, 192, bh, label, parent=g)
+        x = x_bar
+        for comp, r in v["segs"]:
+            w = round(r * scale)
+            if w < 3:
+                continue
+            txt = rf"\(r_{{\mathrm{{{comp}}}}}\)" if w > 42 else ""
+            d.node(
+                RECT(R[comp], "#FFFFFF", sw=1, font_size=10), x, y, w, bh, txt,
+                parent=g,
+            )
+            x += w
+        d.node(
+            TXT(9.5, GRAY, align="left"),
+            x + 5, y + 5, 70, 18,
+            rf"\(u\approx{v['u']:.2f}\)",
+            parent=g,
+        )
+        if note:
+            d.node(
+                TXT(9, R["NS"], align="left", italic=True),
+                x + 75, y + 1, 620 - (x + 80), bh - 2, note, parent=g,
+            )
+
+    # ---- strip 3: combination rule ---------------------------------------
     d.node(
-        TXT(10, GRAY, italic=True),
-        10,
-        386,
-        400,
-        20,
-        r"empirically on IJB-C: inversion rate \(0.55\), " r"Spearman \(-0.03\)",
+        TXT(14),
+        10, 314, 600, 28,
+        r"\(u_{\lambda}(\mathbf{x})=\lambda_{\mathrm{FA}}r_{\mathrm{FA}}"
+        r"+\lambda_{\mathrm{ID}}r_{\mathrm{ID}}"
+        r"+\lambda_{\mathrm{FR}}r_{\mathrm{FR}}"
+        r"+\lambda_{\mathrm{NS}}r_{\mathrm{NS}},"
+        r"\qquad \lambda\in\mathbb{R}_{+}^{4}\)",
         parent=g,
     )
     d.node(
         TXT(10, GRAY),
-        10,
-        412,
-        400,
-        60,
-        r"\(D_{\mathrm{KL}}(p(c\mid\mathbf{x})\,\|\,p(c))\) measures "
-        r"information gain, not the expected loss "
-        r"\(1-\max_a p(a\mid\mathbf{x})\) of the OSR decision",
-        parent=g,
-    )
-
-
-def panel_c(d):
-    g = d.group(1080, 40, 580, 510)
-    d.node(RECT("none", "#CCCCCC", rounded=True), 0, 0, 580, 510, parent=g)
-    d.node(
-        TXT(16, bold=True),
-        0,
-        4,
-        580,
-        26,
-        "(c) MPRisk: decision-conditioned risk",
-        parent=g,
-    )
-
-    for i, comp in enumerate(["FA", "ID", "FR", "NS"]):
-        x = 110 + i * 100
-        d.node(RECT(R[comp]), x, 44, 14, 14, parent=g)
-        d.node(
-            TXT(11, align="left"),
-            x + 18,
-            42,
-            76,
-            18,
-            rf"\(r_{{\mathrm{{{comp}}}}}\)",
-            parent=g,
-        )
-
-    scale, x_bar, bh = 280, 210, 34
-    rows = [
-        (f"{STAR}&nbsp; accepted, unknown", [("FA", 0.72), ("ID", 0.18)], 82),
-        (f"{DIAMOND}&nbsp; accepted, wrong ID", [("FA", 0.14), ("ID", 0.66)], 142),
-        (f"{CROSS}&nbsp; rejected (low quality)", [("FR", 0.22), ("NS", 0.62)], 202),
-    ]
-    for label, segs, y in rows:
-        d.node(TXT(11, align="right"), 0, y, 200, bh, label, parent=g)
-        x = x_bar
-        for comp, v in segs:
-            w = round(v * scale)
-            val = rf"\(r_{{\mathrm{{{comp}}}}}\)" if w > 45 else ""
-            d.node(
-                RECT(R[comp], "#FFFFFF", sw=1, font_size=11), x, y, w, bh, val, parent=g
-            )
-            x += w
-
-    d.node(
-        TXT(9, GRAY, align="left"),
-        482,
-        92,
-        96,
-        70,
-        r"rejection risks \(\equiv 0\) when accepted",
-        parent=g,
-    )
-    d.node(
-        TXT(10, "#7B5EA7", align="left"),
-        210,
-        244,
-        360,
-        40,
-        r"\(P_0\approx 1\) but diffuse \(\Rightarrow\;"
-        r"r_{\mathrm{NS}}=P_0\,\mathcal{N}_0(\mathbf{x})\) "
-        "flags the suspicious reject",
-        parent=g,
-    )
-
-    d.node(
-        TXT(15),
-        10,
-        306,
-        560,
-        30,
-        r"\(u_{\lambda}(\mathbf{x})=\lambda_{\mathrm{FA}}r_{\mathrm{FA}}"
-        r"+\lambda_{\mathrm{ID}}r_{\mathrm{ID}}"
-        r"+\lambda_{\mathrm{FR}}r_{\mathrm{FR}}"
-        r"+\lambda_{\mathrm{NS}}r_{\mathrm{NS}}\)",
+        10, 346, 600, 36,
+        r"risks are decision-gated (reject risks \(\equiv 0\) under "
+        r"acceptance, and vice versa); \(\lambda\equiv 1\) recovers "
+        r"Chow's conditional risk \(1-\max_a p(a\mid\mathbf{x})\)",
         parent=g,
     )
     d.node(
         TXT(10, GRAY, italic=True),
-        10,
-        342,
-        560,
-        24,
-        r"\(\lambda^{\star}=\arg\max_{\lambda}\,"
-        r"\mathrm{PRR}^{F_1}_{\mathrm{val}}(u_\lambda)\) "
-        "&nbsp;(tuned for the target operating point)",
+        10, 386, 600, 20,
+        "four nonnegative cost weights tuned on validation "
+        "&mdash; no supervised calibration network",
         parent=g,
     )
 
-    d.node(
-        RECT("#FFF2CC", "#D6B656", rounded=True, font_color="#000000", font_size=12),
-        90,
-        390,
-        400,
-        44,
-        r"IJB-C @ FPIR \(0.2\): PRR <b>0.91</b> (MPRisk) " r"vs \(0.73\) (HolUE)",
-        parent=g,
-    )
+    # ---- strip 4: takeaway ------------------------------------------------
+    # d.node(
+    #     RECT("#FFF2CC", "#D6B656", rounded=True, font_color="#000000",
+    #          font_size=11.5),
+    #     80, 418, 460, 46,
+    #     "each component is monotone in the probability of its error "
+    #     r"mechanism \(\Rightarrow\) a linear rule suffices",
+    #     parent=g,
+    # )
+
 
 
 def connectors(d):
@@ -624,29 +528,15 @@ def connectors(d):
     d.edge(arrow, (565, 300), (605, 300))
     d.node(
         TXT(10, GRAY, italic=True),
-        505,
-        246,
-        160,
-        40,
-        r"summarize \(p(c\mid\mathbf{x})\) ?",
+        498, 244, 176, 48,
+        "score the taken decision<br>by its expected loss",
     )
-    d.edge(arrow, (1033, 300), (1075, 300))
-    d.node(
-        TXT(10, GRAY, italic=True),
-        968,
-        240,
-        176,
-        48,
-        "replace KL with<br>expected decision loss",
-    )
-
 
 # ======================================================================
 if __name__ == "__main__":
-    png = render_panel_a()
+    svg, vals = render_panel_a()
     doc = DrawioDoc()
-    panel_a(doc, png)
-    panel_b(doc)
-    panel_c(doc)
+    panel_a(doc, svg)
+    panel_b(doc, vals)
     connectors(doc)
     doc.save("mprisk_teaser.drawio")

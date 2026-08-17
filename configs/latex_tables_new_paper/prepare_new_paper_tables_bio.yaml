@@ -705,6 +705,7 @@ figures:
       - MPRisk raw
       - MPRisk
     figsize: [6.4, 4.8]
+    n_bins: 8
     legend_fontsize: 8
     prr_in_legend: True
     title: "IJB-C, FPIR=0.05"
@@ -727,6 +728,7 @@ figures:
       - MPRisk raw
       - MPRisk
     figsize: [6.4, 4.8]
+    n_bins: 8
     legend_fontsize: 8
     prr_in_legend: True
     title: "Whale, FPIR=0.1"
@@ -760,6 +762,7 @@ figures:
     dataset: IJBC
     far: 0.05
     beta: 0.5
+    n_bins: 8
     methods:
       - HolUE
       - MPRisk cal
@@ -772,6 +775,7 @@ figures:
     dataset: whale
     far: 0.1
     beta: 0.5
+    n_bins: 8
     methods:
       - HolUE
       - MPRisk cal
