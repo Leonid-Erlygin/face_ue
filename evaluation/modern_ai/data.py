@@ -8,6 +8,7 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
+from .beir_data import validate_beir_layout
 from .types import RAGRecord, RetrievalDataset, RetrievalProtocol, ToolRoutingExample
 
 
@@ -27,7 +28,7 @@ def load_beir_local(data_dir: str | Path, split: str = "test", name: Optional[st
     BEIR package release.
     """
 
-    root = Path(data_dir)
+    root = validate_beir_layout(data_dir, split=split)
     corpus_rows = _read_jsonl(root / "corpus.jsonl")
     query_rows = _read_jsonl(root / "queries.jsonl")
 
