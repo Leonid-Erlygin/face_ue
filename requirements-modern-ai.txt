@@ -1,0 +1,15 @@
+# Core numerical stack used by the repository
+numpy
+scipy
+scikit-learn
+torch
+omegaconf
+
+# Modern retrieval / LLM experiments (optional for offline smoke tests)
+sentence-transformers
+transformers
+accelerate
+datasets
+
+# Development / validation
+pytest

@@ -4,7 +4,7 @@ set -euo pipefail
 # ================= CONFIGURATION =================
 OUTPUT_FILE="combined.txt"
 TARGET_DIR="."
-EXCLUDE_DIRS=("venv" "mlruns" "external" "configs/uncertainty_models/old_cfg" "configs/uncertainty_benchmark/legacy" ".hydra" ".git" "__pycache__" "datasets" "notebooks" "/app/training/optimizers" "configs/latex_tables" "outputs" "sandbox" "dist" "build" ".vscode")
+EXCLUDE_DIRS=("venv" "toy_outputs" "mlruns" "external" "configs/uncertainty_models/old_cfg" "configs/uncertainty_benchmark/legacy" ".hydra" ".git" "__pycache__" "datasets" "notebooks" "/app/training/optimizers" "configs/latex_tables" "outputs" "sandbox" "dist" "build" ".vscode")
 # =================================================
 
 if [[ ! -d "$TARGET_DIR" ]]; then
@@ -58,5 +58,9 @@ while IFS= read -r -d '' file; do
     file_count=$((file_count + 1))
 done < <("${find_cmd[@]}" | sort -z 2>/dev/null)
 
+
+
+tree -L 5 -I "build|data|dataset|datasets|wandb|toy_outputs|unsorted_data|external|build-debug|outputs|sandbox|cache|__pycache__|venv" >> "$OUTPUT_FILE"
+zip "$OUTPUT_FILE".zip "$OUTPUT_FILE"
 echo "--------------------------------------------------"
 echo "✅ Done! Concatenated $file_count files into $OUTPUT_FILE"

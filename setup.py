@@ -5,6 +5,6 @@ setuptools.setup(
     version="0.0.1",
     author="You",
     author_email="you@example.com",
-    description="This is my project",
-    packages=["training", "evaluation"],
+    description="Uncertainty estimation experiments for open-set recognition and modern AI systems",
+    packages=setuptools.find_packages(),
 )

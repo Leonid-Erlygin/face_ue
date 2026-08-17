@@ -104,6 +104,61 @@ def decision_margin_for_score(
     return float(log_gallery_prior + log_like - (log_oog_prior + log_uniform))
 
 
+def candidate_kappas_for_tau(
+    tau: float,
+    beta: float,
+    K: int,
+    d: int,
+    class_model: str,
+    kappa_low: float = 1.0,
+    kappa_high: float = 1_000_000.0,
+    grid_size: int = 512,
+    residual_tol: float = 1e-6,
+) -> list[float]:
+    """Return every numerically distinct gallery-kappa root for a boundary.
+
+    The power-spherical decision margin can be non-monotone in concentration,
+    so FAR matching alone need not identify a unique kappa. Returning all roots
+    lets an outer validation criterion choose among equally valid operating-point
+    solutions instead of silently taking the first one.
+    """
+    if not (0.0 < beta < 1.0):
+        raise ValueError(f"beta must be in (0, 1), got {beta}")
+    tau = float(np.clip(tau, -1.0 + 1e-9, 1.0 - 1e-9))
+
+    def f(log_k: float) -> float:
+        return decision_margin_for_score(
+            score=tau,
+            kappa=float(np.exp(log_k)),
+            beta=beta,
+            K=K,
+            d=d,
+            class_model=class_model,
+        )
+
+    grid = np.linspace(math.log(kappa_low), math.log(kappa_high), int(grid_size))
+    vals = np.asarray([f(x) for x in grid], dtype=np.float64)
+    roots: list[float] = []
+    for i in range(len(grid) - 1):
+        a, b = vals[i], vals[i + 1]
+        if not (np.isfinite(a) and np.isfinite(b)):
+            continue
+        if abs(a) <= residual_tol:
+            roots.append(float(np.exp(grid[i])))
+        if a * b < 0:
+            root = brentq(f, float(grid[i]), float(grid[i + 1]), maxiter=100)
+            roots.append(float(np.exp(root)))
+    if len(vals) and np.isfinite(vals[-1]) and abs(vals[-1]) <= residual_tol:
+        roots.append(float(np.exp(grid[-1])))
+
+    roots = sorted(roots)
+    distinct: list[float] = []
+    for root in roots:
+        if not distinct or abs(math.log(root) - math.log(distinct[-1])) > 1e-5:
+            distinct.append(root)
+    return distinct
+
+
 def solve_kappa_for_tau(
     tau: float,
     beta: float,

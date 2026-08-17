@@ -1,0 +1,37 @@
+mode: ragtruth
+seed: 777
+calibration_fraction: 0.30
+n_boot: 2000
+target: hallucination
+output_dir: outputs/modern_ai/ragtruth
+
+data:
+  response_path: data/ragtruth/response.jsonl
+  source_info_path: data/ragtruth/source_info.jsonl
+  split: test
+  task_type: QA
+  count_implicit_true_as_hallucination: false
+embedder:
+  kind: sentence_transformer
+  model_name: BAAI/bge-base-en-v1.5
+  batch_size: 64
+  cache_dir: .cache/modern_ai_embeddings/bge-base-en-v1.5
+query_uncertainty:
+  default_kappa: 300.0
+  mean_mode: original
+  rewrites_path: null
+generator:
+  # Optional. If supplied, existing RAGTruth answers are rescored under this local LM.
+  # This is a surrogate confidence unless it is the model that generated the answer.
+  sequence_scorer_model: null
+  device: null
+  max_length: 4096
+posterior:
+  beta: 0.5
+  target_fpir: 0.10
+  gallery_prior: power
+  predict_T: 200.0
+  mc_samples: 0
+  gallery_kappa: null
+  # Point this at a completed OSER summary.json. Never fit kappa on hallucination labels.
+  gallery_kappa_from_summary: outputs/modern_ai/beir_scifact_oser/summary.json

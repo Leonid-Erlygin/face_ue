@@ -1,0 +1,36 @@
+mode: mc_sensitivity
+seed: 777
+calibration_fraction: 0.30
+output_dir: outputs/modern_ai/mc_sensitivity
+mc_samples: [0, 8, 32, 128]
+mc_kappa_mode: fixed_m0
+mc_repeats: 3
+
+data:
+  loader: beir
+  path: data/beir/scifact
+  split: test
+  name: scifact
+protocol:
+  kind: evidence_deletion
+  unknown_fraction: 0.40
+  seed: 777
+embedder:
+  kind: sentence_transformer
+  model_name: BAAI/bge-base-en-v1.5
+  batch_size: 64
+  cache_dir: .cache/modern_ai_embeddings/bge-base-en-v1.5
+query_uncertainty:
+  default_kappa: 300.0
+  mean_mode: original
+  rewrites_path: null
+posterior:
+  beta: 0.5
+  target_fpir: 0.10
+  gallery_prior: power
+  predict_T: 200.0
+  gallery_kappa: null
+  gallery_kappa_strategy: boundary_roots_calibrated
+  prob_batch_size: null
+  max_prob_elements: 8000000
+  mc_num_workers: 1

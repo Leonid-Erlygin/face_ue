@@ -1,0 +1,39 @@
+mode: retrieval_scaling
+seed: 777
+calibration_fraction: 0.30
+output_dir: outputs/modern_ai/beir_scifact_scaling
+# Values larger than the available corpus are automatically clipped.
+target_sizes: [1000, 5000, 10000, 50000, 100000, 1000000]
+# Run once with refit, then repeat with fixed_reference for the deployment stress test.
+scaling_calibration_mode: refit
+
+data:
+  loader: beir
+  path: data/beir/scifact
+  split: test
+  name: scifact
+protocol:
+  kind: evidence_deletion
+  unknown_fraction: 0.40
+  seed: 777
+  drop_collateral_unknowns: false
+embedder:
+  kind: sentence_transformer
+  model_name: BAAI/bge-base-en-v1.5
+  batch_size: 64
+  cache_dir: .cache/modern_ai_embeddings/bge-base-en-v1.5
+query_uncertainty:
+  default_kappa: 300.0
+  mean_mode: original
+  rewrites_path: null
+posterior:
+  beta: 0.5
+  target_fpir: 0.10
+  gallery_prior: power
+  predict_T: 200.0
+  mc_samples: 0
+  gallery_kappa: null
+  gallery_kappa_strategy: boundary_roots_calibrated
+  streaming_threshold_elements: 20000000
+  streaming_query_batch_size: 64
+  streaming_gallery_chunk_size: 32768

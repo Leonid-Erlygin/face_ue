@@ -1,0 +1,50 @@
+mode: crag
+seed: 777
+calibration_fraction: 0.30
+n_boot: 2000
+output_dir: outputs/modern_ai/crag
+
+data:
+  path: data/crag/crag_task_1_dev_v4_release.jsonl.bz2
+  split: null
+embedder:
+  kind: sentence_transformer
+  model_name: BAAI/bge-base-en-v1.5
+  batch_size: 64
+  cache_dir: .cache/modern_ai_embeddings/bge-base-en-v1.5
+generator:
+  model_name: null
+  device: null
+  cache_path: outputs/modern_ai/crag/generations.jsonl
+  max_input_tokens: 4096
+  max_new_tokens: 128
+  temperature: 0.0
+  semantic_entropy:
+    # Recommended strong free-form-generation baseline. It is disabled by
+    # default because it requires num_samples generations plus pairwise NLI.
+    enabled: false
+    nli_model_name: null
+    nli_device: null
+    cache_path: outputs/modern_ai/crag/semantic_entropy.jsonl
+    num_samples: 10
+    temperature: 1.0
+    top_p: 1.0
+    entailment_threshold: 0.5
+    # Set this only when the NLI model's id2label metadata is ambiguous.
+    entailment_label_id: null
+    max_nli_tokens: 512
+judgments:
+  # Strongly preferred: output of the official/independent evaluator converted to id,is_error JSONL.
+  path: null
+  id_field: id
+  error_field: is_error
+  # Debug only. This is deliberately false so a substring heuristic cannot become a paper result by accident.
+  allow_reference_heuristic: false
+posterior:
+  beta: 0.5
+  target_fpir: 0.10
+  gallery_prior: power
+  predict_T: 200.0
+  mc_samples: 0
+  gallery_kappa: null
+  gallery_kappa_from_summary: outputs/modern_ai/beir_scifact_oser/summary.json

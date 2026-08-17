@@ -1,0 +1,33 @@
+mode: kappa_root_sensitivity
+seed: 777
+calibration_fraction: 0.30
+output_dir: outputs/modern_ai/kappa_root_sensitivity
+
+data:
+  loader: beir
+  path: data/beir/scifact
+  split: test
+  name: scifact
+protocol:
+  kind: evidence_deletion
+  unknown_fraction: 0.40
+  seed: 777
+embedder:
+  kind: sentence_transformer
+  model_name: BAAI/bge-base-en-v1.5
+  batch_size: 64
+  cache_dir: .cache/modern_ai_embeddings/bge-base-en-v1.5
+query_uncertainty:
+  default_kappa: 300.0
+  mean_mode: original
+  rewrites_path: null
+posterior:
+  beta: 0.5
+  target_fpir: 0.10
+  gallery_prior: power
+  predict_T: 200.0
+  mc_samples: 0
+  gallery_kappa: null
+  kappa_low: 10.0
+  kappa_high: 1000000.0
+  kappa_grid_size: 1024

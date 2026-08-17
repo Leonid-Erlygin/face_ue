@@ -27,6 +27,7 @@ toy_outputs
 # happy_whale
 *.bin
 *.pkl
+*.patch
 *.csv
 sandbox/happy_whale/kaggle-happywhale-1st-place/input
 sandbox/happy_whale/kaggle-happywhale-1st-place/result

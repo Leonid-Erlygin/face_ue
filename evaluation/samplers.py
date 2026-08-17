@@ -70,12 +70,15 @@ class VonMisesFisher:
 
     def __call__(self, feature_mean: np.ndarray, kappas: np.ndarray) -> Any:
         if self.num_samples > 0:
-            sample_list = []
-            with Pool(self.num_workers) as p:
-                sample_list = p.starmap(
-                    random_VMF,
-                    zip(feature_mean, kappas, [self.num_samples] * len(feature_mean)),
-                )
+            args = list(zip(feature_mean, kappas, [self.num_samples] * len(feature_mean)))
+            # A single worker is intentionally executed in-process. Besides avoiding
+            # multiprocessing overhead in NLP experiments, this makes NumPy seeding
+            # deterministic for MC sensitivity/reproducibility tests.
+            if int(self.num_workers) <= 1:
+                sample_list = [random_VMF(*arg) for arg in args]
+            else:
+                with Pool(self.num_workers) as p:
+                    sample_list = p.starmap(random_VMF, args)
             return np.concatenate(sample_list, axis=0)
         else:
             return feature_mean[:, np.newaxis, :]

@@ -1,0 +1,35 @@
+mode: retrieval
+seed: 777
+calibration_fraction: 0.30
+output_dir: outputs/modern_ai/bright_biology_oser
+
+data:
+  loader: bright
+  dataset_name: xlangai/BRIGHT
+  domain: biology
+  use_long_documents: false
+protocol:
+  kind: evidence_deletion
+  unknown_fraction: 0.40
+  seed: 777
+  drop_collateral_unknowns: false
+embedder:
+  kind: sentence_transformer
+  model_name: BAAI/bge-base-en-v1.5
+  batch_size: 64
+  cache_dir: .cache/modern_ai_embeddings/bge-base-en-v1.5
+query_uncertainty:
+  default_kappa: 300.0
+  mean_mode: original
+  rewrites_path: null
+posterior:
+  beta: 0.5
+  target_fpir: 0.10
+  gallery_prior: power
+  predict_T: 200.0
+  mc_samples: 0
+  gallery_kappa: null
+  gallery_kappa_strategy: boundary_roots_calibrated
+  streaming_threshold_elements: 20000000
+  streaming_query_batch_size: 64
+  streaming_gallery_chunk_size: 32768

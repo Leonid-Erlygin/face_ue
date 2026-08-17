@@ -1,0 +1,21 @@
+mode: smoke
+seed: 777
+output_dir: outputs/modern_ai/smoke
+
+embedder:
+  kind: hashing
+  n_features: 128
+
+posterior:
+  beta: 0.5
+  target_fpir: 0.25
+  gallery_prior: power
+  predict_T: 20.0
+  mc_samples: 0
+  kappa_low: 1.0
+  kappa_high: 1000.0
+  kappa_grid_size: 96
+  gallery_kappa_strategy: boundary_roots_calibrated
+  streaming_threshold_elements: 100000
+  streaming_query_batch_size: 8
+  streaming_gallery_chunk_size: 16
