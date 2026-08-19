@@ -15,7 +15,7 @@ trainer:
       save_top_k: -1
     - _target_: pytorch_lightning.callbacks.LearningRateMonitor
       logging_interval: epoch
-  max_epochs: 4
+  max_epochs: 20
   accelerator: auto
   devices: 1
   num_sanity_val_steps: 0
@@ -54,18 +54,21 @@ model:
       lr: 1.0e-3
       weight_decay: 1.0e-4
   scheduler_params:
-    scheduler: CosineAnnealingLR
+    scheduler: OneCycleLR
     params:
-      T_max: 4
-      eta_min: 1.0e-5
-    interval: epoch
+      max_lr: 1.0e-3
+      total_steps: auto
+      pct_start: 0.1
+      div_factor: 10
+      final_div_factor: 100
+    interval: step
   permute_batch: false
 
 data:
   _target_: training.dataset_classes.tool_routing.ToolRoutingDataModule
   train_path: /app/datasets/tool_routing/toolbench_g1/train_scf.jsonl
   tokenizer_name: bert-base-uncased
-  batch_size: 128
+  batch_size: 32
   num_workers: 8
   max_length: 192
   class_balanced: true

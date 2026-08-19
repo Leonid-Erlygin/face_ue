@@ -11,6 +11,7 @@ from evaluation.modern_ai.tool_datasets import (
     bfcl_routing_examples_from_manifest,
     build_toolbench_class_disjoint_protocol,
     discover_bfcl_routing_files,
+    toolbench_query_count_statistics,
 )
 from evaluation.modern_ai.tool_routing import run_tool_routing_experiment
 from evaluation.modern_ai.types import ToolRoutingExample
@@ -86,6 +87,35 @@ def test_toolbench_protocol_is_class_disjoint_and_separates_arcface_scf(tmp_path
     ds_arc = ToolRoutingClassificationDataset(out / "train_arcface.jsonl")
     ds_scf = ToolRoutingClassificationDataset(out / "train_scf.jsonl")
     assert ds_arc.num_classes == 4 == ds_scf.num_classes
+
+
+def test_toolbench_query_density_statistics_are_data_only_and_correct(tmp_path):
+    g1 = tmp_path / "G1_query.json"
+    rows = []
+    qid = 0
+    for t, n in enumerate([3, 5, 8, 12]):
+        api = {
+            "category_name": "math",
+            "tool_name": f"tool_{t}",
+            "api_name": f"api_{t}",
+            "api_description": f"Does operation {t}",
+        }
+        for j in range(n):
+            rows.append({
+                "query_id": qid,
+                "query": f"operation {t} query {j}",
+                "api_list": [api],
+                "relevant APIs": [[api["tool_name"], api["api_name"]]],
+            })
+            qid += 1
+    g1.write_text(json.dumps(rows), encoding="utf-8")
+    stats = toolbench_query_count_statistics(g1, thresholds=(3, 5, 8, 10, 12))
+    assert stats["num_unique_single_api_classes"] == 4
+    assert stats["num_usable_single_api_queries"] == 28
+    assert stats["num_api_classes_with_at_least_n_queries"] == {
+        "3": 4, "5": 3, "8": 2, "10": 1, "12": 1,
+    }
+    assert stats["protocol_guidance"]["recommended_minimum_queries_per_known_api"] == 8
 
 
 def _jsonl(path: Path, rows):
@@ -208,6 +238,10 @@ def test_tool_routing_configs_reference_separate_training_protocols():
     osr = OmegaConf.load("configs/modern_ai/toolbench_tool_routing_osr.yaml")
     assert str(arc.data.train_path).endswith("train_arcface.jsonl")
     assert str(scf.data.train_path).endswith("train_scf.jsonl")
+    assert str(scf.model.scheduler_params.scheduler) == "OneCycleLR"
+    assert str(scf.model.scheduler_params.params.total_steps) == "auto"
+    assert int(scf.trainer.max_epochs) >= 20
+    assert int(scf.data.batch_size) <= 32
     assert str(osr.query_uncertainty.source) == "embedder"
     assert str(osr.posterior.gallery_kappa_strategy) == "boundary_roots_calibrated"
 

@@ -309,13 +309,24 @@ class MetricLearningModel(LightningModule):
             **self.optimizer_params["params"],
         )
 
+        scheduler_kwargs = dict(self.scheduler_params["params"])
+        # Tool-routing datasets are prepared dynamically, so their number of
+        # batches can change with the class-disjoint protocol.  Allow OneCycleLR
+        # to use Lightning's resolved stepping budget instead of baking a stale
+        # steps_per_epoch into the YAML. Existing configs without ``auto`` keep
+        # their previous behavior unchanged.
+        if scheduler_kwargs.get("total_steps") == "auto":
+            scheduler_kwargs["total_steps"] = int(self.trainer.estimated_stepping_batches)
+            if scheduler_kwargs["total_steps"] <= 0:
+                raise ValueError("Could not resolve a positive OneCycleLR total_steps")
+
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": getattr(
                     importlib.import_module("torch.optim.lr_scheduler"),
                     self.scheduler_params["scheduler"],
-                )(optimizer, **self.scheduler_params["params"]),
+                )(optimizer, **scheduler_kwargs),
                 "interval": self.scheduler_params["interval"],
             },
         }

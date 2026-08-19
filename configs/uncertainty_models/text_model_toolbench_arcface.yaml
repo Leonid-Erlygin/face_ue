@@ -15,7 +15,7 @@ trainer:
       save_top_k: -1
     - _target_: pytorch_lightning.callbacks.LearningRateMonitor
       logging_interval: epoch
-  max_epochs: 4
+  max_epochs: 20
   accelerator: auto
   devices: 1
   num_sanity_val_steps: 0
@@ -48,11 +48,19 @@ model:
       lr: 2.0e-5
       weight_decay: 1.0e-4
   scheduler_params:
-    scheduler: CosineAnnealingLR
+    scheduler: OneCycleLR
     params:
-      T_max: 4
-      eta_min: 1.0e-6
-    interval: epoch
+      # The ArcFace projection and class centers are random at initialization.
+      # A 2e-5 cosine schedule is far too small when the transformer is frozen.
+      # This matches the learning-rate scale used by the repository's existing
+      # text ArcFace configurations, but resolves the number of optimizer steps
+      # dynamically from the prepared ToolBench protocol.
+      max_lr: 1.0e-2
+      total_steps: auto
+      pct_start: 0.10
+      div_factor: 10
+      final_div_factor: 100
+    interval: step
 
 data:
   _target_: training.dataset_classes.tool_routing.ToolRoutingDataModule

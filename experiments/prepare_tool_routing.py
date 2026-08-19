@@ -15,6 +15,7 @@ from evaluation.modern_ai.tool_datasets import (
     clone_bfcl,
     discover_bfcl_routing_files,
     download_toolbench_data,
+    toolbench_query_count_statistics,
 )
 
 
@@ -25,6 +26,18 @@ def main() -> None:
     dl = sub.add_parser("download-toolbench", help="Download the official ToolBench release")
     dl.add_argument("--output-root", default="external/ToolBench")
     dl.add_argument("--force", action="store_true")
+
+    stats = sub.add_parser(
+        "stats-toolbench",
+        help="Report per-API query density before choosing a leakage-safe ArcFace/SCF split",
+    )
+    stats.add_argument("--g1-query-path", default="external/ToolBench/data/instruction/G1_query.json")
+    stats.add_argument("--output", default="outputs/tool_routing/toolbench_g1_query_density.json")
+    stats.add_argument(
+        "--thresholds",
+        default="3,4,5,6,8,10,12,16,20,25,32,50",
+        help="Comma-separated minimum-query thresholds to count",
+    )
 
     build = sub.add_parser("build-toolbench", help="Build class-disjoint ArcFace/SCF + OSR splits from G1")
     build.add_argument("--g1-query-path", default="external/ToolBench/data/instruction/G1_query.json")
@@ -60,6 +73,13 @@ def main() -> None:
     if args.command == "download-toolbench":
         path = download_toolbench_data(args.output_root, force=args.force)
         print(json.dumps({"g1_query_path": str(path)}, indent=2))
+    elif args.command == "stats-toolbench":
+        thresholds = tuple(int(x.strip()) for x in str(args.thresholds).split(",") if x.strip())
+        result = toolbench_query_count_statistics(args.g1_query_path, thresholds=thresholds)
+        out = Path(args.output)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(result, indent=2), encoding="utf-8")
+        print(json.dumps(result, indent=2))
     elif args.command == "build-toolbench":
         result = build_toolbench_class_disjoint_protocol(
             args.g1_query_path, args.output_dir,

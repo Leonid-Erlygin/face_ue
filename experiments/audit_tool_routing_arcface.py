@@ -107,9 +107,45 @@ def main():
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--max-length", type=int, default=192)
     p.add_argument("--device", default=None)
+    p.add_argument(
+        "--min-query-gallery-accuracy", type=float, default=None,
+        help="Fail with exit code 2 if known-query -> API-description top-1 accuracy is below this value.",
+    )
+    p.add_argument(
+        "--min-api-center-accuracy", type=float, default=None,
+        help="Fail with exit code 2 if API-description -> ArcFace-center top-1 accuracy is below this value.",
+    )
     args = p.parse_args()
-    result = audit(**vars(args))
+    thresholds = {
+        "min_query_gallery_accuracy": args.min_query_gallery_accuracy,
+        "min_api_center_accuracy": args.min_api_center_accuracy,
+    }
+    audit_args = vars(args).copy()
+    audit_args.pop("min_query_gallery_accuracy")
+    audit_args.pop("min_api_center_accuracy")
+    result = audit(**audit_args)
     print(json.dumps(result, indent=2))
+
+    failures = []
+    q_thr = thresholds["min_query_gallery_accuracy"]
+    if q_thr is not None and result["validation_query_api_description_gallery_accuracy"] < q_thr:
+        failures.append(
+            "query->API gallery accuracy "
+            f"{result['validation_query_api_description_gallery_accuracy']:.4f} < {q_thr:.4f}"
+        )
+    c_thr = thresholds["min_api_center_accuracy"]
+    if c_thr is not None and result["api_description_nearest_center_accuracy"] < c_thr:
+        failures.append(
+            "API->ArcFace-center accuracy "
+            f"{result['api_description_nearest_center_accuracy']:.4f} < {c_thr:.4f}"
+        )
+    if failures:
+        print(
+            "ArcFace geometry audit FAILED; SCF training would not be scientifically meaningful:\n  - "
+            + "\n  - ".join(failures),
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
 
 
 if __name__ == "__main__":

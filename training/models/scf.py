@@ -141,13 +141,24 @@ class SphereConfidenceFace(LightningModule):
             **self.optimizer_params["params"],
         )
 
+        scheduler_kwargs = dict(self.scheduler_params["params"])
+        # Small modern-AI datasets can have only a handful of batches per epoch.
+        # Let OneCycleLR use Lightning's resolved optimizer-step budget rather
+        # than hard-coding steps_per_epoch in a config that depends on the
+        # prepared protocol. Existing SCF configs without ``total_steps: auto``
+        # keep their previous behavior unchanged.
+        if scheduler_kwargs.get("total_steps") == "auto":
+            scheduler_kwargs["total_steps"] = int(self.trainer.estimated_stepping_batches)
+            if scheduler_kwargs["total_steps"] <= 0:
+                raise ValueError("Could not resolve a positive SCF OneCycleLR total_steps")
+
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": getattr(
                     importlib.import_module("torch.optim.lr_scheduler"),
                     self.scheduler_params["scheduler"],
-                )(optimizer, **self.scheduler_params["params"]),
+                )(optimizer, **scheduler_kwargs),
                 "interval": self.scheduler_params["interval"],
             },
         }

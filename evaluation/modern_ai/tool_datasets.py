@@ -9,7 +9,13 @@ import zipfile
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Tuple
-
+import hashlib
+import json
+import os
+import random
+import shutil
+import subprocess
+import zipfile
 from .types import ToolRoutingExample
 
 TOOLBENCH_GDRIVE_ID = "1XFjDxVZdUY7TXYF2yvzx3pJlS2fy78jk"
@@ -193,6 +199,71 @@ def parse_toolbench_g1(path: str | Path) -> Tuple[Dict[str, dict], List[dict]]:
     return tools, examples
 
 
+def toolbench_query_count_statistics(
+    g1_query_path: str | Path,
+    *,
+    thresholds: Sequence[int] = (3, 4, 5, 6, 8, 10, 12, 16, 20, 25, 32, 50),
+) -> dict:
+    """Summarize the usable single-API query density in ToolBench G1.
+
+    This is intentionally a *data-only* diagnostic: it does not inspect any model
+    outputs or prepared validation/test predictions.  It is safe to run while the
+    final OSR test remains untouched.
+    """
+    tools, examples = parse_toolbench_g1(g1_query_path)
+    counts = Counter(str(row["tool_id"]) for row in examples)
+    values = sorted(int(v) for v in counts.values())
+    if not values:
+        raise ValueError("No usable ToolBench API classes found")
+
+    import numpy as np
+
+    arr = np.asarray(values, dtype=float)
+    threshold_counts = {
+        str(int(t)): int(np.sum(arr >= int(t)))
+        for t in thresholds
+    }
+    quantiles = {
+        name: float(np.quantile(arr, q))
+        for name, q in (
+            ("q00", 0.00), ("q10", 0.10), ("q25", 0.25),
+            ("q50", 0.50), ("q75", 0.75), ("q90", 0.90),
+            ("q95", 0.95), ("q99", 0.99), ("q100", 1.00),
+        )
+    }
+    top = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:20]
+    return {
+        "source": str(Path(g1_query_path)),
+        "num_unique_single_api_classes": int(len(counts)),
+        "num_usable_single_api_queries": int(len(examples)),
+        "query_count_per_api": {
+            "mean": float(arr.mean()),
+            "std": float(arr.std()),
+            "quantiles": quantiles,
+        },
+        "num_api_classes_with_at_least_n_queries": threshold_counts,
+        "top_20_api_classes_by_query_count": [
+            {"tool_id": tool_id, "num_queries": int(n)}
+            for tool_id, n in top
+        ],
+        "protocol_guidance": {
+            "why": (
+                "ArcFace and SCF should use disjoint query samples. A four-way "
+                "known-class split therefore needs materially more than the previous "
+                "minimum of three queries per API."
+            ),
+            "candidate_split": {
+                "arcface_train_fraction": 0.50,
+                "scf_train_fraction": 0.25,
+                "validation_fraction": 0.125,
+                "test_fraction": 0.125,
+            },
+            "recommended_minimum_queries_per_known_api": 8,
+            "preferred_minimum_queries_per_known_api": 12,
+        },
+    }
+
+
 def _split_items(items: Sequence[dict], rng: random.Random, train_fraction: float, val_fraction: float):
     xs = list(items)
     rng.shuffle(xs)
@@ -374,44 +445,200 @@ def _safe_extract_zip(archive: Path, destination: Path) -> None:
         zf.extractall(destination)
 
 
-def download_toolbench_data(output_root: str | Path, *, force: bool = False) -> Path:
-    """Download the official ToolBench release using the Google Drive id in its README."""
+def _maybe_extract_reproduction_data(
+    source_dir: Path,
+    root: Path,
+    *,
+    force: bool = False,
+) -> Optional[Path]:
+    """Extract local ToolBench reproduction_data.zip once, if available."""
+
+    archive = source_dir / "reproduction_data.zip"
+    if not archive.is_file():
+        print(
+            f"[ToolBench] Optional archive not found: {archive}. "
+            "Continuing because tool routing only requires data.zip."
+        )
+        return None
+
+    if not zipfile.is_zipfile(archive):
+        raise ValueError(f"Not a valid ZIP archive: {archive}")
+
+    # Keep a cheap extraction marker so we do not unpack this large archive
+    # every time the preparation script is rerun.
+    marker = root / ".reproduction_data_extracted"
+    stat = archive.stat()
+    signature = f"{stat.st_size}:{stat.st_mtime_ns}"
+
+    already_extracted = (
+        marker.is_file()
+        and marker.read_text(encoding="utf-8").strip() == signature
+    )
+
+    if force or not already_extracted:
+        print(f"[ToolBench] Extracting {archive} -> {root}")
+        _safe_extract_zip(archive, root)
+
+        marker.write_text(signature + "\n", encoding="utf-8")
+    else:
+        print(f"[ToolBench] reproduction_data.zip already extracted; skipping")
+
+    return archive
+
+
+def download_toolbench_data(
+    output_root: str | Path,
+    *,
+    force: bool = False,
+) -> Path:
+    """
+    Prepare ToolBench from locally supplied archives.
+
+    Preferred archive location:
+
+        /app/datasets/ToolBench_data/data.zip
+        /app/datasets/ToolBench_data/reproduction_data.zip
+
+    Override it with:
+
+        TOOLBENCH_ARCHIVE_DIR=/some/other/path
+
+    No network access is performed here.
+    """
+
     root = Path(output_root)
     data_dir = root / "data"
     target = data_dir / "instruction" / "G1_query.json"
-    if target.exists() and not force:
-        return target
-    root.mkdir(parents=True, exist_ok=True)
-    archive = root / "data.zip"
-    if force and data_dir.exists():
-        shutil.rmtree(data_dir)
-    try:
-        import gdown
-    except ImportError as e:
-        raise ImportError("Downloading ToolBench requires `gdown`; install requirements-modern-ai.txt") from e
-    result = gdown.download(id=TOOLBENCH_GDRIVE_ID, output=str(archive), quiet=False)
-    if not result or not archive.exists():
-        raise RuntimeError("ToolBench Google Drive download failed")
-    _safe_extract_zip(archive, root)
-    if not target.exists():
-        # Some archives can carry one outer directory. Locate, then normalize.
-        matches = list(root.glob("**/data/instruction/G1_query.json"))
-        if len(matches) == 1:
-            src_data = matches[0].parents[1]
-            if src_data != data_dir:
-                if data_dir.exists(): shutil.rmtree(data_dir)
-                shutil.move(str(src_data), str(data_dir))
-        if not target.exists():
-            raise FileNotFoundError(f"Downloaded ToolBench archive lacks expected {target}")
-    _json_dump(root / "download_manifest.json", {
-        "source": "official_toolbench_google_drive",
-        "google_drive_file_id": TOOLBENCH_GDRIVE_ID,
-        "archive_sha256": _sha256_file(archive),
-        "g1_query_sha256": _sha256_file(target),
-        "g1_query_path": str(target),
-    })
-    return target
 
+    source_dir = Path(
+        os.environ.get(
+            "TOOLBENCH_ARCHIVE_DIR",
+            "/app/datasets/ToolBench_data",
+        )
+    ).expanduser()
+
+    data_archive = source_dir / "data.zip"
+
+    # Fast path: the dataset has already been extracted.
+    if target.is_file() and not force:
+        print(f"[ToolBench] Dataset already prepared: {target}")
+
+        # reproduction_data is not needed by the routing benchmark, but if the
+        # archive was supplied, make sure it is extracted as well.
+        root.mkdir(parents=True, exist_ok=True)
+        _maybe_extract_reproduction_data(
+            source_dir,
+            root,
+            force=False,
+        )
+
+        return target
+
+    # Dataset is not extracted, so a local data.zip is required.
+    if not data_archive.is_file():
+        raise FileNotFoundError(
+            "ToolBench is not prepared and the local archive was not found.\n"
+            f"Expected extracted dataset:\n  {target}\n"
+            f"or local archive:\n  {data_archive}\n\n"
+            "Place data.zip in /app/datasets/ToolBench_data or set "
+            "TOOLBENCH_ARCHIVE_DIR."
+        )
+
+    if not zipfile.is_zipfile(data_archive):
+        raise ValueError(
+            f"ToolBench archive is not a valid ZIP file: {data_archive}"
+        )
+
+    root.mkdir(parents=True, exist_ok=True)
+
+    if force and data_dir.exists():
+        print(f"[ToolBench] Removing existing data directory: {data_dir}")
+        shutil.rmtree(data_dir)
+
+    print(f"[ToolBench] Extracting {data_archive} -> {root}")
+    _safe_extract_zip(data_archive, root)
+
+    # Normal expected archive layout:
+    #
+    #   data/
+    #     instruction/
+    #       G1_query.json
+    #
+    # Some releases/mirrors may add an outer directory. Normalize that case.
+    if not target.is_file():
+        matches = list(
+            root.glob("**/data/instruction/G1_query.json")
+        )
+
+        if len(matches) == 1:
+            discovered_target = matches[0]
+            src_data = discovered_target.parents[1]
+
+            if src_data.resolve() != data_dir.resolve():
+                print(
+                    "[ToolBench] Normalizing extracted data directory:\n"
+                    f"  {src_data}\n"
+                    f"  -> {data_dir}"
+                )
+
+                if data_dir.exists():
+                    shutil.rmtree(data_dir)
+
+                shutil.move(
+                    str(src_data),
+                    str(data_dir),
+                )
+
+        elif len(matches) > 1:
+            raise RuntimeError(
+                "Multiple ToolBench G1 files were found after extraction:\n"
+                + "\n".join(f"  {p}" for p in matches)
+            )
+
+    if not target.is_file():
+        raise FileNotFoundError(
+            f"Extracted {data_archive}, but the required ToolBench file "
+            f"was not found:\n  {target}"
+        )
+
+    print(f"[ToolBench] Found G1 dataset: {target}")
+
+    reproduction_archive = _maybe_extract_reproduction_data(
+        source_dir,
+        root,
+        force=force,
+    )
+
+    manifest = {
+        "source": "local_toolbench_archives",
+        "archive_dir": str(source_dir.resolve()),
+        "data_archive": str(data_archive.resolve()),
+        "data_archive_sha256": _sha256_file(data_archive),
+        "reproduction_archive": (
+            str(reproduction_archive.resolve())
+            if reproduction_archive is not None
+            else None
+        ),
+        "reproduction_archive_sha256": (
+            _sha256_file(reproduction_archive)
+            if reproduction_archive is not None
+            else None
+        ),
+        "g1_query_path": str(target),
+        "g1_query_sha256": _sha256_file(target),
+    }
+
+    _json_dump(
+        root / "download_manifest.json",
+        manifest,
+    )
+
+    print(
+        "[ToolBench] Local dataset preparation complete:\n"
+        f"  G1: {target}"
+    )
+
+    return target
 
 def clone_bfcl(output_dir: str | Path, *, ref: str = "main", force: bool = False) -> dict:
     """Clone official Gorilla/BFCL and record the exact commit for reproducibility."""
