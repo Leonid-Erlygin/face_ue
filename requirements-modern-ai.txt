@@ -4,6 +4,8 @@ scipy
 scikit-learn
 torch
 omegaconf
+pandas
+matplotlib
 
 # Modern retrieval / LLM experiments (optional for offline smoke tests)
 sentence-transformers

@@ -147,6 +147,61 @@ The smoke test exercises:
 
 It is a software test, **not a scientific benchmark**.
 
+### Automatic rejection curves and LaTeX tables
+
+Every modern-AI runner now mirrors the paper-facing behavior of the original
+repository.  After a numerical experiment finishes, it automatically generates
+held-out rejection curves, Random/Oracle references, PRR values, and LaTeX
+tables.  Retrieval/scaling/sensitivity runs are discovered recursively, so each
+leaf experiment gets its own paper artifacts.
+
+Typical output:
+
+```text
+outputs/modern_ai/<experiment>/
+  summary.json
+  per_query.csv              # or per_example.csv / per_response.csv
+  rejection_curves/
+    all_rejection_curves.csv
+    prr_values.csv
+    *_rejection_curve.png
+    *_rejection_curve.pdf
+  tables/
+    uncertainty_metrics.csv
+    uncertainty_metrics.tex
+    operating_point.csv      # retrieval / tool routing
+    operating_point.tex
+  report_manifest.json       # at the runner output root
+```
+
+The convention is identical to the existing MPRisk plotting code: **larger
+uncertainty is filtered first**, the x-axis is the filtered-out fraction, and PRR
+is normalized between a seeded Random ranking (0) and an error-oracle ranking
+(1).  The primary PRR metric is OSER F1 for evidence retrieval, task accuracy for
+tool routing, and retained answer accuracy for RAG.
+
+The defaults can be overridden in any modern-AI YAML:
+
+```yaml
+reporting:
+  enabled: true
+  rejection_fractions: [0.0, 0.5, 20]
+  display_random_curve: true
+  display_oracle_curve: true
+  prr_in_legend: true
+  figsize: [6.4, 4.8]
+  legend_fontsize: 8
+  round_num: 3
+  highlight_best: true
+  # Optional: restrict and order plotted/table methods.
+  # methods: [max_similarity, galue_entropy, holue, mprisk_no_ns, mprisk]
+```
+
+For RAG outputs, raw retrieval/generator features and validation-fitted error
+models are namespaced in CSVs (`raw__*`, `generator_raw__*`, `model__*`).  This
+avoids ambiguous duplicate headers such as `mprisk` and ensures plots/tables use
+the same held-out model outputs reported in `summary.json`.
+
 ## 5. BEIR OSER
 
 Place a BEIR dataset in the documented local layout:

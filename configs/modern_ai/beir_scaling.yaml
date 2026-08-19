@@ -37,3 +37,15 @@ posterior:
   streaming_threshold_elements: 20000000
   streaming_query_batch_size: 64
   streaming_gallery_chunk_size: 32768
+
+# Paper-facing reporting (same reject-most-uncertain convention as the original code).
+reporting:
+  enabled: true
+  rejection_fractions: [0.0, 0.5, 20]
+  display_random_curve: true
+  display_oracle_curve: true
+  prr_in_legend: true
+  figsize: [6.4, 4.8]
+  legend_fontsize: 8
+  round_num: 3
+  highlight_best: true

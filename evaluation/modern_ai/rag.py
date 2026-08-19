@@ -670,12 +670,19 @@ def run_ragtruth_experiment(
         (root / "summary.json").write_text(json.dumps(summary, indent=2, default=float), encoding="utf-8")
         test_idx = fit["test_indices"]
         with (root / "per_response.csv").open("w", newline="", encoding="utf-8") as f:
-            fieldnames = ["id", "source_id", "target"] + list(retrieval.keys()) + list(fit["predictions"].keys())
+            # Namespace raw retrieval features and fitted error-probability models.
+            # Several fitted models intentionally reuse names such as ``mprisk``;
+            # without namespacing DictWriter emits duplicate CSV headers and later
+            # pandas reads them as mprisk / mprisk.1, which is too easy to misuse.
+            retrieval_fields = [f"raw__{k}" for k in retrieval.keys()]
+            prediction_fields = [f"model__{k}" for k in fit["predictions"].keys()]
+            fieldnames = ["id", "source_id", "target"] + retrieval_fields + prediction_fields
             w = csv.DictWriter(f, fieldnames=fieldnames); w.writeheader()
             for local, i in enumerate(test_idx):
                 row = {"id": records[i].record_id, "source_id": records[i].group_id, "target": int(y[i])}
-                row.update({k: float(v[i]) for k, v in retrieval.items()})
-                for k, v in fit["predictions"].items(): row[k] = float(v[local])
+                row.update({f"raw__{k}": float(v[i]) for k, v in retrieval.items()})
+                for k, v in fit["predictions"].items():
+                    row[f"model__{k}"] = float(v[local])
                 w.writerow(row)
     return {"summary": summary, "retrieval_scores": retrieval, **fit}
 
@@ -736,4 +743,25 @@ def run_end_to_end_rag_experiment(
     if output_dir is not None:
         root=Path(output_dir); root.mkdir(parents=True,exist_ok=True)
         (root/"summary.json").write_text(json.dumps(summary,indent=2,default=float),encoding="utf-8")
+        # Save the held-out population used by the reported RAG metrics so the
+        # rejection curves and paper tables are exactly reproducible from disk.
+        test_idx = fit["test_indices"]
+        retrieval_fields = [f"raw__{k}" for k in retrieval.keys()]
+        generator_fields = [f"generator_raw__{k}" for k in generator_features.keys()]
+        prediction_fields = [f"model__{k}" for k in fit["predictions"].keys()]
+        with (root / "per_response.csv").open("w", newline="", encoding="utf-8") as f:
+            fieldnames = ["id", "source_id", "target", "evaluator"] + retrieval_fields + generator_fields + prediction_fields
+            w = csv.DictWriter(f, fieldnames=fieldnames); w.writeheader()
+            for local, i in enumerate(test_idx):
+                row = {
+                    "id": records[i].record_id,
+                    "source_id": records[i].group_id,
+                    "target": int(y[i]),
+                    "evaluator": evaluator,
+                }
+                row.update({f"raw__{k}": float(v[i]) for k, v in retrieval.items()})
+                row.update({f"generator_raw__{k}": float(np.asarray(v)[i]) for k, v in generator_features.items()})
+                for k, v in fit["predictions"].items():
+                    row[f"model__{k}"] = float(v[local])
+                w.writerow(row)
     return {"summary": summary, "retrieval_scores": retrieval, "labels": y, **fit}

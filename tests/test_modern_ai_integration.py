@@ -11,7 +11,7 @@ from evaluation.modern_ai.synthetic import (
 from evaluation.modern_ai.tool_routing import run_tool_routing_experiment
 
 
-def test_offline_modern_ai_stack_runs():
+def test_offline_modern_ai_stack_runs(tmp_path):
     emb = HashingTextEmbedder(64)
     cfg = PosteriorModelConfig(
         beta=.5, target_fpir=.2, predict_T=10.0, gallery_kappa=40.0,
@@ -28,8 +28,17 @@ def test_offline_modern_ai_stack_runs():
     assert "decision_metrics" in tools["summary"]
 
     records = synthetic_ragtruth_records()
+    rag_out = tmp_path / "ragtruth"
     rag = run_ragtruth_experiment(
         records, emb, cfg, generator_features=synthetic_generator_features(records),
-        validation_fraction=.33, n_boot=10, seed=2,
+        validation_fraction=.33, n_boot=10, seed=2, output_dir=rag_out,
     )
     assert "hybrid" in rag["summary"]["metrics"]
+
+    # Raw retrieval uncertainty and validation-fitted RAG risk models must not
+    # share ambiguous duplicate CSV headers (e.g. mprisk / mprisk.1).
+    import pandas as pd
+    saved = pd.read_csv(rag_out / "per_response.csv")
+    assert len(saved.columns) == len(set(saved.columns))
+    assert "raw__mprisk" in saved.columns
+    assert "model__mprisk" in saved.columns

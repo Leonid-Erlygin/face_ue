@@ -59,6 +59,7 @@ from evaluation.modern_ai.synthetic import (
     synthetic_tool_examples,
 )
 from evaluation.modern_ai.tool_routing import run_tool_routing_experiment
+from evaluation.modern_ai.reporting import generate_modern_ai_reports
 
 
 def _plain(node: Any):
@@ -73,7 +74,7 @@ def _cfg_dict(cfg: Any, key: str, default=None):
 
 def write_environment_manifest(out: Path) -> None:
     packages = {}
-    for name in ["numpy", "scipy", "scikit-learn", "torch", "omegaconf", "sentence-transformers", "transformers", "datasets"]:
+    for name in ["numpy", "scipy", "scikit-learn", "torch", "omegaconf", "pandas", "matplotlib", "sentence-transformers", "transformers", "datasets"]:
         try:
             packages[name] = importlib_metadata.version(name)
         except importlib_metadata.PackageNotFoundError:
@@ -385,6 +386,14 @@ def main():
         )["summary"]
     else:
         raise ValueError(f"Unknown mode={mode}")
+
+    # Match the repository's paper-facing experiment behavior: every completed
+    # modern-AI run automatically emits rejection curves, PRR CSVs, and LaTeX
+    # tables beside the numerical summaries.  Recursive discovery covers nested
+    # scaling/sensitivity/smoke sub-experiments as well.
+    report_manifest = generate_modern_ai_reports(out, cfg)
+    if isinstance(result, dict):
+        result = {**result, "reporting": report_manifest}
 
     print(json.dumps(result, indent=2, default=float))
 
