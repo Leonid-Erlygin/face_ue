@@ -356,30 +356,25 @@ bash scripts/modern_ai/run_crag.sh
 
 The run will fail rather than silently use the reference-substring heuristic unless you explicitly enable the debug-only option.
 
-## 12. BFCL / tool routing
+## 12. Native tool/function routing
 
-Populate the current BFCL relevance and irrelevance file paths in `configs/modern_ai/bfcl.yaml`, then:
+Tool routing is now integrated with the repository's existing ArcFace/SCF training stack rather than evaluated only with a generic sentence embedder.  The primary protocol is class-disjoint ToolBench G1; BFCL is external variable-gallery validation with ToolBench-transferred gallery concentration.
+
+Complete workflow and scientific protocol:
+
+```text
+README_TOOL_ROUTING.md
+```
+
+Quick start:
 
 ```bash
-bash scripts/modern_ai/run_bfcl.sh
+bash scripts/modern_ai/prepare_tool_routing.sh
+bash scripts/modern_ai/train_tool_routing.sh
+bash scripts/modern_ai/run_tool_routing_ablation.sh
 ```
 
-For a benchmark that contains a unique or set-valued correct tool label, use generic JSONL:
-
-```json
-{
-  "id": "1",
-  "query": "What is the weather in Berlin?",
-  "tools": [
-    {"name": "weather", "description": "Get weather", "parameters": {}},
-    {"name": "calendar", "description": "Create an event", "parameters": {}}
-  ],
-  "known": true,
-  "relevant_tool_indices": [0]
-}
-```
-
-and set runner mode to `tool_routing`.
+The training pipeline writes an ArcFace geometry audit before SCF training. ToolBench validation/test use a fixed known-API gallery, with calibration-unknown and final-test-unknown API classes kept disjoint. BFCL exact function targets are recovered from official `possible_answer` files when available.
 
 ## 13. Statistical rules encoded in the implementation
 
@@ -423,7 +418,7 @@ The tests cover:
 evaluation/modern_ai/
   calibration.py             held-out monotone/logistic error calibration
   data.py                    BEIR, BRIGHT, RAGTruth, CRAG, BFCL loaders/protocols
-  embedders.py               SentenceTransformers + cache + offline hashing
+  embedders.py               SentenceTransformers + native ArcFace/SCF + cache + hashing
   methods.py                 adapter to original GalUE/HolUE/MPRisk posterior
   metrics.py                 OSER, retrieval, calibration, risk-coverage metrics
   query_uncertainty.py       rewrite-based vMF concentration
@@ -432,11 +427,15 @@ evaluation/modern_ai/
   scalable.py                exact streaming deterministic posterior
   statistics.py              clustered/paired bootstrap and group splits
   synthetic.py               offline CI/smoke data
-  tool_routing.py            BFCL/generic open-set function routing
+  tool_routing.py            ToolBench/BFCL open-set function routing
+  tool_datasets.py           ToolBench/BFCL download, protocol construction, manifests
 
 experiments/
   modern_ai_experiments.py   config-driven runner
   generate_query_rewrites.py cached rewrite generation
+  prepare_tool_routing.py    ToolBench/BFCL download + class-disjoint protocol
+  export_tool_routing_arcface.py native ArcFace backbone/center export
+  audit_tool_routing_arcface.py deterministic routing-geometry audit
 
 configs/modern_ai/
   smoke.yaml

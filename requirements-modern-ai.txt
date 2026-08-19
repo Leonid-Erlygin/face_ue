@@ -15,3 +15,7 @@ datasets
 
 # Development / validation
 pytest
+
+# Official ToolBench Google Drive dataset bootstrap
+gdown
+ijson>=3.2

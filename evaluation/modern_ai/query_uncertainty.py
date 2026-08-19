@@ -88,6 +88,7 @@ def query_embeddings_and_kappa(
     min_kappa: float = 1.0,
     max_kappa: float = 1_000_000.0,
     mean_mode: str = "rewrite_mean",
+    kappa_source: str = "auto",
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Encode queries and estimate HolUE concentration from paraphrase dispersion.
 
@@ -98,16 +99,39 @@ def query_embeddings_and_kappa(
 
     if mean_mode not in {"rewrite_mean", "original"}:
         raise ValueError("mean_mode must be 'rewrite_mean' or 'original'.")
+    if kappa_source not in {"auto", "default", "rewrite", "embedder"}:
+        raise ValueError("kappa_source must be auto/default/rewrite/embedder")
 
     qids = list(map(str, query_ids))
     queries = list(map(str, queries))
     if len(qids) != len(queries):
         raise ValueError("query_ids and queries must have equal length.")
+
+    source = kappa_source
+    if source == "auto":
+        if rewrites:
+            source = "rewrite"
+        elif bool(getattr(embedder, "supports_query_kappa", False)):
+            source = "embedder"
+        else:
+            source = "default"
+    if source == "embedder":
+        if rewrites:
+            raise ValueError(
+                "kappa_source=embedder uses SCF concentration from the original query; "
+                "do not also supply rewrites in the same condition."
+            )
+        if not bool(getattr(embedder, "supports_query_kappa", False)):
+            raise ValueError(f"{type(embedder).__name__} does not expose learned query kappa")
+        emb, kappa = embedder.encode_queries_with_kappa(queries)
+        kappa = np.asarray(kappa, dtype=np.float64).reshape(len(queries), 1)
+        return l2_normalize(np.asarray(emb)), kappa, np.full(len(queries), np.nan, dtype=np.float64)
+
     means = []
     kappas = []
     rbars = []
     for qid, query in zip(qids, queries):
-        variants = list((rewrites or {}).get(qid, ()))
+        variants = [] if source == "default" else list((rewrites or {}).get(qid, ()))
         if include_original or not variants:
             variants = [query] + variants
         emb = embedder.encode_queries(variants)

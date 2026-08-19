@@ -1,0 +1,64 @@
+seed_everything: 777
+mode: train
+trainer:
+  _target_: pytorch_lightning.Trainer
+  logger:
+    _target_: pytorch_lightning.loggers.CSVLogger
+    save_dir: outputs/tool_routing/logs
+    name: toolbench_arcface
+  callbacks:
+    - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+      every_n_epochs: 1
+      dirpath: outputs/tool_routing/arcface
+      filename: toolbench-arcface-{epoch:02d}
+      save_last: true
+      save_top_k: -1
+    - _target_: pytorch_lightning.callbacks.LearningRateMonitor
+      logging_interval: epoch
+  max_epochs: 4
+  accelerator: auto
+  devices: 1
+  num_sanity_val_steps: 0
+  limit_val_batches: 0
+  log_every_n_steps: 10
+  default_root_dir: outputs/tool_routing/arcface
+  enable_checkpointing: true
+
+model:
+  _target_: training.models.arcface.MetricLearningModel
+  backbone:
+    _target_: training.models.lightning_wrappers.BERTEmbedder
+    model_name: bert-base-uncased
+    num_features: 768
+    bottleneck_dim: 768
+    proj_depth: 2
+    freeze_projection: false
+    freeze_backbone: true
+  loss:
+    _target_: training.models.losses.ArcFaceLoss
+    s: 4
+    m: 0.4
+  # Resolved from ToolRoutingDataModule.num_classes by training/trainers/train.py.
+  num_labels: auto
+  num_features: 768
+  optimizer_params:
+    optimizer_path: torch.optim
+    optimizer_name: AdamW
+    params:
+      lr: 2.0e-5
+      weight_decay: 1.0e-4
+  scheduler_params:
+    scheduler: CosineAnnealingLR
+    params:
+      T_max: 4
+      eta_min: 1.0e-6
+    interval: epoch
+
+data:
+  _target_: training.dataset_classes.tool_routing.ToolRoutingDataModule
+  train_path: /app/datasets/tool_routing/toolbench_g1/train_arcface.jsonl
+  tokenizer_name: bert-base-uncased
+  batch_size: 128
+  num_workers: 8
+  max_length: 192
+  class_balanced: true

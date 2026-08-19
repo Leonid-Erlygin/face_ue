@@ -1,0 +1,71 @@
+seed_everything: 777
+mode: train
+trainer:
+  _target_: pytorch_lightning.Trainer
+  logger:
+    _target_: pytorch_lightning.loggers.CSVLogger
+    save_dir: outputs/tool_routing/logs
+    name: toolbench_scf
+  callbacks:
+    - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+      every_n_epochs: 1
+      dirpath: outputs/tool_routing/scf
+      filename: toolbench-scf-{epoch:02d}
+      save_last: true
+      save_top_k: -1
+    - _target_: pytorch_lightning.callbacks.LearningRateMonitor
+      logging_interval: epoch
+  max_epochs: 4
+  accelerator: auto
+  devices: 1
+  num_sanity_val_steps: 0
+  limit_val_batches: 0
+  log_every_n_steps: 10
+  default_root_dir: outputs/tool_routing/scf
+  enable_checkpointing: true
+
+model:
+  _target_: training.models.scf.SphereConfidenceFace
+  backbone:
+    _target_: training.models.lightning_wrappers.BERTEmbedder
+    model_name: bert-base-uncased
+    num_features: 768
+    bottleneck_dim: 768
+    proj_depth: 2
+    freeze_projection: true
+    freeze_backbone: true
+    backbone_path: /app/model_weights/backbone/bert_toolbench_arcface/backbone.pth
+  head:
+    _target_: training.models.heads.SCFHead
+    convf_dim: 768
+    latent_vector_size: 512
+  scf_loss:
+    _target_: training.models.losses.KLDiracVMF
+    z_dim: 768
+    radius: 1.0
+  softmax_weights:
+    _target_: training.models.scf.SoftmaxWeights
+    softmax_weights_path: /app/model_weights/backbone/bert_toolbench_arcface/softmax_weight.pt
+    radius: 1
+  optimizer_params:
+    optimizer_path: torch.optim
+    optimizer_name: AdamW
+    params:
+      lr: 1.0e-3
+      weight_decay: 1.0e-4
+  scheduler_params:
+    scheduler: CosineAnnealingLR
+    params:
+      T_max: 4
+      eta_min: 1.0e-5
+    interval: epoch
+  permute_batch: false
+
+data:
+  _target_: training.dataset_classes.tool_routing.ToolRoutingDataModule
+  train_path: /app/datasets/tool_routing/toolbench_g1/train_scf.jsonl
+  tokenizer_name: bert-base-uncased
+  batch_size: 128
+  num_workers: 8
+  max_length: 192
+  class_balanced: true

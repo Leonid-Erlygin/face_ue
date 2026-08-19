@@ -28,7 +28,12 @@ from evaluation.modern_ai.data import (
     make_evidence_deletion_protocol,
     mix_cross_domain_unknown_queries,
 )
-from evaluation.modern_ai.embedders import CachedTextEmbedder, HashingTextEmbedder, SentenceTransformerEmbedder
+from evaluation.modern_ai.embedders import (
+    CachedTextEmbedder, HashingTextEmbedder, RepoArcFaceTextEmbedder, RepoSCFTextEmbedder, SentenceTransformerEmbedder,
+)
+from evaluation.modern_ai.tool_datasets import (
+    bfcl_routing_examples_from_manifest, load_toolbench_oser_examples,
+)
 from evaluation.modern_ai.methods import PosteriorModelConfig
 from evaluation.modern_ai.query_uncertainty import load_rewrites_jsonl
 from evaluation.modern_ai.rag import (
@@ -103,6 +108,14 @@ def make_embedder(cfg) -> Any:
         base = SentenceTransformerEmbedder(**ecfg)
     elif kind == "hashing":
         base = HashingTextEmbedder(**ecfg)
+    elif kind == "repo_arcface":
+        # Permit an in-place config override from repo_scf for controlled
+        # constant-kappa ablations without passing SCF-only arguments.
+        ecfg.pop("scf_checkpoint_path", None)
+        ecfg.pop("scf_latent_dim", None)
+        base = RepoArcFaceTextEmbedder(**ecfg)
+    elif kind == "repo_scf":
+        base = RepoSCFTextEmbedder(**ecfg)
     else:
         raise ValueError(f"Unknown embedder.kind={kind}")
     return CachedTextEmbedder(base, cache_dir) if cache_dir else base
@@ -367,19 +380,29 @@ def main():
             seed=int(cfg.get("seed",777)), n_boot=int(cfg.get("n_boot",1000)),
             output_dir=out,
         )["summary"]
-    elif mode in {"bfcl", "tool_routing"}:
+    elif mode in {"bfcl", "tool_routing", "toolbench_osr"}:
         dc = _cfg_dict(cfg, "data")
+        calibration_examples = None
         if mode == "bfcl":
-            examples = load_bfcl_relevance_files(dc.get("relevance_files",[]), dc.get("irrelevance_files",[]))
+            if dc.get("manifest_path"):
+                manifest = json.loads(Path(dc["manifest_path"]).read_text(encoding="utf-8"))
+                examples = bfcl_routing_examples_from_manifest(manifest)
+            else:
+                examples = load_bfcl_relevance_files(dc.get("relevance_files",[]), dc.get("irrelevance_files",[]))
+        elif mode == "toolbench_osr":
+            root = dc["prepared_dir"]
+            calibration_examples = load_toolbench_oser_examples(root, dc.get("calibration_split", "val"))
+            examples = load_toolbench_oser_examples(root, dc.get("test_split", "test"))
         else:
             examples = load_generic_tool_routing(dc["path"])
         embedder=make_embedder(cfg); posterior=make_posterior(cfg)
         qc=_cfg_dict(cfg,"query_uncertainty")
         rewrites=load_rewrites_jsonl(qc["rewrites_path"]) if qc.get("rewrites_path") else None
         result=run_tool_routing_experiment(
-            examples,embedder,posterior,rewrites=rewrites,
+            examples,embedder,posterior,calibration_examples=calibration_examples,rewrites=rewrites,
             default_query_kappa=float(qc.get("default_kappa",300)),
             query_mean_mode=str(qc.get("mean_mode","original")),
+            kappa_source=str(qc.get("source","auto")),
             calibration_fraction=float(cfg.get("calibration_fraction",.3)),
             kappa_grid_size=int(cfg.get("kappa_grid_size",32)), seed=int(cfg.get("seed",777)),
             output_dir=out,

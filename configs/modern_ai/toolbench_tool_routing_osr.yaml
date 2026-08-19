@@ -1,12 +1,12 @@
-mode: bfcl
+mode: toolbench_osr
 seed: 777
-calibration_fraction: 0.30
-kappa_grid_size: 48
-output_dir: outputs/modern_ai/bfcl_open_set_routing
+output_dir: outputs/modern_ai/toolbench_g1_open_set_routing
+kappa_grid_size: 64
 
 data:
-  # Produced by experiments/prepare_tool_routing.py download-bfcl.
-  manifest_path: datasets/tool_routing/bfcl_manifest.json
+  prepared_dir: datasets/tool_routing/toolbench_g1
+  calibration_split: val
+  test_split: test
 
 embedder:
   kind: repo_scf
@@ -22,6 +22,7 @@ embedder:
   cache_dir: .cache/modern_ai_embeddings/toolbench_scf
 
 query_uncertainty:
+  # SCF concentration is learned from the frozen ArcFace representation.
   source: embedder
   default_kappa: 300.0
   mean_mode: original
@@ -33,13 +34,12 @@ posterior:
   gallery_prior: power
   predict_T: 200.0
   mc_samples: 0
-  # External-validation condition: freeze the gallery concentration calibrated
-  # on ToolBench OSR.  BFCL labels are then used only for downstream error
-  # calibration/reporting, not to refit the gallery posterior itself.
   gallery_kappa: null
-  gallery_kappa_from_summary: outputs/modern_ai/toolbench_g1_open_set_routing/summary.json
+  # Fixed ToolBench gallery -> use the dissertation's boundary-root calibration.
+  gallery_kappa_strategy: boundary_roots_calibrated
   kappa_low: 10.0
   kappa_high: 1000000.0
+  kappa_grid_size: 512
 
 reporting:
   enabled: true
