@@ -62,14 +62,20 @@ class SphereConfidenceFace(LightningModule):
         verification_uncertainty_metrics=None,
         predict_kappa_by_input=False,
         backbone_input=None,
+        use_batch_targets=False,
     ):
         super().__init__()
         self.backbone = backbone
         self.backbone.eval()
         self.head = head
         self.scf_loss = scf_loss
-        # bad style code:
-        if softmax_weights is None:
+        self.use_batch_targets = bool(use_batch_targets)
+        # Legacy SCF uses ArcFace classifier centers.  Tool-routing v2 can instead
+        # use a frozen encoded API description supplied in each batch, allowing
+        # SCF training identities to be disjoint from ArcFace training identities.
+        if self.use_batch_targets:
+            self.softmax_weights = None
+        elif softmax_weights is None:
             # Assume weights are stored in the backbone, e.g. Whale model.
             self.softmax_weights = self.backbone.backbone.head_id.weight.detach()
             delattr(self.backbone.backbone, "head_id")
@@ -109,11 +115,20 @@ class SphereConfidenceFace(LightningModule):
         return backbone_outputs["feature"], log_kappa
 
     def training_step(self, batch):
-        images, labels = batch
-        # freezing bn layers
-        feature, log_kappa = self(images)
+        if self.use_batch_targets:
+            images, target_inputs = batch
+            # Query concentration is predicted from a frozen ArcFace embedding.
+            feature, log_kappa = self(images)
+            # The target API description is embedded by the *same* frozen mean
+            # encoder, so wc lies on exactly the deployment gallery sphere.
+            self.backbone.eval()
+            with torch.no_grad():
+                wc = self.backbone(target_inputs)["feature"].detach()
+        else:
+            images, labels = batch
+            feature, log_kappa = self(images)
+            wc = self.softmax_weights[labels, :]
         kappa = torch.exp(log_kappa)
-        wc = self.softmax_weights[labels, :]
         losses, l1, l2, l3, cos = self.scf_loss(feature, kappa, wc)
 
         kappa_mean = kappa.mean()

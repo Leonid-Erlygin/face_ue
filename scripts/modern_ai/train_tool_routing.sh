@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ ! -f datasets/tool_routing/toolbench_g1/train_arcface.jsonl || ! -f datasets/tool_routing/toolbench_g1/train_scf.jsonl ]]; then
-  echo "Prepared ToolBench protocol missing/incomplete; running dataset preparation first."
+EXPECTED_PROTOCOL="toolbench_g1_stage_class_disjoint_v2"
+CURRENT_PROTOCOL="$(python - <<'PY'
+import json
+from pathlib import Path
+p=Path("datasets/tool_routing/toolbench_g1/manifest.json")
+if not p.exists():
+    print("")
+else:
+    print(json.loads(p.read_text(encoding="utf-8")).get("protocol", ""))
+PY
+)"
+if [[ "$CURRENT_PROTOCOL" != "$EXPECTED_PROTOCOL" ]]; then
+  echo "Prepared ToolBench protocol is '$CURRENT_PROTOCOL'; rebuilding as $EXPECTED_PROTOCOL."
   bash scripts/modern_ai/prepare_tool_routing.sh
 fi
 
@@ -26,8 +37,8 @@ python experiments/audit_tool_routing_arcface.py \
   --min-api-center-accuracy 0.05
 
 # Do not train an uncertainty head on top of a demonstrably broken mean
-# embedding geometry. The audit above exits non-zero for catastrophic routing
-# geometry, and set -e stops the pipeline here.
+# embedding geometry.  In stage-disjoint v2 the fail-fast routing metric is on
+# calibration API identities that ArcFace never saw during training.
 python training/trainers/train.py --config-name text_model_toolbench_scf.yaml
 
 SCF_CKPT="outputs/tool_routing/scf/last.ckpt"

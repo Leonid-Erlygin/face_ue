@@ -323,3 +323,43 @@ Do not begin with BFCL. Use this order:
 7. only then run BFCL external transfer.
 
 This sequence distinguishes failures of the deterministic embedding geometry from failures of SCF concentration or of the GalUE/HolUE/MPRisk posterior.
+
+## Stage-class-disjoint protocol (v2)
+
+The G1 density audit shows that almost every usable API has exactly three
+single-API queries.  Therefore the primary protocol must **not** split queries of
+the same API into ArcFace, SCF, calibration, and test partitions.  The current
+protocol instead partitions API identities themselves:
+
+| Stage | API classes | Typical real queries/API | Purpose |
+|---|---:|---:|---|
+| ArcFace | 512 | 3 | learn the deterministic spherical text geometry |
+| SCF | 384 | 3 | learn query concentration on APIs unseen by ArcFace |
+| calibration-known | 256 | 3 | fit gallery concentration / downstream calibration |
+| final-test-known | 256 | 3 | final fixed-gallery known probes |
+| calibration-unknown | 96 | 3 | FPIR/open-set calibration only |
+| final-test-unknown | 96 | 3 | final open-set probes |
+
+All six API sets are pairwise disjoint.  With the current ToolBench release this
+uses 1600 of the 1602 API classes having at least three usable G1 queries.
+
+### Prototype-target SCF
+
+SCF no longer requires the ArcFace classifier center for the API identity.
+For each SCF-stage query `x` and its API description `t`, the frozen ArcFace
+encoder produces
+
+`mu_x = f(x)` and `mu_t = f(t)`.
+
+The native `KLDiracVMF` objective is then optimized with `mu_t` as `wc`.  This
+preserves the SCF/vMF mathematics while making SCF API identities disjoint from
+ArcFace identities and aligning the training target with the actual deployable
+API-description gallery.
+
+### Fixed-K gallery transfer
+
+Calibration and final testing each use one fixed 256-API gallery, but the API
+identities are different.  Gallery concentration is fitted only on the
+calibration gallery and then frozen for the final gallery.  The evaluator keeps
+this on the fixed-K posterior path rather than switching to the variable-gallery
+BFCL fallback.

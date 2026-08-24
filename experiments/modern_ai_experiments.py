@@ -397,6 +397,7 @@ def main():
             examples = load_generic_tool_routing(dc["path"])
         embedder=make_embedder(cfg); posterior=make_posterior(cfg)
         qc=_cfg_dict(cfg,"query_uncertainty")
+        qkc=dict(qc.get("concentration_calibration") or {})
         rewrites=load_rewrites_jsonl(qc["rewrites_path"]) if qc.get("rewrites_path") else None
         result=run_tool_routing_experiment(
             examples,embedder,posterior,calibration_examples=calibration_examples,rewrites=rewrites,
@@ -404,8 +405,11 @@ def main():
             query_mean_mode=str(qc.get("mean_mode","original")),
             kappa_source=str(qc.get("source","auto")),
             calibration_fraction=float(cfg.get("calibration_fraction",.3)),
-            kappa_grid_size=int(cfg.get("kappa_grid_size",32)), seed=int(cfg.get("seed",777)),
-            output_dir=out,
+            kappa_grid_size=int(cfg.get("kappa_grid_size",32)),
+            query_kappa_calibration=str(qkc.get("strategy", "none")),
+            query_kappa_scale_min=float(qkc.get("min_scale", 0.05)),
+            query_kappa_scale_max=float(qkc.get("max_scale", 20.0)),
+            seed=int(cfg.get("seed",777)), output_dir=out,
         )["summary"]
     else:
         raise ValueError(f"Unknown mode={mode}")

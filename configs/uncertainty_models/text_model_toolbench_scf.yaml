@@ -43,10 +43,6 @@ model:
     _target_: training.models.losses.KLDiracVMF
     z_dim: 768
     radius: 1.0
-  softmax_weights:
-    _target_: training.models.scf.SoftmaxWeights
-    softmax_weights_path: /app/model_weights/backbone/bert_toolbench_arcface/softmax_weight.pt
-    radius: 1
   optimizer_params:
     optimizer_path: torch.optim
     optimizer_name: AdamW
@@ -63,9 +59,12 @@ model:
       final_div_factor: 100
     interval: step
   permute_batch: false
+  # Stage-disjoint ToolBench v2: target direction is the frozen ArcFace
+  # embedding of the API description supplied by the datamodule.
+  use_batch_targets: true
 
 data:
-  _target_: training.dataset_classes.tool_routing.ToolRoutingDataModule
+  _target_: training.dataset_classes.tool_routing.ToolRoutingPrototypeDataModule
   train_path: /app/datasets/tool_routing/toolbench_g1/train_scf.jsonl
   tokenizer_name: bert-base-uncased
   batch_size: 32

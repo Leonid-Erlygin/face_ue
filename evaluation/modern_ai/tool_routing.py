@@ -8,12 +8,16 @@ from pathlib import Path
 from typing import Mapping, Optional, Sequence
 
 import numpy as np
+from scipy.optimize import minimize_scalar
+
+from evaluation.open_set_methods.kappa_utils import vmf_log_normalizer_np
 
 from .calibration import ErrorCalibratorBundle, binary_nll
-from .embedders import BaseTextEmbedder
+from .embedders import BaseTextEmbedder, l2_normalize
 from .methods import ModernUncertaintyModel, PosteriorModelConfig
 from .metrics import calibration_metrics, risk_coverage_curve
 from .query_uncertainty import query_embeddings_and_kappa
+from .scf_diagnostics import vmf_mean_resultant
 from .types import ToolRoutingExample
 
 
@@ -121,6 +125,97 @@ def _encode_examples(
         galleries = [embedder.encode_documents(x.tools) for x in examples]
     return q, kappa, rbar, galleries
 
+
+
+def fit_query_kappa_scale(
+    examples: Sequence[ToolRoutingExample],
+    query_embeddings: np.ndarray,
+    query_kappa: np.ndarray,
+    galleries: Sequence[np.ndarray],
+    *,
+    min_scale: float = 0.05,
+    max_scale: float = 20.0,
+) -> tuple[float, dict]:
+    """Fit one multiplicative SCF concentration scale on known calibration queries.
+
+    SCF learns the *ordering* and approximate magnitude of ``kappa_x``.  Transfer
+    to API identities unseen by the SCF stage can leave a global concentration
+    bias even when ranking remains useful.  HolUE/MPRisk depend on the absolute
+    concentration, so the primary ToolBench protocol is allowed one validation-
+    only scalar calibration before gallery-kappa fitting.
+
+    The scale minimizes the proper vMF negative log-likelihood of each known
+    calibration query's true API-description direction.  Unknown calibration
+    queries are deliberately excluded because they have no positive spherical
+    target.  The fitted scalar is then frozen for the final test split.
+    """
+    if not (0.0 < float(min_scale) < float(max_scale)):
+        raise ValueError("Need 0 < min_scale < max_scale for query-kappa calibration")
+    q = l2_normalize(np.asarray(query_embeddings, dtype=np.float64))
+    k = np.asarray(query_kappa, dtype=np.float64).reshape(-1)
+    if len(q) != len(examples) or len(k) != len(examples) or len(galleries) != len(examples):
+        raise ValueError("examples/query embeddings/query kappa/galleries lengths differ")
+    if np.any(~np.isfinite(k)) or np.any(k <= 0):
+        raise FloatingPointError("query-kappa calibration requires finite positive concentrations")
+
+    positive_rows = []
+    target_cosines = []
+    for i, ex in enumerate(examples):
+        if not bool(ex.known) or not ex.relevant_tool_indices:
+            continue
+        gallery = l2_normalize(np.asarray(galleries[i], dtype=np.float64))
+        rel = [int(j) for j in ex.relevant_tool_indices if 0 <= int(j) < len(gallery)]
+        if not rel:
+            continue
+        # ToolBench has one positive API.  Using max makes the calibration helper
+        # well-defined for later multi-positive routing benchmarks too.
+        cos = float(np.max(gallery[rel] @ q[i]))
+        positive_rows.append(i)
+        target_cosines.append(cos)
+    if not positive_rows:
+        raise ValueError("No known calibration queries with a relevant API for kappa scaling")
+
+    idx = np.asarray(positive_rows, dtype=int)
+    target = np.asarray(target_cosines, dtype=np.float64)
+    base_k = k[idx]
+    d = int(q.shape[1])
+
+    def nll_for_log_scale(log_scale: float) -> float:
+        scale = float(np.exp(log_scale))
+        kk = np.maximum(base_k * scale, 1e-12)
+        log_c = vmf_log_normalizer_np(kk, d=d)
+        return float(np.mean(-(log_c + kk * target)))
+
+    result = minimize_scalar(
+        nll_for_log_scale,
+        bounds=(float(np.log(min_scale)), float(np.log(max_scale))),
+        method="bounded",
+        options={"xatol": 1e-8},
+    )
+    if not result.success or not np.isfinite(result.fun):
+        raise RuntimeError(f"SCF query-kappa scale calibration failed: {result}")
+    scale = float(np.exp(result.x))
+
+    raw_ad = vmf_mean_resultant(base_k, d)
+    calibrated_ad = vmf_mean_resultant(base_k * scale, d)
+    meta = {
+        "strategy": "known_positive_vmf_nll_scale",
+        "uses_unknown_queries": False,
+        "num_known_positive_queries": int(len(idx)),
+        "embedding_dim": d,
+        "scale": scale,
+        "bounds": [float(min_scale), float(max_scale)],
+        "objective_nll_raw": nll_for_log_scale(0.0),
+        "objective_nll_calibrated": float(result.fun),
+        "target_cosine_mean": float(np.mean(target)),
+        "raw_mean_A_d_kappa": float(np.mean(raw_ad)),
+        "calibrated_mean_A_d_kappa": float(np.mean(calibrated_ad)),
+        "raw_stationarity_mae": float(np.mean(np.abs(raw_ad - np.clip(target, 0.0, 1.0)))),
+        "calibrated_stationarity_mae": float(np.mean(np.abs(calibrated_ad - np.clip(target, 0.0, 1.0)))),
+        "optimizer_at_lower_bound": bool(scale <= min_scale * 1.001),
+        "optimizer_at_upper_bound": bool(scale >= max_scale / 1.001),
+    }
+    return scale, meta
 
 def fit_variable_gallery_kappa(
     query_embeddings: np.ndarray,
@@ -239,6 +334,9 @@ def run_tool_routing_experiment(
     kappa_source: str = "auto",
     calibration_fraction: float = 0.3,
     kappa_grid_size: int = 32,
+    query_kappa_calibration: str = "none",
+    query_kappa_scale_min: float = 0.05,
+    query_kappa_scale_max: float = 20.0,
     seed: int = 777,
     output_dir: Optional[str | Path] = None,
 ) -> dict:
@@ -305,27 +403,67 @@ def run_tool_routing_experiment(
         split_meta = {"strategy": "prescribed_validation_test", "seed": seed,
                       "num_calibration": len(cal_examples), "num_test": len(test_examples)}
 
+    raw_k_cal = np.asarray(k_cal, dtype=np.float64).copy()
+    raw_k_test = np.asarray(k_test, dtype=np.float64).copy()
+    kappa_scale_strategy = str(query_kappa_calibration).strip().lower()
+    if kappa_scale_strategy in {"none", "off", "false"}:
+        query_kappa_scale = 1.0
+        query_kappa_calibration_meta = {
+            "strategy": "none",
+            "scale": 1.0,
+            "uses_final_test_split": False,
+        }
+    elif kappa_scale_strategy in {"vmf_nll_scale", "known_positive_vmf_nll_scale"}:
+        query_kappa_scale, query_kappa_calibration_meta = fit_query_kappa_scale(
+            cal_examples, q_cal, raw_k_cal, g_cal,
+            min_scale=query_kappa_scale_min, max_scale=query_kappa_scale_max,
+        )
+        query_kappa_calibration_meta["uses_final_test_split"] = False
+    else:
+        raise ValueError(
+            "query_kappa_calibration must be 'none' or 'vmf_nll_scale'; "
+            f"got {query_kappa_calibration!r}"
+        )
+    k_cal = raw_k_cal * float(query_kappa_scale)
+    k_test = raw_k_test * float(query_kappa_scale)
+
     known_cal = np.asarray([x.known for x in cal_examples], dtype=bool)
     fixed_cal = _fixed_tool_gallery(cal_examples)
     fixed_test = _fixed_tool_gallery(test_examples)
-    use_fixed = fixed_cal is not None and fixed_test is not None and fixed_cal == fixed_test
+    # A fixed-gallery protocol does not require the *identities* in calibration
+    # and test galleries to be the same.  ToolBench v2 deliberately transfers a
+    # concentration fitted on one K-class gallery to a disjoint K-class gallery,
+    # mirroring identity-disjoint face-recognition evaluation.  The fixed-K
+    # posterior is valid as long as each split has one fixed gallery and K agrees.
+    use_fixed = (
+        fixed_cal is not None and fixed_test is not None
+        and len(fixed_cal) == len(fixed_test)
+    )
+    same_fixed_gallery = bool(use_fixed and fixed_cal == fixed_test)
 
     if use_fixed:
-        gallery = g_cal[0]
+        calibration_gallery = g_cal[0]
+        test_gallery = g_test[0]
         model = ModernUncertaintyModel(model_config)
-        fitted_kappa = model.fit_gallery_kappa(q_cal, k_cal, gallery, known_cal)
+        fitted_kappa = model.fit_gallery_kappa(q_cal, k_cal, calibration_gallery, known_cal)
         kappa_meta = {
             "strategy": str(model_config.gallery_kappa_strategy),
             "fixed_gallery": True,
-            "num_gallery_tools": len(gallery),
+            "same_gallery_identities_in_calibration_and_test": same_fixed_gallery,
+            "num_gallery_tools": len(calibration_gallery),
             "fit_tau": float(getattr(model, "fit_tau_", np.nan)),
             "candidates": list(map(float, getattr(model, "kappa_candidates_", ()))),
             "candidate_nll": list(map(float, getattr(model, "kappa_candidate_nll_", ()))),
         }
         cfg = replace(model_config, gallery_kappa=float(fitted_kappa))
-        # Preserve fitted state/metadata while scoring.
-        cal_s = _fixed_scores(model, cal_examples, q_cal, k_cal, gallery, r_cal)
-        test_s = _fixed_scores(model, test_examples, q_test, k_test, g_test[0], r_test)
+        # Fit only on calibration classes, then freeze kappa_g and score the
+        # disjoint final gallery without refitting.
+        cal_s = _fixed_scores(
+            model, cal_examples, q_cal, k_cal, calibration_gallery, r_cal
+        )
+        test_s = _fixed_scores(
+            model, test_examples, q_test, k_test, test_gallery, r_test
+        )
     else:
         fitted_kappa, kappa_meta = fit_variable_gallery_kappa(
             q_cal, k_cal, g_cal, known_cal, model_config, grid_size=kappa_grid_size,
@@ -386,11 +524,15 @@ def run_tool_routing_experiment(
         "experiment": "open_set_tool_routing",
         "embedder": getattr(embedder,"model_name",type(embedder).__name__),
         "query_kappa_source": kappa_source,
+        "query_kappa_calibration": query_kappa_calibration_meta,
         "query_kappa_stats": {
-            "calibration": _kappa_stats(k_cal),
-            "test": _kappa_stats(k_test),
+            "calibration_raw": _kappa_stats(raw_k_cal),
+            "test_raw": _kappa_stats(raw_k_test),
+            "calibration_effective": _kappa_stats(k_cal),
+            "test_effective": _kappa_stats(k_test),
         },
         "fixed_gallery": bool(use_fixed),
+        "same_gallery_identities_in_calibration_and_test": bool(same_fixed_gallery),
         "fitted_gallery_kappa": float(fitted_kappa),
         "kappa_calibration": kappa_meta,
         "posterior_config": asdict(cfg),
@@ -406,7 +548,8 @@ def run_tool_routing_experiment(
             "rejected":bool(t_rej[j]),"predicted_index":int(t_pred[j]),"correct":bool(t_correct[j]),
             "relevant_tool_indices":";".join(map(str,x.relevant_tool_indices)),
             "group_id": str(x.metadata.get("tool_id") or x.metadata.get("source_file") or x.example_id),
-            "query_kappa": float(np.asarray(k_test[j]).reshape(-1)[0]),
+            "query_kappa_raw": float(np.asarray(raw_k_test[j]).reshape(-1)[0]),
+            "query_kappa_effective": float(np.asarray(k_test[j]).reshape(-1)[0]),
         }
         for k,v in test_s.items(): row[f"raw__{k}"]=float(v[j])
         for k,v in calibrated.items(): row[f"p_error__{k}"]=float(v[j])

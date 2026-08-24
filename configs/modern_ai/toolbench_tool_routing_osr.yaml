@@ -27,6 +27,13 @@ query_uncertainty:
   default_kappa: 300.0
   mean_mode: original
   rewrites_path: null
+  # Fit one global multiplicative scale using only calibration-known queries and
+  # their correct API descriptions. This corrects cross-API SCF concentration
+  # bias before fitting gallery kappa, then remains frozen on the final test.
+  concentration_calibration:
+    strategy: vmf_nll_scale
+    min_scale: 0.05
+    max_scale: 20.0
 
 posterior:
   beta: 0.5

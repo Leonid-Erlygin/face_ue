@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+EXPECTED_PROTOCOL="toolbench_g1_stage_class_disjoint_v2"
+CURRENT_PROTOCOL="$(python - <<'PY'
+import json
+from pathlib import Path
+p=Path("datasets/tool_routing/toolbench_g1/manifest.json")
+print(json.loads(p.read_text(encoding="utf-8")).get("protocol", "") if p.exists() else "")
+PY
+)"
+if [[ "$CURRENT_PROTOCOL" != "$EXPECTED_PROTOCOL" ]]; then
+  echo "SCF-only training requires $EXPECTED_PROTOCOL; rerun preparation and full ArcFace training first." >&2
+  exit 1
+fi
+
 BACKBONE="model_weights/backbone/bert_toolbench_arcface/backbone.pth"
 CENTERS="model_weights/backbone/bert_toolbench_arcface/softmax_weight.pt"
 if [[ ! -f "$BACKBONE" || ! -f "$CENTERS" ]]; then

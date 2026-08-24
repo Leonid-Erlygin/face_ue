@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
 
 from evaluation.modern_ai.tool_datasets import (
     build_toolbench_class_disjoint_protocol,
+    build_toolbench_stage_disjoint_protocol,
     clone_bfcl,
     discover_bfcl_routing_files,
     download_toolbench_data,
@@ -51,6 +52,22 @@ def main() -> None:
     build.add_argument("--seed", type=int, default=777)
     build.add_argument("--no-tool-documents-in-train", action="store_true")
 
+    build2 = sub.add_parser(
+        "build-toolbench-stage-disjoint",
+        help="Build stage-class-disjoint ArcFace/SCF/calibration/test ToolBench protocol",
+    )
+    build2.add_argument("--g1-query-path", default="external/ToolBench/data/instruction/G1_query.json")
+    build2.add_argument("--output-dir", default="datasets/tool_routing/toolbench_g1")
+    build2.add_argument("--num-arcface-tools", type=int, default=512)
+    build2.add_argument("--num-scf-tools", type=int, default=384)
+    build2.add_argument("--num-calibration-known-tools", type=int, default=256)
+    build2.add_argument("--num-test-known-tools", type=int, default=256)
+    build2.add_argument("--num-calibration-unknown-tools", type=int, default=96)
+    build2.add_argument("--num-test-unknown-tools", type=int, default=96)
+    build2.add_argument("--min-queries-per-tool", type=int, default=3)
+    build2.add_argument("--seed", type=int, default=777)
+    build2.add_argument("--no-tool-documents-in-train", action="store_true")
+
     bf = sub.add_parser("download-bfcl", help="Clone official Gorilla/BFCL and discover routing categories")
     bf.add_argument("--output-root", default="external/gorilla")
     bf.add_argument("--manifest", default="datasets/tool_routing/bfcl_manifest.json")
@@ -63,11 +80,22 @@ def main() -> None:
     allp.add_argument("--bfcl-root", default="external/gorilla")
     allp.add_argument("--bfcl-manifest", default="datasets/tool_routing/bfcl_manifest.json")
     allp.add_argument("--bfcl-ref", default="main")
-    allp.add_argument("--num-known-tools", type=int, default=1024)
-    allp.add_argument("--num-unknown-tools", type=int, default=256)
+    allp.add_argument("--num-arcface-tools", type=int, default=512)
+    allp.add_argument("--num-scf-tools", type=int, default=384)
+    allp.add_argument("--num-calibration-known-tools", type=int, default=256)
+    allp.add_argument("--num-test-known-tools", type=int, default=256)
+    allp.add_argument("--num-calibration-unknown-tools", type=int, default=96)
+    allp.add_argument("--num-test-unknown-tools", type=int, default=96)
     allp.add_argument("--min-queries-per-tool", type=int, default=3)
-    allp.add_argument("--unknown-calibration-fraction", type=float, default=0.50)
     allp.add_argument("--seed", type=int, default=777)
+    # Backward compatibility for customized preparation wrappers created before
+    # stage-disjoint v2.  These flags are intentionally accepted by ``all`` so
+    # local archive/download logic does not need to be rewritten.  The old
+    # aggregate class counts cannot be mapped uniquely onto six disjoint stages,
+    # so they are deprecated and do not override the stage-specific defaults.
+    allp.add_argument("--num-known-tools", type=int, default=None, help=argparse.SUPPRESS)
+    allp.add_argument("--num-unknown-tools", type=int, default=None, help=argparse.SUPPRESS)
+    allp.add_argument("--unknown-calibration-fraction", type=float, default=None, help=argparse.SUPPRESS)
 
     args = p.parse_args()
     if args.command == "download-toolbench":
@@ -93,6 +121,20 @@ def main() -> None:
             seed=args.seed,
         )
         print(json.dumps(result, indent=2))
+    elif args.command == "build-toolbench-stage-disjoint":
+        result = build_toolbench_stage_disjoint_protocol(
+            args.g1_query_path, args.output_dir,
+            num_arcface_tools=args.num_arcface_tools,
+            num_scf_tools=args.num_scf_tools,
+            num_calibration_known_tools=args.num_calibration_known_tools,
+            num_test_known_tools=args.num_test_known_tools,
+            num_calibration_unknown_tools=args.num_calibration_unknown_tools,
+            num_test_unknown_tools=args.num_test_unknown_tools,
+            min_queries_per_tool=args.min_queries_per_tool,
+            add_tool_documents_to_arcface=not args.no_tool_documents_in_train,
+            seed=args.seed,
+        )
+        print(json.dumps(result, indent=2))
     elif args.command == "download-bfcl":
         source = clone_bfcl(args.output_root, ref=args.ref, force=args.force)
         discovered = discover_bfcl_routing_files(args.output_root)
@@ -101,12 +143,35 @@ def main() -> None:
         path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         print(json.dumps(manifest, indent=2))
     else:
+        legacy_values = {
+            "num_known_tools": args.num_known_tools,
+            "num_unknown_tools": args.num_unknown_tools,
+            "unknown_calibration_fraction": args.unknown_calibration_fraction,
+        }
+        if any(value is not None for value in legacy_values.values()):
+            print(
+                "[tool-routing] NOTE: legacy aggregate ToolBench flags were supplied "
+                "and are accepted for compatibility, but stage-disjoint v2 uses the "
+                "stage-specific counts: "
+                f"ArcFace={args.num_arcface_tools}, SCF={args.num_scf_tools}, "
+                f"cal-known={args.num_calibration_known_tools}, "
+                f"test-known={args.num_test_known_tools}, "
+                f"cal-unknown={args.num_calibration_unknown_tools}, "
+                f"test-unknown={args.num_test_unknown_tools}. "
+                "Set the new --num-*-tools options directly if you want to change them.",
+                file=sys.stderr,
+            )
         g1 = download_toolbench_data(args.toolbench_root)
-        protocol = build_toolbench_class_disjoint_protocol(
-            g1, args.prepared_dir, num_known_tools=args.num_known_tools,
-            num_unknown_tools=args.num_unknown_tools,
+        protocol = build_toolbench_stage_disjoint_protocol(
+            g1, args.prepared_dir,
+            num_arcface_tools=args.num_arcface_tools,
+            num_scf_tools=args.num_scf_tools,
+            num_calibration_known_tools=args.num_calibration_known_tools,
+            num_test_known_tools=args.num_test_known_tools,
+            num_calibration_unknown_tools=args.num_calibration_unknown_tools,
+            num_test_unknown_tools=args.num_test_unknown_tools,
             min_queries_per_tool=args.min_queries_per_tool,
-            unknown_calibration_fraction=args.unknown_calibration_fraction, seed=args.seed,
+            seed=args.seed,
         )
         source = clone_bfcl(args.bfcl_root, ref=args.bfcl_ref)
         discovered = discover_bfcl_routing_files(args.bfcl_root)

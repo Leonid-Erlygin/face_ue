@@ -10,13 +10,18 @@ from evaluation.modern_ai.methods import PosteriorModelConfig
 from evaluation.modern_ai.tool_datasets import (
     bfcl_routing_examples_from_manifest,
     build_toolbench_class_disjoint_protocol,
+    build_toolbench_stage_disjoint_protocol,
     discover_bfcl_routing_files,
+    load_toolbench_oser_examples,
     toolbench_query_count_statistics,
 )
-from evaluation.modern_ai.tool_routing import run_tool_routing_experiment
+from evaluation.modern_ai.tool_routing import fit_query_kappa_scale, run_tool_routing_experiment
 from evaluation.modern_ai.types import ToolRoutingExample
 from experiments.export_tool_routing_arcface import export_arcface
-from training.dataset_classes.tool_routing import ToolRoutingClassificationDataset
+from evaluation.modern_ai.scf_diagnostics import vmf_mean_resultant
+from training.dataset_classes.tool_routing import (
+    ToolRoutingClassificationDataset, ToolRoutingPrototypeDataset,
+)
 
 
 def _write_g1(path: Path, num_tools=8, queries_per_tool=5):
@@ -238,6 +243,9 @@ def test_tool_routing_configs_reference_separate_training_protocols():
     osr = OmegaConf.load("configs/modern_ai/toolbench_tool_routing_osr.yaml")
     assert str(arc.data.train_path).endswith("train_arcface.jsonl")
     assert str(scf.data.train_path).endswith("train_scf.jsonl")
+    assert str(scf.data._target_).endswith("ToolRoutingPrototypeDataModule")
+    assert bool(scf.model.use_batch_targets) is True
+    assert "softmax_weights" not in scf.model
     assert str(scf.model.scheduler_params.scheduler) == "OneCycleLR"
     assert str(scf.model.scheduler_params.params.total_steps) == "auto"
     assert int(scf.trainer.max_epochs) >= 20
@@ -299,3 +307,127 @@ def test_bfcl_config_transfers_toolbench_gallery_concentration():
     assert str(cfg.posterior.gallery_kappa_from_summary).endswith(
         "outputs/modern_ai/toolbench_g1_open_set_routing/summary.json"
     )
+
+
+
+def test_stage_disjoint_toolbench_protocol_uses_disjoint_api_classes(tmp_path):
+    g1 = tmp_path / "G1_query.json"
+    out = tmp_path / "prepared_v2"
+    _write_g1(g1, num_tools=24, queries_per_tool=3)
+    manifest = build_toolbench_stage_disjoint_protocol(
+        g1, out,
+        num_arcface_tools=6,
+        num_scf_tools=5,
+        num_calibration_known_tools=4,
+        num_test_known_tools=4,
+        num_calibration_unknown_tools=2,
+        num_test_unknown_tools=2,
+        min_queries_per_tool=3,
+        seed=19,
+    )
+    assert manifest["protocol"] == "toolbench_g1_stage_class_disjoint_v2"
+    assert all(v == 0 for v in manifest["pairwise_stage_overlap_counts"].values())
+    assert manifest["uses_final_test_for_training_or_calibration"] is False
+
+    arc = _read_jsonl(out / "train_arcface.jsonl")
+    scf = _read_jsonl(out / "train_scf.jsonl")
+    val = _read_jsonl(out / "val.jsonl")
+    test = _read_jsonl(out / "test.jsonl")
+    arc_tools = {x["tool_id"] for x in arc}
+    scf_tools = {x["tool_id"] for x in scf}
+    cal_known = {x["tool_id"] for x in val if x["known"]}
+    cal_unknown = {x["tool_id"] for x in val if not x["known"]}
+    test_known = {x["tool_id"] for x in test if x["known"]}
+    test_unknown = {x["tool_id"] for x in test if not x["known"]}
+    sets = [arc_tools, scf_tools, cal_known, cal_unknown, test_known, test_unknown]
+    for i, a in enumerate(sets):
+        for b in sets[i+1:]:
+            assert a.isdisjoint(b)
+
+    assert all(x.get("target_text") for x in scf)
+    ds = ToolRoutingPrototypeDataset(out / "train_scf.jsonl")
+    assert len(ds) == 5 * 3
+    assert len(_read_jsonl(out / "calibration_gallery.jsonl")) == 4
+    assert len(_read_jsonl(out / "test_gallery.jsonl")) == 4
+
+    cal_examples = load_toolbench_oser_examples(out, "val")
+    test_examples = load_toolbench_oser_examples(out, "test")
+    assert len(cal_examples[0].tools) == 4
+    assert len(test_examples[0].tools) == 4
+    assert cal_examples[0].tools != test_examples[0].tools
+
+
+def test_fixed_k_tool_routing_can_transfer_between_disjoint_galleries(tmp_path):
+    cal_gallery = ("alpha tool", "beta tool")
+    test_gallery = ("gamma tool", "delta tool")
+    cal = [
+        ToolRoutingExample("ca", "alpha request", cal_gallery, True, (0,), {"tool_id": "ca"}),
+        ToolRoutingExample("cb", "beta request", cal_gallery, True, (1,), {"tool_id": "cb"}),
+        ToolRoutingExample("cu1", "unknown-a", cal_gallery, False, (), {"tool_id": "u1"}),
+        ToolRoutingExample("cu2", "unknown-b", cal_gallery, False, (), {"tool_id": "u2"}),
+    ]
+    test = [
+        ToolRoutingExample("tg", "gamma request", test_gallery, True, (0,), {"tool_id": "tg"}),
+        ToolRoutingExample("td", "delta request", test_gallery, True, (1,), {"tool_id": "td"}),
+        ToolRoutingExample("tu1", "unknown-a", test_gallery, False, (), {"tool_id": "u3"}),
+        ToolRoutingExample("tu2", "unknown-b", test_gallery, False, (), {"tool_id": "u4"}),
+    ]
+
+    class E(_LearnedKappaEmbedder):
+        @staticmethod
+        def _vec(text):
+            text = str(text).lower()
+            if "alpha" in text or "gamma" in text:
+                return [1.0, 0.0, 0.0, 0.0]
+            if "beta" in text or "delta" in text:
+                return [0.0, 1.0, 0.0, 0.0]
+            if "unknown-a" in text:
+                return [-1.0, 0.0, 0.0, 0.0]
+            if "unknown-b" in text:
+                return [0.0, -1.0, 0.0, 0.0]
+            return [0.0, 0.0, 1.0, 0.0]
+
+    cfg = PosteriorModelConfig(
+        gallery_kappa=30.0, beta=0.5, predict_T=20.0,
+        gallery_prior="power", mc_samples=0,
+    )
+    result = run_tool_routing_experiment(
+        test, E(), cfg, calibration_examples=cal,
+        kappa_source="embedder", output_dir=tmp_path / "fixed_transfer",
+    )
+    summary = result["summary"]
+    assert summary["fixed_gallery"] is True
+    assert summary["same_gallery_identities_in_calibration_and_test"] is False
+    assert summary["kappa_calibration"]["same_gallery_identities_in_calibration_and_test"] is False
+
+
+def test_query_kappa_scale_calibration_recovers_global_vmf_scale():
+    # Construct known examples whose target cosine is exactly the vMF mean
+    # resultant at 2.5x the raw kappa. The calibration should recover that
+    # multiplicative scale without any unknown or test examples.
+    raw_k = np.asarray([[1.5], [3.0], [6.0], [12.0]], dtype=float)
+    true_scale = 2.5
+    target_cos = vmf_mean_resultant(raw_k.reshape(-1) * true_scale, d=4)
+    gallery = np.asarray([[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]])
+    queries = np.asarray([
+        [c, np.sqrt(max(1.0 - c*c, 0.0)), 0.0, 0.0] for c in target_cos
+    ])
+    examples = [
+        ToolRoutingExample(f"k{i}", f"q{i}", ("target", "other"), True, (0,), {})
+        for i in range(len(raw_k))
+    ]
+    scale, meta = fit_query_kappa_scale(
+        examples, queries, raw_k, [gallery] * len(examples),
+        min_scale=0.1, max_scale=10.0,
+    )
+    assert np.isclose(scale, true_scale, rtol=2e-3)
+    assert meta["uses_unknown_queries"] is False
+    assert meta["calibrated_stationarity_mae"] < meta["raw_stationarity_mae"]
+    assert meta["objective_nll_calibrated"] < meta["objective_nll_raw"]
+
+
+def test_toolbench_osr_config_enables_validation_only_query_kappa_calibration():
+    cfg = OmegaConf.load("configs/modern_ai/toolbench_tool_routing_osr.yaml")
+    assert str(cfg.query_uncertainty.concentration_calibration.strategy) == "vmf_nll_scale"
+    assert float(cfg.query_uncertainty.concentration_calibration.min_scale) > 0
+    assert float(cfg.query_uncertainty.concentration_calibration.max_scale) > 1

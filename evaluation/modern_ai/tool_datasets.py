@@ -416,11 +416,251 @@ def build_toolbench_class_disjoint_protocol(
     return manifest
 
 
+
+def _stage_category_counts(tool_ids: Sequence[str], tools: Mapping[str, Mapping[str, Any]]) -> dict:
+    counts = Counter(str(tools[tid].get("category", "")) for tid in tool_ids)
+    return dict(sorted((k, int(v)) for k, v in counts.items()))
+
+
+def build_toolbench_stage_disjoint_protocol(
+    g1_query_path: str | Path,
+    output_dir: str | Path,
+    *,
+    num_arcface_tools: int = 512,
+    num_scf_tools: int = 384,
+    num_calibration_known_tools: int = 256,
+    num_test_known_tools: int = 256,
+    num_calibration_unknown_tools: int = 96,
+    num_test_unknown_tools: int = 96,
+    min_queries_per_tool: int = 3,
+    add_tool_documents_to_arcface: bool = True,
+    seed: int = 777,
+) -> dict:
+    """Build a stage-class-disjoint ToolBench protocol.
+
+    G1 contains about three usable queries for almost every API, which makes a
+    four-way *within-API* ArcFace/SCF/calibration/test split statistically
+    impossible.  This protocol instead mirrors modern face-recognition practice:
+    identities/classes are separated by stage.
+
+      ArcFace API classes
+        != SCF API classes
+        != calibration-known gallery API classes
+        != final-test-known gallery API classes
+        != calibration-unknown API classes
+        != final-test-unknown API classes.
+
+    SCF rows contain ``target_text`` and are trained against the frozen ArcFace
+    embedding of the API description, so SCF does not need ArcFace classifier
+    weights for its own classes.
+    """
+    counts = {
+        "arcface": int(num_arcface_tools),
+        "scf": int(num_scf_tools),
+        "calibration_known": int(num_calibration_known_tools),
+        "test_known": int(num_test_known_tools),
+        "calibration_unknown": int(num_calibration_unknown_tools),
+        "test_unknown": int(num_test_unknown_tools),
+    }
+    if any(v <= 0 for v in counts.values()):
+        raise ValueError(f"All stage class counts must be positive: {counts}")
+
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    tools, examples = parse_toolbench_g1(g1_query_path)
+    by_tool: Dict[str, List[dict]] = defaultdict(list)
+    for row in examples:
+        by_tool[str(row["tool_id"])].append(row)
+    eligible = sorted(t for t, rows in by_tool.items() if len(rows) >= int(min_queries_per_tool))
+    need = sum(counts.values())
+    if len(eligible) < need:
+        raise ValueError(
+            f"Only {len(eligible)} ToolBench APIs have >= {min_queries_per_tool} queries, "
+            f"but stage-disjoint protocol requests {need}: {counts}."
+        )
+
+    rng = random.Random(int(seed))
+    rng.shuffle(eligible)
+    stages: Dict[str, List[str]] = {}
+    cursor = 0
+    for name in (
+        "arcface", "scf", "calibration_known", "test_known",
+        "calibration_unknown", "test_unknown",
+    ):
+        n = counts[name]
+        stages[name] = sorted(eligible[cursor:cursor+n])
+        cursor += n
+    unused = sorted(eligible[cursor:])
+
+    # ArcFace is a conventional classification task on its own training APIs.
+    arc_labels = {tid: i for i, tid in enumerate(stages["arcface"])}
+    arc_rows: List[dict] = []
+    for tid in stages["arcface"]:
+        label = arc_labels[tid]
+        for x in by_tool[tid]:
+            arc_rows.append({
+                "id": x["id"], "text": x["query"], "label": label,
+                "tool_id": tid, "sample_type": "query",
+            })
+        if add_tool_documents_to_arcface:
+            arc_rows.append({
+                "id": f"tool-doc::{tid}", "text": tools[tid]["text"], "label": label,
+                "tool_id": tid, "sample_type": "tool_document",
+            })
+
+    # SCF learns on *different API identities*.  Its target is the frozen ArcFace
+    # encoding of target_text, i.e. exactly the representation used as a gallery
+    # prototype at routing time.
+    scf_labels = {tid: i for i, tid in enumerate(stages["scf"])}
+    scf_rows: List[dict] = []
+    for tid in stages["scf"]:
+        label = scf_labels[tid]
+        target = tools[tid]["text"]
+        for x in by_tool[tid]:
+            scf_rows.append({
+                "id": x["id"], "text": x["query"], "target_text": target,
+                "label": label, "tool_id": tid, "sample_type": "query",
+            })
+
+    def make_gallery(stage: str) -> Tuple[List[dict], Dict[str, int]]:
+        ids = stages[stage]
+        labels = {tid: i for i, tid in enumerate(ids)}
+        gallery = [
+            {
+                "index": labels[tid], "tool_id": tid, "text": tools[tid]["text"],
+                "tool_name": tools[tid]["tool_name"], "api_name": tools[tid]["api_name"],
+                "category": tools[tid]["category"],
+            }
+            for tid in ids
+        ]
+        return gallery, labels
+
+    arc_gallery, _ = make_gallery("arcface")
+    scf_gallery, _ = make_gallery("scf")
+    cal_gallery, cal_labels = make_gallery("calibration_known")
+    test_gallery, test_labels = make_gallery("test_known")
+
+    val_rows: List[dict] = []
+    for tid in stages["calibration_known"]:
+        for x in by_tool[tid]:
+            val_rows.append({
+                "id": x["id"], "query": x["query"], "known": True,
+                "tool_id": tid, "label": cal_labels[tid],
+            })
+    for tid in stages["calibration_unknown"]:
+        for x in by_tool[tid]:
+            val_rows.append({
+                "id": x["id"], "query": x["query"], "known": False,
+                "tool_id": tid, "label": -1,
+            })
+
+    test_rows: List[dict] = []
+    for tid in stages["test_known"]:
+        for x in by_tool[tid]:
+            test_rows.append({
+                "id": x["id"], "query": x["query"], "known": True,
+                "tool_id": tid, "label": test_labels[tid],
+            })
+    for tid in stages["test_unknown"]:
+        for x in by_tool[tid]:
+            test_rows.append({
+                "id": x["id"], "query": x["query"], "known": False,
+                "tool_id": tid, "label": -1,
+            })
+
+    for rows in (arc_rows, scf_rows, val_rows, test_rows):
+        rng.shuffle(rows)
+
+    _write_jsonl(out / "train_arcface.jsonl", arc_rows)
+    _write_jsonl(out / "train_scf.jsonl", scf_rows)
+    _write_jsonl(out / "train.jsonl", arc_rows)  # legacy alias
+    _write_jsonl(out / "arcface_gallery.jsonl", arc_gallery)
+    _write_jsonl(out / "scf_gallery.jsonl", scf_gallery)
+    _write_jsonl(out / "calibration_gallery.jsonl", cal_gallery)
+    _write_jsonl(out / "test_gallery.jsonl", test_gallery)
+    # ``gallery.jsonl`` remains a convenient inspection alias, but loaders use
+    # split-specific galleries and never infer calibration/test identity equality.
+    _write_jsonl(out / "gallery.jsonl", test_gallery)
+    _write_jsonl(out / "val.jsonl", val_rows)
+    _write_jsonl(out / "test.jsonl", test_rows)
+    _json_dump(out / "arcface_labels.json", arc_labels)
+    _json_dump(out / "scf_labels.json", scf_labels)
+    _json_dump(out / "calibration_labels.json", cal_labels)
+    _json_dump(out / "test_labels.json", test_labels)
+    _json_dump(out / "labels.json", test_labels)
+
+    all_stage_sets = {name: set(ids) for name, ids in stages.items()}
+    overlaps = {}
+    names = list(all_stage_sets)
+    for i, a in enumerate(names):
+        for b in names[i+1:]:
+            overlaps[f"{a}__{b}"] = int(len(all_stage_sets[a] & all_stage_sets[b]))
+    if any(overlaps.values()):
+        raise AssertionError(f"Stage class leakage detected: {overlaps}")
+
+    stage_hashes = {
+        name: hashlib.sha256("\n".join(ids).encode()).hexdigest()
+        for name, ids in stages.items()
+    }
+    manifest = {
+        "protocol": "toolbench_g1_stage_class_disjoint_v2",
+        "source": str(Path(g1_query_path)),
+        "source_g1_sha256": _sha256_file(Path(g1_query_path)),
+        "seed": int(seed),
+        "min_queries_per_tool": int(min_queries_per_tool),
+        "stage_class_counts": {k: int(len(v)) for k, v in stages.items()},
+        "stage_query_counts": {
+            name: int(sum(len(by_tool[tid]) for tid in ids))
+            for name, ids in stages.items()
+        },
+        "stage_category_counts": {
+            name: _stage_category_counts(ids, tools) for name, ids in stages.items()
+        },
+        "stage_tool_ids_sha256": stage_hashes,
+        "pairwise_stage_overlap_counts": overlaps,
+        "num_unused_eligible_tools": int(len(unused)),
+        "unused_tool_ids_sha256": hashlib.sha256("\n".join(unused).encode()).hexdigest(),
+        "num_train_arcface_samples": int(len(arc_rows)),
+        "num_train_scf_samples": int(len(scf_rows)),
+        "num_val_known": int(sum(bool(x["known"]) for x in val_rows)),
+        "num_val_unknown": int(sum(not bool(x["known"]) for x in val_rows)),
+        "num_test_known": int(sum(bool(x["known"]) for x in test_rows)),
+        "num_test_unknown": int(sum(not bool(x["known"]) for x in test_rows)),
+        "calibration_gallery_size": int(len(cal_gallery)),
+        "test_gallery_size": int(len(test_gallery)),
+        "add_tool_documents_to_arcface": bool(add_tool_documents_to_arcface),
+        "scf_target": "frozen_arcface_encoded_api_description",
+        "uses_final_test_for_training_or_calibration": False,
+    }
+    _json_dump(out / "manifest.json", manifest)
+    return manifest
+
 def load_toolbench_oser_examples(prepared_dir: str | Path, split: str) -> List[ToolRoutingExample]:
     root = Path(prepared_dir)
-    gallery = _read_jsonl(root / "gallery.jsonl")
+    split_key = str(split).lower()
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
+    stage_v2 = str(manifest.get("protocol", "")).endswith("stage_class_disjoint_v2")
+
+    if stage_v2:
+        if split_key in {"val", "validation", "cal", "calibration"}:
+            row_path = root / "val.jsonl"
+            gallery_path = root / "calibration_gallery.jsonl"
+            resolved_split = "calibration"
+        elif split_key in {"test", "final", "final_test"}:
+            row_path = root / "test.jsonl"
+            gallery_path = root / "test_gallery.jsonl"
+            resolved_split = "test"
+        else:
+            raise ValueError(f"Unknown ToolBench stage-disjoint split: {split}")
+    else:
+        row_path = root / f"{split}.jsonl"
+        gallery_path = root / "gallery.jsonl"
+        resolved_split = str(split)
+
+    gallery = _read_jsonl(gallery_path)
     tools = tuple(str(x["text"]) for x in sorted(gallery, key=lambda z: int(z["index"])))
-    rows = _read_jsonl(root / f"{split}.jsonl")
+    rows = _read_jsonl(row_path)
     out: List[ToolRoutingExample] = []
     for row in rows:
         known = bool(row["known"])
@@ -428,7 +668,13 @@ def load_toolbench_oser_examples(prepared_dir: str | Path, split: str) -> List[T
         out.append(ToolRoutingExample(
             example_id=str(row["id"]), query=str(row["query"]), tools=tools,
             known=known, relevant_tool_indices=relevant,
-            metadata={"tool_id": str(row.get("tool_id", "")), "split": split, "source": "ToolBench-G1"},
+            metadata={
+                "tool_id": str(row.get("tool_id", "")),
+                "split": resolved_split,
+                "source": "ToolBench-G1",
+                "gallery_file": str(gallery_path),
+                "protocol": str(manifest.get("protocol", "legacy")),
+            },
         ))
     return out
 
