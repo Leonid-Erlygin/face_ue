@@ -4,7 +4,7 @@ set -euo pipefail
 # ================= CONFIGURATION =================
 OUTPUT_FILE="combined.txt"
 TARGET_DIR="."
-EXCLUDE_DIRS=("venv" "toy_outputs" "mlruns" "external" "configs/uncertainty_models/old_cfg" "configs/uncertainty_benchmark/legacy" ".hydra" ".git" "__pycache__" "datasets" "notebooks" "/app/training/optimizers" "configs/latex_tables" "outputs" "sandbox" "dist" "build" ".vscode")
+EXCLUDE_DIRS=("venv" ".pytest_cache" "modern_ai" "toy_outputs" "mlruns" "external" "configs/uncertainty_models/old_cfg" "configs/uncertainty_benchmark/legacy" ".hydra" ".git" "__pycache__" "datasets" "notebooks" "/app/training/optimizers" "configs/latex_tables" "outputs" "sandbox" "dist" "build" ".vscode")
 # =================================================
 
 if [[ ! -d "$TARGET_DIR" ]]; then
@@ -28,9 +28,9 @@ done
 
 # Construct the find command
 if [ ${#prune_args[@]} -eq 0 ]; then
-    find_cmd=(find "$TARGET_DIR" -type f \( -name "*.py" -o -name "*.yaml" -o -name "*.md" \) -print0)
+    find_cmd=(find "$TARGET_DIR" -type f \( -name "*.py" -o -name "*.yaml" \) -print0)
 else
-    find_cmd=(find "$TARGET_DIR" \( "${prune_args[@]}" \) -prune -o -type f \( -name "*.py" -o -name "*.yaml" -o -name "*.md" \) -print0)
+    find_cmd=(find "$TARGET_DIR" \( "${prune_args[@]}" \) -prune -o -type f \( -name "*.py" -o -name "*.yaml" \) -print0)
 fi
 
 # Clear output file

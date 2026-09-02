@@ -274,7 +274,7 @@ class MonteCarloPredictiveProb:
 
             far_loss_func_calib = FarLossCalc(
                 probe_feats_calib,
-                probe_unc_calib,
+                probe_unc_calib_scaled,
                 gallery_feats_calib,
                 gallery_unc_calib,
                 self.predict_T,
@@ -406,6 +406,16 @@ class MonteCarloPredictiveProb:
 
     def predict_uncertainty(self):
         if self.pred_uncertainty_type == "entropy":
+            # Direct HolUE ablation: no recognition-error labels and no learned
+            # fusion.  KL is an information/confidence quantity, so the negative
+            # sum follows the repository convention that larger values mean more
+            # uncertainty and are filtered first.
+            if self.calibration_transform is None:
+                return -(
+                    np.asarray(self.kl_1, dtype=np.float64).reshape(-1)
+                    + np.asarray(self.kl_2, dtype=np.float64).reshape(-1)
+                )
+
             predict_id = np.argmax(self.mean_probs, axis=-1)
             oog_prob = 1 - np.sum(self.mean_probs, axis=-1, keepdims=True)
             all_prob = np.concatenate([self.mean_probs, oog_prob], axis=-1)
