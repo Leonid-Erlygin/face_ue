@@ -203,6 +203,7 @@ open_set_identification_methods:
       _target_: evaluation.template_pooling_strategies.PoolingDefault
     recognition_method:
       _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
+      temperature_scaling_mode: normalized
       gallery_prior: power
       emb_unc_model: vMF
       beta: 0.5

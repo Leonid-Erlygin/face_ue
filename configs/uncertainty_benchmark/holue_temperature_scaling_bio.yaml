@@ -1,0 +1,26 @@
+defaults:
+  - mprisk_core_bio_complete
+  - _self_
+
+exp_dir: outputs/experiments/holue_temperature_scaling_bio
+
+holue_temperature_study:
+  # Accepted-paper HolUE operating point. The standard core configs are rerun
+  # separately to regenerate the dissertation tables with normalized scaling.
+  published_T: 20
+  published_M: 0
+
+  # T=1 is the exact sanity check where legacy and normalized formulas coincide.
+  temperature_grid: [1, 2, 5, 7, 10, 20, 30, 50]
+
+  # The normalization audit estimates the continuous mass by MC integration.
+  mass_audit_M: 64
+
+  # Mean-embedding approximation versus MC integration.
+  mc_grid: [0, 8, 16, 32]
+  mc_seeds: [777, 778, 779]
+  mc_num_workers: 1
+
+  # Rank comparison and SCF-quality stratification.
+  rank_pairs: 200000
+  quality_quantiles: [0.0, 0.25, 0.5, 0.75, 1.0]

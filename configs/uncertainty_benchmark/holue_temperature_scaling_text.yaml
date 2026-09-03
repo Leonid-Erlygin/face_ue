@@ -1,0 +1,18 @@
+defaults:
+  - mprisk_core_text_complete
+  - _self_
+
+exp_dir: outputs/experiments/holue_temperature_scaling_text
+
+holue_temperature_study:
+  # The current dissertation-facing text HolUE configuration uses T=200.
+  published_T: 200
+  published_M: 0
+  # Include T=200 because ranking stability uses the published operating point as reference.
+  temperature_grid: [1, 10, 20, 50, 100, 200, 300, 500]
+  mass_audit_M: 64
+  mc_grid: [0, 8, 16, 32]
+  mc_seeds: [777, 778, 779]
+  mc_num_workers: 1
+  rank_pairs: 200000
+  quality_quantiles: [0.0, 0.25, 0.5, 0.75, 1.0]

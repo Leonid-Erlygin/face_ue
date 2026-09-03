@@ -80,6 +80,7 @@ holue_method:
   use_detector_score: False
   recognition_method:
     _target_: evaluation.open_set_methods.class_prob_models.MonteCarloPredictiveProb
+    temperature_scaling_mode: normalized
     gallery_prior: power
     emb_unc_model: vMF
     beta: 0.5

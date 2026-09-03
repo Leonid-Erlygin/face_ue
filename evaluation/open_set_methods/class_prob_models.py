@@ -102,12 +102,14 @@ class MonteCarloPredictiveProb:
         kappa_scale: float = 1.0,
         kappa_input_scale: float = 1.0,
         predict_T: float = 1.0,
+        temperature_scaling_mode: str = "normalized",
         train_predict_T: bool = False,
         predict_T_lr: float = 1e-2,
         pred_uncertainty_type: str = "entropy",
         alpha: float = 0.5,
         log_dir: str = None,
         predictor=None,
+        mc_num_workers: int = 21,
         prob_batch_size: int = None,
         max_prob_elements: int = 8_000_000,
     ) -> None:
@@ -119,6 +121,7 @@ class MonteCarloPredictiveProb:
         emb_unc_model -- form of p(z|x)
         """
         self.M = M
+        self.mc_num_workers = int(mc_num_workers)
         self.prob_batch_size = prob_batch_size
         self.max_prob_elements = int(max_prob_elements)
         if not (0.0 < beta < 1.0):
@@ -128,6 +131,15 @@ class MonteCarloPredictiveProb:
         self.kappa_scale = kappa_scale
         self.kappa_input_scale = kappa_input_scale
         self.predictor = predictor
+        self.temperature_scaling_mode = str(temperature_scaling_mode).strip().lower()
+        if self.temperature_scaling_mode == "proper":
+            self.temperature_scaling_mode = "normalized"
+        if self.temperature_scaling_mode not in {"normalized", "legacy_paper"}:
+            raise ValueError(
+                "temperature_scaling_mode must be 'normalized' (recommended) "
+                "or 'legacy_paper' (paper-formula diagnostic only), got "
+                f"{temperature_scaling_mode!r}."
+            )
         self.train_predict_T = train_predict_T
         self.predict_T_lr = predict_T_lr
 
@@ -154,7 +166,9 @@ class MonteCarloPredictiveProb:
         assert emb_unc_model in ["vMF", "power"]
         self.emb_unc_model = emb_unc_model
         if self.emb_unc_model == "vMF":
-            self.sampler = VonMisesFisher(self.M)
+            self.sampler = VonMisesFisher(
+                self.M, num_workers=self.mc_num_workers
+            )
         else:
             raise ValueError
 
@@ -448,6 +462,7 @@ class MonteCarloPredictiveProb:
         gallery_kappas,
         T,
         return_mprisk_aux: bool = False,
+        return_temperature_diagnostics: bool = False,
         _disable_batching: bool = False,
     ) -> Any:
         """
@@ -496,6 +511,7 @@ class MonteCarloPredictiveProb:
                     gallery_kappas,
                     T,
                     return_mprisk_aux=return_mprisk_aux,
+                    return_temperature_diagnostics=return_temperature_diagnostics,
                     _disable_batching=True,
                 )
                 outs.append(sub_out)
@@ -576,11 +592,33 @@ class MonteCarloPredictiveProb:
         else:
             raise ValueError(f"Unknown gallery_prior={self.gallery_prior}")
 
-        # Temperature-scaled unnormalized log posterior terms.
-        log_gallery_terms = inv_T * (
-            log_norm[None, None, :] + log_kernel + log_gallery_prior
-        )
-        log_oog_term = inv_T * (log_uniform + log_beta)
+        # ------------------------------------------------------------------
+        # Temperature scaling for the mixed known/unknown posterior.
+        #
+        # Let
+        #   w_i(z) = p(c=i) p(z|c=i), i=1,...,K,
+        #   w_0(z) = beta / S_{d-1}.
+        #
+        # The normalized construction used by the dissertation is
+        #
+        #   a_{i,T}(z) = w_i(z)^(1/T) / D_T(z),
+        #   a_{0,T}(z) = w_0(z)^(1/T) / D_T(z),
+        #   D_T(z)     = sum_i w_i(z)^(1/T) + w_0(z)^(1/T).
+        #
+        # Hence sum_i a_{i,T}(z) + a_{0,T}(z) = 1 pointwise.  Marginalizing
+        # these conditional probabilities with p(z|x) therefore yields a proper
+        # mixed posterior for every T>0.
+        #
+        # The accepted-paper derivation used D_1(z)=p(z) in the continuous OOG
+        # term while using D_T(z) for gallery classes.  That combination is not
+        # normalized for T != 1 in general.  We retain it only as an explicit
+        # diagnostic mode (`legacy_paper`) for reproducibility.
+        # ------------------------------------------------------------------
+        log_gallery_joint = log_norm[None, None, :] + log_kernel + log_gallery_prior
+        log_oog_joint = log_uniform + log_beta
+
+        log_gallery_terms = inv_T * log_gallery_joint
+        log_oog_term = inv_T * log_oog_joint
 
         log_gallery_sum = torch.logsumexp(log_gallery_terms, dim=-1)
         log_den = torch.logaddexp(log_gallery_sum, log_oog_term)
@@ -588,20 +626,28 @@ class MonteCarloPredictiveProb:
         gallery_log_probs = log_gallery_terms - log_den[..., None]
         gallery_probs = torch.exp(gallery_log_probs)
         mean_gallery_probs = torch.mean(gallery_probs, dim=1)
-        # Local posterior probability of the continuous out-of-gallery component.
-        # This is the aggregate probability of the mixed-prior unknown identity continuum
-        # at a sampled embedding z.
+
+        # Proper aggregate probability of the continuous out-of-gallery component.
         log_p0 = log_oog_term - log_den
         p0 = torch.exp(log_p0)
         mean_oog_prob = torch.mean(p0, dim=1)
-        # KL_1 = sum p_T(c|x) log(p_T(c|x) / p(c))
+
+        # Legacy paper OOG factor: the numerator is temperature-scaled but the
+        # denominator is the unscaled evidence p(z)=D_1(z).  This is *not* the
+        # complement of the temperature-scaled gallery probabilities when T != 1.
+        log_gallery_sum_unscaled = torch.logsumexp(log_gallery_joint, dim=-1)
+        log_den_unscaled = torch.logaddexp(log_gallery_sum_unscaled, log_oog_joint)
+        log_p0_legacy = log_oog_term - log_den_unscaled
+        p0_legacy = torch.exp(log_p0_legacy)
+
+        # KL_1 = sum p_T(c|x) log(p_T(c|x) / p(c)).
         p_safe = mean_gallery_probs.clamp_min(1e-300)
         kl_1 = torch.sum(
             mean_gallery_probs * (torch.log(p_safe) - log_gallery_prior),
             dim=1,
         )
 
-        # KL_2 for continuous OOG part.
+        # KL_2 for the continuous OOG part.
         if self.emb_unc_model != "vMF":
             raise ValueError(f"Unsupported emb_unc_model={self.emb_unc_model}")
 
@@ -620,12 +666,32 @@ class MonteCarloPredictiveProb:
 
         log_p_z_given_x = log_norm_x[:, None] + kappa_x[:, None] * sim_x
 
-        # p0 = torch.exp(log_oog_term - log_den)
+        log_beta_over_sphere = log_oog_joint
+        if self.temperature_scaling_mode == "normalized":
+            p0_for_kl = p0
+            log_p0_for_kl = log_p0
+        elif self.temperature_scaling_mode == "legacy_paper":
+            p0_for_kl = p0_legacy
+            log_p0_for_kl = log_p0_legacy
+        else:  # guarded in __init__, kept here for defensive clarity
+            raise RuntimeError(
+                f"Unexpected temperature_scaling_mode={self.temperature_scaling_mode!r}"
+            )
 
-        log_beta_over_sphere = log_beta + log_uniform
-        log_arg = (inv_T - 1.0) * log_beta_over_sphere + log_p_z_given_x - log_den
+        # q_T(u|x) = p(u|x) * a_{0,T}(u) for the normalized construction.
+        # Therefore log(q_T(u|x)/(beta/S)) is exactly the expression below.
+        # In legacy_paper mode the same formula is evaluated with the unscaled
+        # denominator, reproducing the published approximation.
+        log_arg = log_p_z_given_x + log_p0_for_kl - log_beta_over_sphere
+        kl_2 = torch.mean(p0_for_kl * log_arg, dim=1)
 
-        kl_2 = torch.mean(p0 * log_arg, dim=1)
+        proper_total_mass = torch.mean(
+            torch.sum(gallery_probs, dim=-1) + p0, dim=1
+        )
+        legacy_total_mass = torch.mean(
+            torch.sum(gallery_probs, dim=-1) + p0_legacy, dim=1
+        )
+        legacy_oog_mass = torch.mean(p0_legacy, dim=1)
         # ------------------------------------------------------------------
         # MPRisk auxiliary quantity: reject non-specificity.
         #
@@ -684,19 +750,77 @@ class MonteCarloPredictiveProb:
             log_collision = torch.clamp(log_collision, min=0.0, max=700.0)
             oog_nonspecificity = torch.exp(-log_collision)
 
-        finite_tensors = [mean_gallery_probs, kl_1, kl_2]
+        finite_tensors = [
+            mean_gallery_probs,
+            kl_1,
+            kl_2,
+            mean_oog_prob,
+            legacy_oog_mass,
+            proper_total_mass,
+            legacy_total_mass,
+        ]
         if return_mprisk_aux:
-            finite_tensors.extend([mean_oog_prob, oog_nonspecificity])
+            finite_tensors.append(oog_nonspecificity)
 
         if any(not bool(torch.isfinite(t).all()) for t in finite_tensors):
             raise FloatingPointError(
                 "Non-finite value in HolUE/MPRisk probability computation."
             )
 
+        outputs = [mean_gallery_probs, kl_1, kl_2]
         if return_mprisk_aux:
-            return mean_gallery_probs, kl_1, kl_2, mean_oog_prob, oog_nonspecificity
+            outputs.extend([mean_oog_prob, oog_nonspecificity])
+        if return_temperature_diagnostics:
+            outputs.extend(
+                [
+                    proper_total_mass,
+                    legacy_total_mass,
+                    mean_oog_prob,
+                    legacy_oog_mass,
+                ]
+            )
+        return tuple(outputs)
 
-        return mean_gallery_probs, kl_1, kl_2
+    def compute_temperature_scaling_diagnostics(
+        self,
+        mean: np.ndarray,
+        kappa: np.ndarray,
+        gallery_means,
+        gallery_kappas,
+        T,
+    ) -> dict:
+        """Estimate normalization of normalized vs. accepted-paper scaling.
+
+        The returned arrays are per probe.  ``normalized_total_mass`` is one up to
+        floating-point error because the normalized construction sums to one for
+        every sampled embedding before marginalization.  ``legacy_total_mass``
+        estimates the mass obtained when the continuous OOG term uses the unscaled
+        evidence denominator from the accepted-paper derivation.  At T=1 the two
+        constructions coincide; for T != 1 the legacy mass is generally not one.
+        """
+        out = self.compute_mean_probs_and_kl(
+            mean,
+            kappa,
+            gallery_means,
+            gallery_kappas,
+            T,
+            return_temperature_diagnostics=True,
+        )
+        (
+            _mean_gallery_probs,
+            _kl_1,
+            _kl_2,
+            normalized_total_mass,
+            legacy_total_mass,
+            normalized_oog_mass,
+            legacy_oog_mass,
+        ) = out
+        return {
+            "normalized_total_mass": normalized_total_mass,
+            "legacy_total_mass": legacy_total_mass,
+            "normalized_oog_mass": normalized_oog_mass,
+            "legacy_oog_mass": legacy_oog_mass,
+        }
 
 
 class MPRiskPredictiveProb(MonteCarloPredictiveProb):
