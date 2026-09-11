@@ -306,6 +306,11 @@ class MonteCarloPredictiveProb:
                 far_loss_func_calib,
                 verbose=False,
             )
+            # Keep the validation-set gallery concentration used by the original
+            # HolUE recognizer.  Fixed-decision MC ablations need this value so
+            # that only the uncertainty integration scheme changes; otherwise
+            # the MC variant would implicitly retune the OSR decision rule.
+            self.gallery_kappa_calib = float(calibratation_set_kappa)
 
             gallery_unc_scaled_calib = (
                 np.ones_like(gallery_unc_calib) * calibratation_set_kappa

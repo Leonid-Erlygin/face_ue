@@ -1,0 +1,4 @@
+# Extra to the existing repository environment. No forced upgrades.
+mpmath>=1.2
+# Needed only for the delivered tests:
+pytest>=7

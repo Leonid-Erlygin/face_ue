@@ -1,0 +1,18 @@
+defaults:
+  - holue_temperature_scaling_bio
+  - _self_
+
+exp_dir: outputs/experiments/holue_fixed_decision_mc_bio
+
+holue_fixed_decision_mc_study:
+  # The recognition system is the dissertation HolUE operating point (M=0).
+  # Its test/validation decisions and gallery concentration are frozen.
+  base_M: 0
+
+  # Only KL-feature integration changes in the alternative uncertainty estimator.
+  mc_M: 16
+  mc_seeds: [777, 778, 779]
+  mc_num_workers: 1
+
+  # Pair sampling used only for score-ranking diagnostics.
+  rank_pairs: 200000
