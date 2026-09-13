@@ -26,7 +26,7 @@ def test_full_without_approval_is_blocked_and_packaged(tmp_path):
 
 def test_synthetic_smoke_produces_aligned_outputs(tmp_path):
     root=tmp_path/'smoke'
-    command=['--synthetic','--synthetic-n','100','--device','cpu','--fit-iterations','3','--search-budget','4','--run-dir',str(root)]
+    command=['--synthetic','--synthetic-n','100','--device','cpu','--fit-iterations','100','--search-budget','4','--run-dir',str(root)]
     p=invoke(command)
     assert p.returncode==0,p.stdout+p.stderr
     m=json.loads((root/'manifest.json').read_text())

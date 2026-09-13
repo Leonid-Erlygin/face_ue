@@ -1,0 +1,25 @@
+{
+  "status": "hold",
+  "blockers": [],
+  "review_warnings": [
+    "agnews:audit:misidentification:only_0",
+    "agnews:evidence:boundary_requires_review",
+    "agnews:select:misidentification:only_0",
+    "clinc150:audit:false_accept:only_3",
+    "clinc150:select:false_accept:only_4",
+    "dbpedia:audit:misidentification:only_0",
+    "dbpedia:select:misidentification:only_0",
+    "pan_test:audit:false_accept:only_4",
+    "pan_test:audit:false_reject:only_8",
+    "pan_test:audit:misidentification:only_1",
+    "pan_test:evidence:boundary_requires_review",
+    "pan_test:select:false_accept:only_1",
+    "pan_test:select:false_reject:only_5",
+    "pan_test:select:misidentification:only_1",
+    "yahoo:audit:misidentification:only_0",
+    "yahoo:select:misidentification:only_0"
+  ],
+  "raw_probability_calibration_certified": false,
+  "test_results_used_to_select_parameters": false,
+  "note": "No fresh validation data or input corruption was generated. Sparse validation support is NOT fixed by code."
+}

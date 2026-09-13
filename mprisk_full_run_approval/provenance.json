@@ -1,0 +1,20 @@
+{
+  "text": {
+    "sanity_archive_name": "sanity_text_20260912T082208Z_1887325.zip",
+    "sanity_archive_sha256": "27d4d22df3111efaa740979361fa74f484ee7cb3e3ada9101e1f7159c85bdee7",
+    "original_archive_root": "sanity_text_20260912T082208Z_1887325",
+    "manifest_sha256": "7db5db762dfca5b2c591a9110b1b09bdced930d855564924c50e8120982ac950",
+    "review_gates_sha256": "7b7e1e9c5b783b45a63bfad5b0ec72cfecb17c785c0e388a0debb139aac1a04b",
+    "code_sha256": "0196566aa4ff9f1993be0ea23f16c3b5329c3c3977190117a561259e8fbd5f34",
+    "core_config_sha256": "1295430b89c65f7ebe53a5206464c6c645e524f161269991a9590234a3ad242c"
+  },
+  "bio": {
+    "sanity_archive_name": "sanity_bio_20260912T082232Z_1888371.zip",
+    "sanity_archive_sha256": "ce9ccd824cbd5e16df62a1662927631ca599f18ccfaa25257ed0a39feb92d1f4",
+    "original_archive_root": "sanity_bio_20260912T082232Z_1888371",
+    "manifest_sha256": "f7de4d4b04e796bd32c84e328258174114aec8f080fe43bd8ad099cafd461d21",
+    "review_gates_sha256": "403b357e1f4de5756dfda74e8b7da5cbc96bc3226b064638e1f7e7059cb50b2a",
+    "code_sha256": "0196566aa4ff9f1993be0ea23f16c3b5329c3c3977190117a561259e8fbd5f34",
+    "core_config_sha256": "729669d7626718f3eed0dfd0255f1b69bf08c6d57905d6c95b9c8386ece59709"
+  }
+}

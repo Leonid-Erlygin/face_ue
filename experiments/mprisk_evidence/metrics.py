@@ -2,7 +2,7 @@
 import numpy as np
 from scipy.special import expit, logit
 from scipy.optimize import minimize
-from scipy.stats import spearmanr
+from scipy.stats import spearmanr, rankdata
 from sklearn.metrics import roc_auc_score, average_precision_score
 from sklearn.linear_model import LogisticRegression
 
@@ -14,9 +14,9 @@ def masks(a,y):
                 misidentification=accepted&known&(a!=y),true_reject=(a==0)&(y==0))
 
 
-def auc(y,s):return float(roc_auc_score(y,s)) if len(np.unique(y))==2 else np.nan
+def auc(y,s):return float(roc_auc_score(y,rankdata(s))) if len(np.unique(y))==2 else np.nan
 
-def ap(y,s):return float(average_precision_score(y,s)) if len(np.unique(y))==2 else np.nan
+def ap(y,s):return float(average_precision_score(y,rankdata(s))) if len(np.unique(y))==2 else np.nan
 
 def area(y,x):return float(np.trapezoid(y,x) if hasattr(np,'trapezoid') else np.trapz(y,x))
 
@@ -41,7 +41,7 @@ class Metrics:
         self.random_area=self.f1_area(self.random);self.oracle_area=self.f1_area(self.oracle)
     def order(self,s):
         s=np.asarray(s,dtype=float)
-        if s.shape!=(self.n,) or not np.all(np.isfinite(s)):raise ValueError('Nonfinite/misaligned score')
+        if s.shape!=(self.n,) or np.any(np.isnan(s)):raise ValueError('Nonfinite/misaligned score')
         return np.lexsort((self.tie,s))
     def f1_curve(self,s):
         order=self.order(s);counts=[np.cumsum(self.m[k][order])[self.keep-1] for k in ['tp','fp','fn']]
@@ -50,7 +50,7 @@ class Metrics:
     def prr(self,s):
         den=self.oracle_area-self.random_area
         return (self.f1_area(s)-self.random_area)/den if abs(den)>1e-12 else np.nan
-    def evaluate(self,s,probability=False):
+    def evaluate(self,s,probability=False,probabilities=None,log_odds=None):
         order=self.order(s);err=self.m['any_error'].astype(float);nk=self.m['known'].sum();nu=self.n-nk
         risk=np.cumsum(err[order])/np.arange(1,self.n+1)
         ans=dict(n=self.n,errors=int(err.sum()),error_rate=float(err.mean()),f1=float(f1(*[self.m[k].sum() for k in ['tp','fp','fn']])),
@@ -58,12 +58,21 @@ class Metrics:
                  prr_f1=float(self.prr(s)),error_auroc=auc(err,s),error_auprc=ap(err,s),aurc=float(risk.mean()),
                  excess_aurc=float(risk.mean()-np.mean(np.cumsum(np.sort(err))/np.arange(1,self.n+1))),
                  random_f1_area=self.random_area,error_oracle_f1_area=self.oracle_area,f1_area=self.f1_area(s),
-                 score_min=float(np.min(s)),score_max=float(np.max(s)),is_probability=bool(probability))
-        if probability:
-            p=np.asarray(s)
+                 score_min=float(np.min(s)),score_max=float(np.max(s)),is_probability=bool(probability and probabilities is None),
+                 probability_reported=bool(probability or probabilities is not None),
+                 ranking_score_kind='log_odds' if log_odds is not None else 'provided_score')
+        if probability or probabilities is not None:
+            p=np.asarray(s if probabilities is None else probabilities,dtype=float)
+            if p.shape!=(self.n,) or np.any(~np.isfinite(p)):raise ValueError('Invalid probability output')
             if np.any((p<-1e-8)|(p>1+1e-8)):raise ValueError('Score is not a probability')
             p=np.clip(p,0,1);v=np.clip(p,1e-15,1-1e-15)
-            ans.update(error_brier=float(np.mean((p-err)**2)),error_nll=float(-np.mean(err*np.log(v)+(1-err)*np.log1p(-v))),
+            nll=float(-np.mean(err*np.log(v)+(1-err)*np.log1p(-v)))
+            if log_odds is not None:
+                lo=np.asarray(log_odds,dtype=float)
+                if lo.shape!=(self.n,) or np.any(np.isnan(lo)):raise ValueError('Invalid error log odds')
+                nll=float(np.mean(np.where(err>0,np.logaddexp(0.,-lo),np.logaddexp(0.,lo))))
+            ans.update(error_brier=float(np.mean((p-err)**2)),error_nll=nll,
+                       error_nll_source='stable log odds' if log_odds is not None else 'clipped probability (no log odds available)',
                        predicted_risk=float(p.mean()),calibration_gap=float(p.mean()-err.mean()))
         return ans
     def curves(self,s):
@@ -86,7 +95,14 @@ def bins(p,y,number=15):
     return rows
 
 
-def fit_linear(X,a,y,budget=512,seed=777,positive=False,include=None):
+def fit_linear(X,a,y,budget=512,seed=777,positive=False,include=None,nested=None):
+    """PRR search with explicit nested candidates and exact submodel fallback.
+
+    ``nested`` contains (label, column_indices, fitted_model). The larger family
+    evaluates those exact predictions as candidates. If such a candidate wins,
+    application uses the exact original submodel (not a round-trip coefficient
+    conversion). This guarantees no LOWER selection objective, not test dominance.
+    """
     X=np.asarray(X,dtype=float);mean=X.mean(0);sd=X.std(0);sd=np.where(sd>1e-14,sd,1.);Z=(X-mean)/sd
     if not np.all(np.isfinite(Z)):raise ValueError('Invalid fusion features')
     d=X.shape[1];rng=np.random.default_rng(seed);m=Metrics(a,y,seed)
@@ -103,22 +119,57 @@ def fit_linear(X,a,y,budget=512,seed=777,positive=False,include=None):
         if np.isfinite(score) and (best is None or score>best[0]):best=(float(score),w)
     valid=best is not None
     if best is None:best=(np.nan,sd*np.ones(d)/d)
-    return dict(mean=mean.tolist(),scale=sd.tolist(),weights=best[1].tolist(),raw_weights=(best[1]/sd).tolist(),
-                validation_prr=best[0],identifiable=valid,positive=positive,budget=budget)
+    answer=dict(mean=mean.tolist(),scale=sd.tolist(),weights=best[1].tolist(),raw_weights=(best[1]/sd).tolist(),
+                validation_prr=best[0],identifiable=valid,positive=positive,budget=budget,kind='linear',nested_candidates=[])
+    for label,columns,model in nested or []:
+        columns=list(map(int,columns))
+        candidate=apply_linear(X[:,columns],model)
+        value=m.prr(candidate)
+        answer['nested_candidates'].append(dict(name=label,selection_prr=float(value)))
+        if np.isfinite(value) and (not np.isfinite(answer['validation_prr']) or value>answer['validation_prr']):
+            raw=np.zeros(d);raw[columns]=model['raw_weights']
+            answer.update(kind='embedded_linear',columns=columns,submodel=model,raw_weights=raw.tolist(),
+                          validation_prr=float(value),identifiable=True,selected_nested=label)
+    return answer
 
 
-def apply_linear(X,p):return ((np.asarray(X)-p['mean'])/p['scale'])@np.asarray(p['weights'])
+def apply_linear(X,p):
+    if p.get('kind')=='cost_weights_log_events':return apply_risk_weights(X,p)
+    if p.get('kind')=='embedded_linear':return apply_linear(np.asarray(X)[:,p['columns']],p['submodel'])
+    return ((np.asarray(X)-p['mean'])/p['scale'])@np.asarray(p['weights'])
+
+
+def fit_risk_weights(log_events,a,y,budget=512,seed=777,include=None):
+    """Nonnegative FA/ID/FR costs searched without exp-underflowed features."""
+    from evaluation.open_set_methods.mprisk_evidence import cost_log_odds
+    e=np.asarray(log_events,dtype=float);d=e.shape[1]-1;rng=np.random.default_rng(seed);m=Metrics(a,y,seed)
+    candidates=[np.ones(d),*np.maximum(np.eye(d),1e-12)]+[np.asarray(v,dtype=float) for v in (include or [])]
+    candidates += [np.exp(rng.uniform(-8,8,d)) for _ in range(budget)]
+    # Unit costs are first so an undefined PRR has a transparent fixed fallback.
+    best=None;seed_scores=[]
+    for j,w in enumerate(candidates):
+        value=m.prr(cost_log_odds(e,w))
+        if j<1+d+len(include or []):seed_scores.append(float(value))
+        if np.isfinite(value) and (best is None or value>best[0]):best=(float(value),w/w.max())
+    if best is None:best=(np.nan,np.ones(d))
+    return dict(kind='cost_weights_log_events',raw_weights=best[1].tolist(),weights=best[1].tolist(),
+                validation_prr=best[0],identifiable=bool(np.isfinite(best[0])),positive=True,budget=budget,
+                seed_selection_prr=seed_scores,search_cost_floor=1e-12,zero_costs_reserved_for_explicit_ablations=True,scale_convention='max cost = 1; score is log odds of normalized loss',
+                input_columns=['log_correct','log_FA','log_ID','log_FR']+(['log_NS'] if d==4 else []))
+
+
+def apply_risk_weights(log_events,p):
+    from evaluation.open_set_methods.mprisk_evidence import cost_log_odds
+    return cost_log_odds(log_events,p['raw_weights'])
 
 
 def fit_monotone(p,y):
-    t=logit(np.clip(p,1e-12,1-1e-12));y=np.asarray(y,dtype=float)
-    def loss(v):
-        z=np.exp(v[0])*t+v[1];return float(np.mean(np.logaddexp(0,z)-y*z))
-    r=minimize(loss,[0.,0.],method='L-BFGS-B',bounds=[(-8,8),(-30,30)])
-    return dict(slope=float(np.exp(r.x[0])),intercept=float(r.x[1]),success=bool(r.success))
+    # Compatibility entry point; evidence runner uses original log odds instead.
+    return fit_positive_score_calibration(logit(np.clip(p,1e-12,1-1e-12)),y)
 
 
-def apply_monotone(p,c):return expit(c['slope']*logit(np.clip(p,1e-12,1-1e-12))+c['intercept'])
+def apply_monotone(p,c):
+    return apply_positive_score_calibration(logit(np.clip(p,1e-12,1-1e-12)),c)
 
 
 def fit_logistic(X,y,seed=777):
@@ -128,12 +179,14 @@ def fit_logistic(X,y,seed=777):
     return dict(mean=mean.tolist(),scale=sd.tolist(),coef=clf.coef_[0].tolist(),intercept=float(clf.intercept_[0]))
 
 
-def apply_logistic(X,p):return expit(((np.asarray(X)-p['mean'])/p['scale'])@np.asarray(p['coef'])+p['intercept'])
+def logistic_log_odds(X,p):return ((np.asarray(X)-p['mean'])/p['scale'])@np.asarray(p['coef'])+p['intercept']
+
+def apply_logistic(X,p):return expit(logistic_log_odds(X,p))
 
 
 def ranks(x,y,seed=777,pairs=50000):
     rng=np.random.default_rng(seed);a=rng.integers(len(x),size=pairs);b=rng.integers(len(x),size=pairs)
-    dx=x[a]-x[b];dy=y[a]-y[b];valid=(dx!=0)&(dy!=0)
+    x=rankdata(x);y=rankdata(y);dx=x[a]-x[b];dy=y[a]-y[b];valid=(dx!=0)&(dy!=0)
     return dict(correlation=float(spearmanr(x,y).statistic) if np.std(x)>0 and np.std(y)>0 else np.nan,
                 inversions=float(np.mean(dx[valid]*dy[valid]<0)) if valid.any() else np.nan,non_tied_pairs=int(valid.sum()))
 
@@ -189,17 +242,37 @@ def apply_mlp(X,pars):
 
 
 def fit_positive_score_calibration(score,errors):
-    """Monotone probability calibration for arbitrary (possibly negative) scores."""
+    """Positive-slope calibration of original scores, NOT clipped probabilities.
+
+    Standardization is fitted on selection only. One-class fitting is not
+    identifiable: return a documented Jeffreys-smoothed intercept-only estimate
+    for probability reporting, while the caller retains original ranking scores.
+    """
     score=np.asarray(score,dtype=float);y=np.asarray(errors,dtype=float)
+    if score.ndim!=1 or y.shape!=score.shape or not len(y) or np.any(~np.isfinite(score)) or np.any((y!=0)&(y!=1)):
+        raise ValueError('Calibration requires finite aligned scores and binary errors')
     mean=float(score.mean());sd=float(score.std());sd=sd if sd>1e-14 else 1.
+    base=dict(mean=mean,scale=sd,n=len(y),positives=int(y.sum()),negatives=int(len(y)-y.sum()),
+              objective='unweighted binary NLL on validation selection; input is original unsaturated score')
+    if len(np.unique(y))<2:
+        return dict(base,slope=0.,intercept=float(logit((y.sum()+.5)/(len(y)+1))),success=False,identifiable=False,
+                    fallback='one-class selection; smoothed constant probability, original ranking retained')
     x=(score-mean)/sd
     def objective(v):
         z=np.exp(v[0])*x+v[1]
-        return float(np.mean(np.logaddexp(0,z)-y*z))
-    r=minimize(objective,[0.,0.],method='L-BFGS-B',bounds=[(-8,8),(-30,30)])
-    return dict(mean=mean,scale=sd,slope=float(np.exp(r.x[0])),intercept=float(r.x[1]),
-                success=bool(r.success),objective='unweighted binary NLL on validation selection')
+        return float(np.mean(np.where(y>0,np.logaddexp(0.,-z),np.logaddexp(0.,z))))
+    r=minimize(objective,[0.,float(logit(y.mean()))],method='L-BFGS-B',bounds=[(-8,8),(-30,30)],
+               options=dict(maxiter=1000,ftol=1e-11,maxls=50))
+    if not r.success or not np.isfinite(r.fun):
+        return dict(base,slope=0.,intercept=float(logit((y.sum()+.5)/(len(y)+1))),success=False,identifiable=False,
+                    fallback='calibration optimizer did not converge; constant probability, original ranking retained',message=str(r.message))
+    return dict(base,slope=float(np.exp(r.x[0])),intercept=float(r.x[1]),success=True,identifiable=True,
+                iterations=int(r.nit),message=str(r.message))
+
+
+def calibrated_log_odds(score,parameters):
+    return parameters['slope']*(np.asarray(score)-parameters['mean'])/parameters['scale']+parameters['intercept']
 
 
 def apply_positive_score_calibration(score,parameters):
-    return expit(parameters['slope']*(np.asarray(score)-parameters['mean'])/parameters['scale']+parameters['intercept'])
+    return expit(calibrated_log_odds(score,parameters))

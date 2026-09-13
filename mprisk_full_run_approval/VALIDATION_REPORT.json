@@ -1,0 +1,39 @@
+{
+  "source_sha256": "0196566aa4ff9f1993be0ea23f16c3b5329c3c3977190117a561259e8fbd5f34",
+  "guard_checks": {
+    "text": {
+      "passed": true,
+      "warnings_acknowledged": 16
+    },
+    "bio": {
+      "passed": true,
+      "warnings_acknowledged": 18
+    }
+  },
+  "dry_runs": {
+    "text_777": {
+      "passed": true
+    },
+    "text_778": {
+      "passed": true
+    },
+    "text_779": {
+      "passed": true
+    },
+    "bio_777": {
+      "passed": true
+    },
+    "bio_778": {
+      "passed": true
+    },
+    "bio_779": {
+      "passed": true
+    }
+  },
+  "negative_tests": [
+    "text:changed_code:rejected",
+    "text:changed_prior:rejected",
+    "bio:changed_code:rejected",
+    "bio:changed_prior:rejected"
+  ]
+}

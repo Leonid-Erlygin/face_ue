@@ -7,13 +7,15 @@ import numpy as np
 from scipy.special import logsumexp,gammaln
 from scipy.stats import ks_2samp
 from evaluation.open_set_methods.mprisk_evidence import (MODEL_VERSION,Parameters,PartitionTable,evaluate,fit_parameters,
-                 log_bayes_factors,log_posterior,log_nonspecificity,log_surface)
+                 log_bayes_factors,log_posterior,log_nonspecificity,log_surface,cost_log_odds)
 from experiments.mprisk_evidence.data import (load_native,similarities,split_validation,run_legacy,native_method,
                  synthetic_pair,synthetic_legacy,digest_array,instantiate_config)
 from experiments.mprisk_evidence.metrics import (Metrics,masks,auc,ap,bins,fit_linear,apply_linear,fit_monotone,
                  apply_monotone,fit_logistic,apply_logistic,ranks,bootstrap,fit_mlp,apply_mlp,fit_positive_score_calibration,apply_positive_score_calibration)
 from experiments.mprisk_evidence.artifacts import write_json,Tables
 from experiments.mprisk_evidence.audits import probe_limit_rows
+from experiments.mprisk_evidence.recheck import (PreviousRun,reuse_split,replay_dataset,fit_reference,actions_at_threshold,support_diagnostics,model_limit_diagnostics,quality_distance_grid)
+from experiments.mprisk_evidence.metrics import fit_risk_weights,apply_risk_weights
 
 
 def slug(s):
@@ -45,12 +47,8 @@ def simple_features(c,kappa,tau,T=1.,gal=None,beta=.5,d=512):
         if gal is None:gp=lp
         else:
             kg=gal['gallery_kappa'];temp=gal.get('galue_T',gal['temperature']);K=cc.shape[1]
-            if gal['gallery_prior']=='power':
-                ln=gammaln(d-1+kg)+gammaln(d/2+kg)+(kg-1)*np.log(2)-d/2*np.log(np.pi)-gammaln(d-1+2*kg)
-                loglike=ln+kg*np.log1p(np.clip(cc,-1+1e-9,1-1e-9))
-            else:
-                from evaluation.open_set_methods.mprisk_evidence import log_partition
-                loglike=-log_surface(d)-log_partition(kg,d)+kg*cc
+            from experiments.mprisk_evidence.recheck import reference_log_ratio
+            loglike=reference_log_ratio(cc,kg,d,gal['gallery_prior'])-log_surface(d)
             gp=np.column_stack((loglike+np.log((1-beta)/K),np.full(len(cc),np.log(beta)-log_surface(d))))/temp
             gp-=logsumexp(gp,axis=1,keepdims=True)
         vals=dict(SCF=-np.asarray(kappa)[lo:lo+len(cc)],AccScr=-np.abs(cc.max(1)-tau),
@@ -90,87 +88,19 @@ def fit_holue(core,val,test,vlegacy,tlegacy,select,far,out,seed,synthetic=False)
     return np.asarray(pv),np.asarray(pt),v,t,dict(config=OmegaConf.to_container(conf,resolve=True),training_indices=select.tolist())
 
 
-def score_variants(val,test,cval,ctest,pv,pt,pointv,pointt,vold,told,select,core,far,root,args,probe_scale=1.):
-    av,at=vold['actions'],told['actions'];yv,yt=val.targets,test.targets
-    cv=np.column_stack([pv[k] for k in ['r_fa','r_id','r_fr']]);ct=np.column_stack([pt[k] for k in ['r_fa','r_id','r_fr']])
-    ov=np.column_stack([vold['components'][k] for k in ['r_fa','r_id','r_fr']]+[vold['r_ns']])
-    ot=np.column_stack([told['components'][k] for k in ['r_fa','r_id','r_fr']]+[told['r_ns']])
-    sv={'MPRisk':pv['risk'],'Point-vMF (NLL fitted)':pointv['risk'],'MPRisk-paper raw':ov.sum(1),'MPRisk-paper no NS':ov[:,:3].sum(1)}
-    st={'MPRisk':pt['risk'],'Point-vMF (NLL fitted)':pointt['risk'],'MPRisk-paper raw':ot.sum(1),'MPRisk-paper no NS':ot[:,:3].sum(1)}
-    probability={'MPRisk','Point-vMF (NLL fitted)','MPRisk-paper no NS'}
-    tv,tt=threshold_from_actions(cval,av),threshold_from_actions(ctest,at)
-    beta=float(args.beta)
-    # Match the repository MSP objective, but only on our selection subset and
-    # against the SAME frozen labels used for every method.
-    candidates=np.geomspace(.001,50,25 if args.stage=='full' else 10);best=(-np.inf,1.)
-    for temp in candidates:
-        u=simple_features(cval[select],val.kappa[select],tv,float(temp))['MSP']
-        sc=auc(av[select]!=yv[select],u)
-        if np.isfinite(sc) and sc>best[0]:best=(sc,float(temp))
-    gv=dict(vold);gt=dict(told)
-    if core is not None and 'dataset_name_to_T_scale' in core:
-        gv['galue_T']=gt['galue_T']=float(core.dataset_name_to_T_scale[test.source['dataset_name']])
-    bv=simple_features(cval,val.kappa,tv,best[1],gv,beta,val.d);bt=simple_features(ctest,test.kappa,tt,best[1],gt,beta,test.d)
-    sv.update(bv);st.update(bt)
-    hv,ht,vh,th,hpars=fit_holue(core,val,test,vold,told,select,far,root,args.seed,args.synthetic)
-    sv['HolUE (refit fixed decisions)']=hv;st['HolUE (refit fixed decisions)']=ht
-    # A supervised error-probability output, not a theorem about model correctness.
-    probability.add('HolUE (refit fixed decisions)')
-    sv['HolUE raw']=-(vh['kl1']+vh['kl2']);st['HolUE raw']=-(th['kl1']+th['kl2'])
-    simple_names=['SCF','AccScr','MSP','Margin'];all_names=['SCF','AccScr','MSP','Entropy','Margin','GalUE','HolUE (refit fixed decisions)','HolUE raw']
-    Xv=np.column_stack([sv[n] for n in all_names]);Xt=np.column_stack([st[n] for n in all_names])
-    learned={}
-    nsv=(av==0)*pv['p0']*np.exp(log_nonspecificity(val.kappa*probe_scale,val.d))
-    nst=(at==0)*pt['p0']*np.exp(log_nonspecificity(test.kappa*probe_scale,test.d))
-    kv=np.column_stack((vh['kl1'],vh['kl2']));kt=np.column_stack((th['kl1'],th['kl2']))
-    specifications=[('MPRisk PRR-weighted',cv,ct,True,[np.ones(3)]),
-                    ('MPRisk-paper retuned',ov,ot,True,[np.ones(4)]),
-                    ('Linear simple',np.column_stack([sv[n] for n in simple_names]),np.column_stack([st[n] for n in simple_names]),False,None),
-                    ('Linear all baseline scores',Xv,Xt,False,None),
-                    ('Linear all + MPRisk',np.column_stack((Xv,cv)),np.column_stack((Xt,ct)),False,[np.r_[np.zeros(len(all_names)),np.ones(3)]]),
-                    ('MPRisk + NS diagnostic',np.column_stack((cv,nsv)),np.column_stack((ct,nst)),True,[np.array([1,1,1,0])]),
-                    ('Linear HolUE KL',kv,kt,False,None),
-                    ('Hybrid KL + MPRisk',np.column_stack((kv,cv)),np.column_stack((kt,ct)),False,[np.r_[np.zeros(2),np.ones(3)]])]
-    feature_sets={
-       'MPRisk PRR-weighted':['r_FA','r_ID','r_FR'],
-       'MPRisk-paper retuned':['paper_r_FA','paper_r_ID','paper_r_FR','paper_r_NS'],
-       'Linear simple':simple_names, 'Linear all baseline scores':all_names,
-       'Linear all + MPRisk':all_names+['r_FA','r_ID','r_FR'],
-       'MPRisk + NS diagnostic':['r_FA','r_ID','r_FR','posterior_P0_times_N_of_scaled_probe'],
-       'Linear HolUE KL':['KL1','KL2'],
-       'Hybrid KL + MPRisk':['KL1','KL2','r_FA','r_ID','r_FR']}
-    for name,v,t,positive,include in specifications:
-        pars=fit_linear(v[select],av[select],yv[select],args.search_budget,args.seed,positive,include)
-        pars['feature_names']=feature_sets[name]
-        sv[name]=apply_linear(v,pars);st[name]=apply_linear(t,pars);learned[name]=pars
-    oldcal=fit_positive_score_calibration(sv['MPRisk-paper retuned'][select],av[select]!=yv[select])
-    learned['MPRisk-paper calibrated']=oldcal
-    sv['MPRisk-paper calibrated']=apply_positive_score_calibration(sv['MPRisk-paper retuned'],oldcal)
-    st['MPRisk-paper calibrated']=apply_positive_score_calibration(st['MPRisk-paper retuned'],oldcal)
-    probability.add('MPRisk-paper calibrated')
-    mon=fit_monotone(pv['risk'][select],av[select]!=yv[select]);learned['MPRisk calibrated']=mon
-    sv['MPRisk calibrated']=apply_monotone(pv['risk'],mon);st['MPRisk calibrated']=apply_monotone(pt['risk'],mon);probability.add('MPRisk calibrated')
-    logit=fit_logistic(np.column_stack((Xv,cv))[select],av[select]!=yv[select],args.seed);learned['Supervised logistic']=logit
-    sv['Supervised logistic']=apply_logistic(np.column_stack((Xv,cv)),logit);st['Supervised logistic']=apply_logistic(np.column_stack((Xt,ct)),logit);probability.add('Supervised logistic')
-    if args.stage=='full':
-        net=fit_mlp(np.column_stack((Xv,cv))[select],av[select]!=yv[select],args.seed)
-        learned['Supervised MLP']=net
-        sv['Supervised MLP']=apply_mlp(np.column_stack((Xv,cv)),net)
-        st['Supervised MLP']=apply_mlp(np.column_stack((Xt,ct)),net)
-        probability.add('Supervised MLP')
-    write_json(root/'score_fits.json',dict(fits=learned,MSP_temperature=best[1],MSP_selection_auroc=best[0],HolUE=hpars,
-                                        baseline_features=all_names,selection_indices=select,
-                                        note='PRR-tuned coefficients are score weights, not measured error costs'))
-    return sv,st,probability,learned,dict(validation_components=cv,test_components=ct,validation_features=Xv,test_features=Xt,
-                                        validation_old_components=ov,test_old_components=ot,feature_names=all_names,
-                                        validation_kl=np.column_stack((vh['kl1'],vh['kl2'])),test_kl=np.column_stack((th['kl1'],th['kl2'])))
+from experiments.mprisk_evidence.score_updates import score_variants
 
 
 def record_scores(tables,context,split,data,legacy,score_dict,probability,idx=None):
     ix=np.arange(data.n) if idx is None else np.asarray(idx,dtype=int)
     a=legacy['actions'][ix];y=data.targets[ix];m=Metrics(a,y,context['seed']);common=dict(context,split=split)
     for name,whole_score in score_dict.items():
-        score=whole_score[ix];row=m.evaluate(score,name in probability);tables.add('main_mprisk_core_comparison',row,method=name,**common)
+        score=whole_score[ix]
+        pp=probability.get(name);side='test' if split=='test' else 'validation'
+        probs=None if pp is None else pp[side][ix]
+        logits=None if pp is None or pp[side+'_log_odds'] is None else pp[side+'_log_odds'][ix]
+        row=m.evaluate(score,probabilities=probs,log_odds=logits)
+        tables.add('main_mprisk_core_comparison',row,method=name,**common)
         curves,rc=m.curves(score);tables.add('rejection_curves',curves,method=name,**common);tables.add('risk_coverage_curves',rc,method=name,**common)
         for target in ['any_error','false_accept','false_reject','misidentification']:
             yy=m.m[target];tables.add('error_type_detection',dict(target=target,positives=int(yy.sum()),n=len(yy),auroc=auc(yy,score),auprc=ap(yy,score)),method=name,**common)
@@ -179,8 +109,14 @@ def record_scores(tables,context,split,data,legacy,score_dict,probability,idx=No
             keep=(a==0) if subset=='rejected' else (a>0);yy=m.m[target][keep]
             tables.add('error_type_detection_conditional',dict(subset=subset,target=target,n=int(keep.sum()),positives=int(yy.sum()),
                    auroc=auc(yy,score[keep]) if keep.any() else np.nan,auprc=ap(yy,score[keep]) if keep.any() else np.nan),method=name,**common)
+        if probs is not None:
+            for subset,keep in [('accepted',a>0),('rejected',a==0)]:
+                if keep.any():
+                    tables.add('conditional_calibration',Metrics(a[keep],y[keep],context['seed']).evaluate(
+                        score[keep],probabilities=probs[keep],log_odds=None if logits is None else logits[keep]),
+                        subset=subset,method=name,**common)
         if name in probability:
-            br=bins(score,m.m['any_error'])
+            br=bins(probs,m.m['any_error'])
             ece=sum(b['count']*abs(b['predicted']-b['observed']) for b in br if b['count'])/len(score)
             tables.add('reliability_bins',br,method=name,**common)
             tables.add('reliability_metrics',dict(ece=ece,**row),method=name,**common)
@@ -198,7 +134,7 @@ def quality_diagnostics(tables,context,val,test,vold,told,pv,pt,scores):
         ix=np.flatnonzero(group==q)
         if not len(ix):continue
         for name in ['MPRisk','MPRisk-paper retuned','MPRisk-paper no NS','HolUE (refit fixed decisions)']:
-            tables.add('quality_stratified',Metrics(a[ix],y[ix],context['seed']).evaluate(scores[name][ix],name=='MPRisk'),method=name,quality_bin=q,**context)
+            tables.add('quality_stratified',Metrics(a[ix],y[ix],context['seed']).evaluate(scores[name][ix],probabilities=pt['risk'][ix] if name=='MPRisk' else None,log_odds=pt['score_log_odds'][ix] if name=='MPRisk' else None),method=name,quality_bin=q,**context)
         for state in ['false_reject','true_reject','false_accept','misidentification','tp']:
             j=ix[m[state][ix]]
             tables.add('quality_error_groups',dict(quality_bin=q,state=state,n=len(j),
@@ -208,10 +144,10 @@ def quality_diagnostics(tables,context,val,test,vold,told,pv,pt,scores):
     # Representative examples include both confident mistakes and uncertain correct decisions.
     for label,keep,descending in [('confident_errors',m['any_error'],False),('uncertain_correct',~m['any_error'],True),
                                   ('false_rejections',m['false_reject'],True),('true_rejections',m['true_reject'],True)]:
-        ix=np.flatnonzero(keep);ix=ix[np.argsort(pt['risk'][ix])];ix=ix[::-1] if descending else ix
+        ix=np.flatnonzero(keep);ix=ix[np.argsort(pt['score_log_odds'][ix])];ix=ix[::-1] if descending else ix
         for j in ix[:10]:tables.add('qualitative_examples',dict(group=label,index=int(j),template=str(test.template_ids[j]),
               subject=str(test.probe_ids[j]),target=int(y[j]),action=int(a[j]),kappa=float(test.kappa[j]),
-              risk=float(pt['risk'][j]),p_unknown=float(pt['p0'][j]),selected_probability=float(pt['selected_probability'][j])),**context)
+              risk=float(pt['risk'][j]),score_log_odds=float(pt['score_log_odds'][j]),p_unknown=float(pt['p0'][j]),selected_probability=float(pt['selected_probability'][j])),**context)
 
 
 def full_extras(tables,context,args,val,test,cval,ctest,parts,pars,table,vold,told,pv,pt,sv,st,learned,features,root):
@@ -220,11 +156,11 @@ def full_extras(tables,context,args,val,test,cval,ctest,parts,pars,table,vold,to
     # All nonempty subsets of the THREE risk components; no meaningless zero-NS ablations.
     for code in range(1,8):
         cols=[j for j in range(3) if code&(1<<j)];name='+'.join(['FA','ID','FR'][j] for j in cols)
-        tables.add('mprisk_component_ablation',base.evaluate(ct[:,cols].sum(1)),variant=name,**context)
+        tables.add('mprisk_component_ablation',base.evaluate(cost_log_odds(ct,np.array([float(j in cols) for j in range(3)]))),variant=name,**context)
     for fraction in [.05,.1,.25,.5,1.]:
         for repeat in range(3):
             n=max(8,int(len(select)*fraction));ix=np.random.default_rng(args.seed+repeat).choice(select,min(n,len(select)),replace=False)
-            p=fit_linear(cv[ix],av[ix],yv[ix],args.search_budget,args.seed+repeat,True,[np.ones(3)])
+            p=fit_risk_weights(cv[ix],av[ix],yv[ix],args.search_budget,args.seed+repeat)
             tables.add('validation_size_ablation',base.evaluate(apply_linear(ct,p)),fraction=fraction,repeat=repeat,**context)
             tables.add('lambda_stability',dict(fraction=fraction,repeat=repeat,weights=p['raw_weights'],selection_count=len(ix)),**context)
     # Actual probability-model refitting on subsets, separate from score-weight sample-size tests.
@@ -233,7 +169,7 @@ def full_extras(tables,context,args,val,test,cval,ctest,parts,pars,table,vold,to
         pp,report=fit_parameters(cval,val.kappa,val.d,yv,sub,select,args.beta,table,maxiter=args.fit_iterations,max_fit=args.max_fit,seed=args.seed)
         v=evaluate(ctest,test.kappa,test.d,pp,a,y,table)
         tables.add('probability_fit_sample_size',dict(fraction=fraction,fit_n=len(sub),probe_scale=pp.probe_scale,gallery_kappa=pp.gallery_kappa,
-                   class_nll=float(-v['true_log_probability'].mean()),**base.evaluate(v['risk'],True)),**context)
+                   class_nll=float(-v['true_log_probability'].mean()),**base.evaluate(v['score_log_odds'],probabilities=v['risk'],log_odds=v['score_log_odds'])),**context)
         write_json(root/f'probability_refit_{fraction}.json',report)
     # Post-hoc parameter perturbations are diagnostics, NEVER selected on test.
     for parameter,factors in [('probe_scale',[0.,.1,.3,1.,3.,10.]),('gallery_kappa',[.5,1.,2.]),('beta',[.1,.25,.5,.75,.9])]:
@@ -241,10 +177,12 @@ def full_extras(tables,context,args,val,test,cval,ctest,parts,pars,table,vold,to
             value=factor if parameter=='beta' else getattr(pars,parameter)*factor
             pp=replace(pars,**{parameter:value});v=evaluate(ctest,test.kappa,test.d,pp,a,y,table)
             tables.add('hyperparameter_sensitivity',dict(parameter=parameter,value=value,diagnostic_only=True,
-                       class_nll=float(-v['true_log_probability'].mean()),**base.evaluate(v['risk'],True)),**context)
-    for name,score in [('uniform_probe',np.where(a==0,1-args.beta,1-(1-args.beta)/len(test.gallery))),
-                       ('no_unknown_event',np.where(a==0,1.,1-pt['selected_probability']/np.maximum(1-pt['p0'],1e-15)))]:
-        tables.add('background_model_ablation',base.evaluate(np.clip(score,0,1),True),variant=name,
+                       class_nll=float(-v['true_log_probability'].mean()),**base.evaluate(v['score_log_odds'],probabilities=v['risk'],log_odds=v['score_log_odds'])),**context)
+    from scipy.special import expit
+    prior_error=np.where(a==0,1-args.beta,1-(1-args.beta)/len(test.gallery))
+    prior_odds=np.log(prior_error)-np.log1p(-prior_error)
+    for name,odds in [('uniform_probe',prior_odds),('no_unknown_event',pt['known_only_error_log_odds'])]:
+        tables.add('background_model_ablation',base.evaluate(odds,probabilities=expit(odds),log_odds=odds),variant=name,
                    note='tests unknown-event evidence, NOT necessity of an explicit continuum',**context)
     bootnames=['MPRisk','MPRisk-paper retuned','HolUE (refit fixed decisions)','Linear all baseline scores','Linear all + MPRisk']
     tables.add('bootstrap_prr_differences',bootstrap(a,y,{n:st[n] for n in bootnames},'MPRisk',test.probe_ids,args.bootstrap,args.seed),**context)
@@ -265,43 +203,77 @@ def run_dataset(args,core,name,root,tables,transfer):
         test=load_native(config);val=load_native(core.dataset_name_to_calibration_set[name])
         fars=[.1] if args.stage=='sanity' else list(map(float,core.far_list))
     original_n=(val.n,test.n)
-    if args.stage=='sanity':val,vi=subsample(val,args.sanity_val,args.seed);test,ti=subsample(test,args.sanity_test,args.seed+1)
-    else:vi=np.arange(val.n);ti=np.arange(test.n)
+    previous=None
+    if getattr(args,'previous_run',None):
+        previous=PreviousRun(args.previous_run,args.domain,args.seed,args.beta,args.synthetic)
+        val,test,vi,ti,parts,unit=reuse_split(previous,name,val,test)
+    else:
+        if args.stage=='sanity':val,vi=subsample(val,args.sanity_val,args.seed);test,ti=subsample(test,args.sanity_test,args.seed+1)
+        else:vi=np.arange(val.n);ti=np.arange(test.n)
+        parts,unit=split_validation(val,args.seed)
     if val.d!=test.d:raise ValueError('Calibration and test representation dimensions differ')
     write_json(out/'data_manifest.json',dict(validation=val.metadata(),test=test.metadata(),original_n=original_n,
                  validation_original_indices=vi,test_original_indices=ti,
-                 beta=args.beta,beta_is_not_fpir=True,synthetic=args.synthetic))
-    parts,unit=split_validation(val,args.seed);write_json(out/'validation_split.json',dict(unit=unit,**parts))
+                 beta=args.beta,beta_is_not_fpir=True,synthetic=args.synthetic,
+                 previous_run_fingerprint=None if previous is None else previous.fingerprint))
+    write_json(out/'validation_split.json',dict(unit=unit,**parts))
     cval,backend=similarities(val,out/'_cache'/'validation_cosines.npy',args.device)
     ctest,_=similarities(test,out/'_cache'/'test_cosines.npy',args.device)
     table=PartitionTable(val.d);write_json(out/'partition_numerics.json',table.manifest())
+    if previous is not None:
+        try:replay_dataset(previous,name,val,test,cval,ctest,parts,table,root,tables,args.seed)
+        finally:previous.close()
+        tables.save()
+    if getattr(args,'replay_only',False):
+        write_json(out/'status.json',dict(status='complete',replay_only=True,fars=[]))
+        return
     pars,report=fit_parameters(cval,val.kappa,val.d,val.targets,parts['fit'],parts['select'],args.beta,table,
-                     maxiter=args.fit_iterations,max_fit=args.max_fit,seed=args.seed)
+                     maxiter=args.fit_iterations,max_fit=args.max_fit,seed=args.seed,report_path=out/'evidence_fit_attempts.json')
     point,pr=fit_parameters(cval,val.kappa,val.d,val.targets,parts['fit'],parts['select'],args.beta,table,point=True,
-                     maxiter=args.fit_iterations,max_fit=args.max_fit,seed=args.seed)
+                     maxiter=args.fit_iterations,max_fit=args.max_fit,seed=args.seed,report_path=out/'point_fit_attempts.json')
     write_json(out/'probability_model_fit.json',dict(parameters=asdict(pars),fit=report,point_parameters=asdict(point),point_fit=pr,
                  note='Shared vMF gallery dispersion is FIT ON VALIDATION, not inherited from power-spherical FAR matching'))
+    for model,rep in [('evidence',report),('point',pr)]:
+        for row in rep.get('coordinate_slices',[]):tables.add('validation_parameter_slices',row,dataset=name,model=model,seed=args.seed)
+    model_limit_diagnostics(tables,name,cval,val.kappa,val.d,val.targets,parts,pars,table,args.seed)
     tables.add('probe_distribution_sanity',probe_limit_rows(val.d,pars.gallery_kappa,args.beta),dataset=name,seed=args.seed)
     tables.add('model_parameters',dict(**asdict(pars),validation_partition_unit=unit,n_validation=val.n,n_test=test.n,backend=backend),dataset=name,seed=args.seed)
     transfer[name]=dict(pars=pars,d=val.d,fars={})
     for far in fars:
         case=out/f'fpir_{far:g}';case.mkdir(exist_ok=True)
         context=dict(dataset=name,target_fpir=far,beta=args.beta,seed=args.seed)
-        print(f'[{name} FPIR={far}] freeze original M=0 recognition decisions',flush=True)
+        print(f'[{name} FPIR={far}] freeze common recognition decisions',flush=True)
         start=time.perf_counter()
-        if args.synthetic:
-            fitted_reference=synthetic_legacy(val.take(parts['fit']),cval[parts['fit']],far,args.beta)
-            vold=synthetic_legacy(val,cval,far,args.beta,tau=fitted_reference['tau'])
-            told=synthetic_legacy(test,ctest,far,args.beta)
+        protocol=getattr(args,'reference_protocol','empirical')
+        if protocol=='empirical':
+            kind='vMF' if args.synthetic else str(native_method(core,'MPRisk raw').get('gallery_prior','power'))
+            vr=fit_reference(cval[parts['fit']],val.targets[parts['fit']],far,args.beta,val.d,kind)
+            tr=fit_reference(ctest,test.targets,far,args.beta,test.d,kind)
+            av=actions_at_threshold(cval,vr['tau']);at=actions_at_threshold(ctest,tr['tau'])
+            if args.synthetic:
+                vold=synthetic_legacy(val,cval,far,args.beta,tau=vr['tau']);told=synthetic_legacy(test,ctest,far,args.beta,tau=tr['tau'])
+            else:
+                vold=run_legacy(core,val,far,gallery_kappa=vr['gallery_kappa'],actions_override=av,cosines=cval)
+                told=run_legacy(core,test,far,gallery_kappa=tr['gallery_kappa'],actions_override=at,cosines=ctest)
+            vold['tau']=vr['tau'];told['tau']=tr['tau']
+            for split,rec in [('validation_fit',vr),('test_benchmark',tr)]:
+                tables.add('reference_operating_point',dict(split=split,**rec),**context)
+            if np.mean(told['actions'][test.targets==0]>0)!=tr['achieved_fpir']:raise AssertionError('Reference FPIR mismatch')
         else:
-            # The audit labels must not choose the validation decision rule.
-            fitted_reference=run_legacy(core,val.take(parts['fit']),far)
-            vold=run_legacy(core,val,far,gallery_kappa=fitted_reference['gallery_kappa'])
-            told=run_legacy(core,test,far)
-        write_json(case/'reference_decision_fit.json',dict(
+            if args.synthetic:
+                fitted_reference=synthetic_legacy(val.take(parts['fit']),cval[parts['fit']],far,args.beta)
+                vold=synthetic_legacy(val,cval,far,args.beta,tau=fitted_reference['tau']);told=synthetic_legacy(test,ctest,far,args.beta)
+            else:
+                fitted_reference=run_legacy(core,val.take(parts['fit']),far,cosines=cval[parts['fit']])
+                vold=run_legacy(core,val,far,gallery_kappa=fitted_reference['gallery_kappa'],cosines=cval)
+                told=run_legacy(core,test,far,cosines=ctest)
+            vr=tr=None
+        write_json(case/'reference_decision_fit.json',dict(protocol=protocol,
             validation_gallery_kappa=vold['gallery_kappa'],test_gallery_kappa=told['gallery_kappa'],
             validation_fit_indices=parts['fit'],validation_rule_uses_audit_labels=False,
-            test_rule='source target-FPIR benchmark construction, frozen for all uncertainty methods'))
+            validation_matching=vr,test_matching=tr,
+            test_rule='test-unknown-label benchmark operating point, frozen for all scores; NOT prospective threshold calibration'))
+        support_diagnostics(tables,context,val,test,parts,vold['actions'],told['actions'])
         legacy_seconds=time.perf_counter()-start
         av,at=vold['actions'],told['actions'];vh=digest_array(av);th=digest_array(at)
         start=time.perf_counter();pv=evaluate(cval,val.kappa,val.d,pars,av,val.targets,table);pt=evaluate(ctest,test.kappa,test.d,pars,at,test.targets,table)
@@ -311,8 +283,17 @@ def run_dataset(args,core,name,root,tables,transfer):
         ix=np.arange(min(test.n,32));exact=evaluate(ctest[ix],test.kappa[ix],test.d,pars,at[ix],test.targets[ix],None)
         err=float(np.max(np.abs(exact['risk']-pt['risk'][ix])))
         if err>2e-6:raise AssertionError(f'Exact/interpolated risk mismatch: {err}')
+        logerr=float(np.max(np.abs(exact['score_log_odds']-pt['score_log_odds'][ix])))
+        if logerr>2e-6:raise AssertionError(f'Exact/interpolated log-odds mismatch: {logerr}')
+        delta=exact['score_log_odds'][:,None]-exact['score_log_odds'][None,:]
+        approx=pt['score_log_odds'][ix];delta_approx=approx[:,None]-approx[None,:]
+        resolved=np.abs(delta)>2*logerr+1e-10
+        inversions=int(np.sum(resolved & (delta*delta_approx<0)))
+        if inversions:raise AssertionError('Numerically resolvable ranking inversions')
         tables.add('normalization_audit',dict(max_mass_error=float(np.max(np.abs(pt['posterior_mass']-1))),
-                  exact_risk_error=err,risk_min=float(pt['risk'].min()),risk_max=float(pt['risk'].max()),
+                  exact_risk_error=err,exact_log_odds_error=logerr,resolved_ranking_inversions=inversions,
+                  probability_zero_count=int(np.sum(pt['risk']==0)),probability_one_count=int(np.sum(pt['risk']==1)),
+                  distinct_log_odds_count=int(len(np.unique(pt['score_log_odds']))),risk_min=float(pt['risk'].min()),risk_max=float(pt['risk'].max()),
                   counterfactual_disagreement=float(np.mean(pt['counterfactual_action']!=at)),
                   scored_action_hash=th,reference_action_hash=th,passed=True),**context)
         tables.add('posterior_scoring',dict(class_nll=float(-pt['true_log_probability'].mean()),class_brier=float(pt['class_brier'].mean()),
@@ -321,11 +302,20 @@ def run_dataset(args,core,name,root,tables,transfer):
         ai=parts['audit']
         tables.add('posterior_scoring',dict(class_nll=float(-pv['true_log_probability'][ai].mean()),class_brier=float(pv['class_brier'][ai].mean()),known_prevalence=float(np.mean(val.targets[ai]>0)),prior_known=1-args.beta),split='audit',**context)
         sv,st,probability,learned,feat=score_variants(val,test,cval,ctest,pv,pt,pointv,pointt,vold,told,parts['select'],core,far,case,args,pars.probe_scale)
+        for fit_name,fit_value in learned.items():
+            if 'identifiable' in fit_value and ('calibrat' in fit_name):
+                tables.add('calibration_fit',dict(identifiable=fit_value['identifiable'],success=fit_value.get('success'),
+                    input_score=fit_value.get('input_score'),n=fit_value.get('n'),positives=fit_value.get('positives')),method=fit_name,**context)
+        # Exact zero-NS candidate must equal the fitted core in the selection objective.
+        for ns_name in ['MPRisk + NS diagnostic','MPRisk + NS original-scale diagnostic']:
+            if learned[ns_name]['validation_prr']+1e-12<learned['MPRisk PRR-weighted']['validation_prr']:
+                raise AssertionError('NS diagnostic lost its nested no-NS candidate')
         record_scores(tables,context,'audit',val,vold,sv,probability,parts['audit']);record_scores(tables,context,'test',test,told,st,probability)
         for fit_name,fit_value in learned.items():
             if 'raw_weights' in fit_value:
                 tables.add('fair_tuning_weights',dict(weights=fit_value['raw_weights'],features=fit_value.get('feature_names',[]),selection_prr=fit_value['validation_prr'],identifiable=fit_value['identifiable']),method=fit_name,**context)
         quality_diagnostics(tables,context,val,test,vold,told,pv,pt,st)
+        quality_distance_grid(tables,context,val,test,cval,ctest,parts,vold,told,sv,st,pv,pt)
         for other in ['MPRisk-paper raw','MPRisk-paper retuned','HolUE (refit fixed decisions)','Linear all baseline scores']:
             tables.add('ranking_comparison',ranks(st['MPRisk'],st[other],args.seed),reference='MPRisk',comparison=other,**context)
         tables.add('runtime_overhead',dict(legacy_including_FAR_matching_seconds=legacy_seconds,
@@ -341,6 +331,12 @@ def run_dataset(args,core,name,root,tables,transfer):
                  kappa=data.kappa,effective_kappa=data.kappa*pars.probe_scale,score_names=np.array(names),scores=np.column_stack([scores[n] for n in names]),
                  r_ns_legacy=legacy['r_ns'],log_nonspecificity=legacy['log_nonspecificity'],
                  max_cosine=np.max(cval if label=='validation' else ctest,axis=1),**p)
+            prob_names=list(probability)
+            save['probability_names']=np.array(prob_names)
+            save['probabilities']=np.column_stack([probability[n][label] for n in prob_names])
+            save['probability_log_odds']=np.column_stack([probability[n][label+'_log_odds'] if probability[n][label+'_log_odds'] is not None else np.full(data.n,np.nan) for n in prob_names])
+            save['schema_version']=np.array('risk-score-separation-1.1')
+            save['historical_probability_argmax_actions']=legacy.get('native_actions',legacy['actions'])
             if label=='validation':
                 role=np.full(data.n,'',dtype='U8')
                 for key,indices in parts.items():role[indices]=key
@@ -351,7 +347,7 @@ def run_dataset(args,core,name,root,tables,transfer):
         np.savez_compressed(case/'transfer_arrays.npz',components=feat['test_components'],actions=at,targets=test.targets)
         # Retain reference calibrated scores/features for all subsequent audits.
         np.savez_compressed(case/'fusion_features.npz',validation=feat['validation_features'],test=feat['test_features'],names=np.array(feat['feature_names']),
-                            validation_kl=feat['validation_kl'],test_kl=feat['test_kl'])
+                            validation_kl=feat['validation_kl'],test_kl=feat['test_kl'],validation_augmented=feat['validation_augmented_features'],test_augmented=feat['test_augmented_features'],augmented_names=np.array(feat['augmented_feature_names']))
         tables.save();write_json(case/'status.json',dict(status='complete',reference_actions_sha256=th,model_version=MODEL_VERSION))
     write_json(out/'status.json',dict(status='complete',fars=fars,parameters=asdict(pars)))
     if args.stage=='full':

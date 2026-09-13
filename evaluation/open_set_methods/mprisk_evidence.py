@@ -9,11 +9,11 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 import math
 import numpy as np
-from scipy.special import ive, gammaln, logsumexp
+from scipy.special import ive, gammaln, logsumexp, expit
 from scipy.interpolate import CubicSpline
 from scipy.optimize import minimize
 
-MODEL_VERSION = 'reference-prior-evidence-1.0'
+MODEL_VERSION = 'reference-prior-evidence-1.1-logodds'
 
 
 def check_kappa(k):
@@ -114,31 +114,109 @@ def log_bayes_factors(cosines,kappa,gallery_kappa,d,table=None):
     return ans
 
 
-def log_posterior(logB,beta,known_prior=None):
-    b=np.asarray(logB,dtype=np.float64)
-    if b.ndim!=2 or b.shape[1]<1 or not np.all(np.isfinite(b)):raise ValueError('Invalid log Bayes factors')
-    if not np.isfinite(beta) or not 0<beta<1:raise ValueError('beta must be in (0,1), not an FPIR')
-    K=b.shape[1];w=np.ones(K)/K if known_prior is None else np.asarray(known_prior,dtype=float)
-    if w.shape!=(K,) or np.any(w<=0) or not np.isclose(w.sum(),1):raise ValueError('Invalid conditional known prior')
-    z=np.column_stack((np.full(len(b),np.log(beta)),np.log1p(-beta)+np.log(w)[None,:]+b))
-    return z-logsumexp(z,axis=1,keepdims=True)
+def class_log_weights(logB, beta, known_prior=None):
+    """Unnormalized class log weights: unknown is column zero."""
+    b = np.asarray(logB, dtype=np.float64)
+    if b.ndim != 2 or b.shape[1] < 1 or not np.all(np.isfinite(b)):
+        raise ValueError('Invalid log Bayes factors')
+    if not np.isfinite(beta) or not 0 < beta < 1:
+        raise ValueError('beta must be in (0,1), not an FPIR')
+    K = b.shape[1]
+    w = np.ones(K) / K if known_prior is None else np.asarray(known_prior, dtype=float)
+    if w.shape != (K,) or np.any(~np.isfinite(w)) or np.any(w <= 0) or not np.isclose(w.sum(), 1):
+        raise ValueError('Invalid conditional known prior')
+    return np.column_stack((np.full(len(b), np.log(beta)),
+                            np.log1p(-beta) + np.log(w)[None, :] + b))
 
 
-def risk_components(lp,actions):
-    lp=np.asarray(lp,dtype=np.float64);a=np.asarray(actions)
-    n,J=lp.shape
-    if a.shape!=(n,) or not np.issubdtype(a.dtype,np.integer) or np.any((a<0)|(a>=J)):
+def log_posterior(logB, beta, known_prior=None):
+    z = class_log_weights(logB, beta, known_prior)
+    return z - logsumexp(z, axis=1, keepdims=True)
+
+
+def selected_log_odds(log_weights, actions):
+    """Log(error mass / chosen-class mass), NEVER logit(1-p_selected).
+
+    Accepts normalized or unnormalized log weights. All hypotheses in the evidence
+    model have positive mass; finite log weights retain arbitrarily small alternatives.
+    """
+    z = np.asarray(log_weights, dtype=np.float64)
+    a = np.asarray(actions)
+    if z.ndim != 2 or z.shape[1] < 2 or np.any(~np.isfinite(z)):
+        raise ValueError('Expected finite N x (K+1) class log weights')
+    if a.shape != (len(z),) or not np.issubdtype(a.dtype, np.integer) or np.any((a < 0) | (a >= z.shape[1])):
         raise ValueError('actions must be N integer classes 0..K')
-    if np.any(~np.isfinite(lp)) or np.max(np.abs(logsumexp(lp,axis=1)))>1e-7:
+    selected = z[np.arange(len(z)), a]
+    wrong = z.copy()
+    wrong[np.arange(len(z)), a] = -np.inf
+    return logsumexp(wrong, axis=1) - selected
+
+
+def risk_from_log_weights(log_weights, actions):
+    """Stable risk, event log masses and fixed-action ranking score.
+
+    Probabilities may unavoidably round to 0/1. The log odds are the ranking
+    representation. Inactive events have log mass -inf, not an arbitrary epsilon.
+    """
+    z = np.asarray(log_weights, dtype=np.float64)
+    a = np.asarray(actions)
+    odds = selected_log_odds(z, a)
+    n = len(z)
+    lcorrect = -np.logaddexp(0., odds)
+    lerror = -np.logaddexp(0., -odds)
+    accepted = a > 0
+    lfa = np.full(n, -np.inf)
+    lid = np.full(n, -np.inf)
+    lfr = np.where(accepted, -np.inf, lerror)
+    ii = np.flatnonzero(accepted)
+    if len(ii):
+        alt_known = z[ii, 1:].copy()
+        alt_known[np.arange(len(ii)), a[ii] - 1] = -np.inf
+        other = logsumexp(alt_known, axis=1)
+        unknown = z[ii, 0]
+        # Split the error event in log space, avoiding normalizer cancellation.
+        lfa[ii] = lerror[ii] - np.logaddexp(0., other - unknown)
+        lid[ii] = lerror[ii] - np.logaddexp(0., unknown - other)
+    events = np.column_stack((lcorrect, lfa, lid, lfr))
+    odds0 = logsumexp(z[:, 1:], axis=1) - z[:, 0]
+    logp0 = -np.logaddexp(0., odds0)
+    lp = z - logsumexp(z, axis=1, keepdims=True)
+    return dict(r_fa=np.exp(lfa), r_id=np.exp(lid), r_fr=np.exp(lfr),
+                log_r_fa=lfa, log_r_id=lid, log_r_fr=lfr,
+                log_correct_probability=lcorrect, log_error_probability=lerror,
+                log_event_probabilities=events, risk=expit(odds), score_log_odds=odds,
+                p0=expit(-odds0), log_p0=logp0, known_log_odds=odds0,
+                selected_probability=expit(-odds), selected_log_probability=lcorrect,
+                posterior_mass=np.exp(lp).sum(1), counterfactual_action=np.argmax(z, axis=1))
+
+
+def risk_components(lp, actions):
+    """Backward-compatible entry point for an already normalized log posterior."""
+    lp = np.asarray(lp, dtype=np.float64)
+    if lp.ndim != 2 or np.any(~np.isfinite(lp)) or np.max(np.abs(logsumexp(lp, axis=1))) > 1e-7:
         raise ValueError('Posterior not normalized')
-    accepted=a>0;p=np.exp(lp);others=p[:,1:].copy();ix=np.flatnonzero(accepted)
-    others[ix,a[ix]-1]=0
-    fa=accepted*p[:,0];ident=accepted*others.sum(1);fr=(~accepted)*(-np.expm1(lp[:,0]))
-    selected_lp=lp[np.arange(n),a];risk=-np.expm1(selected_lp)
-    if not np.allclose(fa+ident+fr,risk,atol=2e-10,rtol=1e-7):raise AssertionError('Risk decomposition failed')
-    return dict(r_fa=fa,r_id=ident,r_fr=fr,risk=risk,p0=p[:,0],selected_probability=np.exp(selected_lp),
-                selected_log_probability=selected_lp,posterior_mass=p.sum(1),
-                counterfactual_action=np.argmax(lp,axis=1))
+    return risk_from_log_weights(lp, actions)
+
+
+def cost_log_odds(log_events, costs):
+    """Stable monotone score for a nonnegative weighted sum of error events.
+
+    Columns: correct, FA, ID, FR (optionally further disjoint error events).
+    Normalize loss by max(costs). Form both loss and remaining-to-max masses
+    explicitly; do not subtract a near-one weighted probability from one.
+    """
+    e = np.asarray(log_events, dtype=float)
+    w = np.asarray(costs, dtype=float)
+    if e.ndim != 2 or w.shape != (e.shape[1]-1,) or np.any(np.isnan(e)) or np.any(e == np.inf):
+        raise ValueError('Invalid event array/cost shape')
+    if np.any(~np.isfinite(w)) or np.any(w < 0) or not np.any(w > 0):
+        raise ValueError('Costs must be finite, nonnegative, and not all zero')
+    w = np.r_[0., w / w.max()]
+    lw = np.full_like(w, -np.inf)
+    lc = np.full_like(w, -np.inf)
+    np.log(w, out=lw, where=w>0)
+    np.log1p(-w, out=lc, where=w<1)
+    return logsumexp(e + lw, axis=1) - logsumexp(e + lc, axis=1)
 
 
 @dataclass(frozen=True)
@@ -161,15 +239,27 @@ def evaluate(c,kappa,d,pars,actions,targets=None,table=None,batch=128,dense=Fals
         cc=np.asarray(c[start:end],dtype=float)
         b=pars.gallery_kappa*cc-log_partition(pars.gallery_kappa,d) if pars.point else log_bayes_factors(
             cc,kappa[start:end]*pars.probe_scale,pars.gallery_kappa,d,table)
-        lp=log_posterior(b,pars.beta);p=np.exp(lp);v=risk_components(lp,a[start:end])
+        weights=class_log_weights(b,pars.beta)
+        lp=weights-logsumexp(weights,axis=1,keepdims=True);p=np.exp(lp)
+        v=risk_from_log_weights(weights,a[start:end])
+        # Closed-set ablation: condition on known membership in log space.
+        # A rejection is always wrong in that ablated problem.
+        known_odds=np.full(end-start,np.inf)
+        accepted=np.flatnonzero(a[start:end]>0)
+        if len(accepted):
+            known_odds[accepted]=(-np.inf if c.shape[1]==1 else
+                selected_log_odds(weights[accepted,1:],a[start:end][accepted]-1))
+        v['known_only_error_log_odds']=known_odds
         v['entropy']=-(p*lp).sum(1)
         v['log_known_bayes_factor']=logsumexp(b,axis=1)-np.log(c.shape[1])
         v['true_log_probability']=np.full(end-start,np.nan);v['class_brier']=np.full(end-start,np.nan)
         if targets is not None:
             y=np.asarray(targets,dtype=int)[start:end]
             if np.any((y<0)|(y>c.shape[1])):raise ValueError('Target index outside 0..K')
-            v['true_log_probability']=lp[np.arange(len(y)),y]
-            v['class_brier']=(p*p).sum(1)-2*np.exp(v['true_log_probability'])+1
+            truth_odds=selected_log_odds(weights,y)
+            v['true_log_probability']=-np.logaddexp(0.,truth_odds)
+            otherp=p.copy();otherp[np.arange(len(y)),y]=0.
+            v['class_brier']=(otherp*otherp).sum(1)+expit(truth_odds)**2
         top=np.argsort(lp[:,1:],axis=1)[:,-min(c.shape[1],5):][:,::-1]+1
         v['top_classes']=top;v['top_probabilities']=np.take_along_axis(p,top,axis=1)
         if dense:v['log_posterior']=lp
@@ -177,7 +267,7 @@ def evaluate(c,kappa,d,pars,actions,targets=None,table=None,batch=128,dense=Fals
     return {name:np.concatenate(v) for name,v in out.items()}
 
 
-def fit_parameters(c,kappa,d,y,fit_ix,select_ix,beta,table=None,point=False,maxiter=50,max_fit=3000,seed=777):
+def fit_parameters(c,kappa,d,y,fit_ix,select_ix,beta,table=None,point=False,maxiter=250,max_fit=3000,seed=777,report_path=None):
     """Only supplied validation rows are used; beta is an explicitly fixed prior.
 
     Fits shared gallery concentration and probe concentration scale by multiclass
@@ -195,21 +285,49 @@ def fit_parameters(c,kappa,d,y,fit_ix,select_ix,beta,table=None,point=False,maxi
             ids=ix[j:j+128]
             b=p.gallery_kappa*np.asarray(c[ids])-log_partition(p.gallery_kappa,d) if point else log_bayes_factors(
                 c[ids],np.asarray(kappa)[ids]*p.probe_scale,p.gallery_kappa,d,table)
-            lp=log_posterior(b,beta);s-=lp[np.arange(len(ids)),np.asarray(y)[ids]].sum()
+            weights=class_log_weights(b,beta)
+            s+=np.logaddexp(0.,selected_log_odds(weights,np.asarray(y)[ids])).sum()
         return float(s/len(ix))
-    history=[];best=None
+    history=[];best=None;best_index=None
     for scale,g in [(1.,d),(.1,2*d),(10.,d/2)]:
-        print(f'[probability fit] point={point}, start scale={scale:g}, gallery_kappa={g:g}, n_fit={len(fit_ix)}, n_select={len(select_ix)}',flush=True)
+        print(f'[probability fit] point={point}, scale={scale:g}, kappa_g={g:g}',flush=True)
         x=np.log([g] if point else [scale,g]);x=np.clip(x,[b[0] for b in bounds],[b[1] for b in bounds])
-        res=minimize(lambda z:loss(z,fit_ix),x,method='L-BFGS-B',bounds=bounds,
-                     options=dict(maxiter=maxiter,ftol=1e-9,maxls=30))
+        attempts=[]
+        # Retry only an objectively nonconverged optimizer, never a weak test metric.
+        for attempt,limit in enumerate([maxiter,4*maxiter]):
+            res=minimize(lambda z:loss(z,fit_ix),x,method='L-BFGS-B',bounds=bounds,
+                         options=dict(maxiter=limit,ftol=1e-10,maxls=50,eps=1e-5))
+            attempts.append(dict(success=bool(res.success),message=str(res.message),iterations=int(res.nit),
+                                 fit_nll=float(res.fun),maxiter=int(limit)))
+            if res.success:break
+            x=res.x
         score=loss(res.x,select_ix)
+        eligible=bool(res.success and np.isfinite(score) and np.isfinite(res.fun))
         row=dict(parameters=asdict(decode(res.x)),fit_nll=float(res.fun),select_nll=score,
-                 success=bool(res.success),message=str(res.message),iterations=int(res.nit),
+                 success=bool(res.success),eligible=eligible,message=str(res.message),iterations=int(res.nit),attempts=attempts,
                  at_boundary=bool(any(abs(v-lo)<.01 or abs(v-hi)<.01 for v,(lo,hi) in zip(res.x,bounds))))
         history.append(row)
-        print(f'[probability fit] select NLL={score:.6g}; converged={bool(res.success)}; params={row["parameters"]}',flush=True)
-        if np.isfinite(score) and (best is None or score<best[0]):best=(score,decode(res.x))
-    if best is None:raise FloatingPointError('No finite validation fit')
-    return best[1],dict(candidates=history,fit_indices=fit_ix.tolist(),select_indices=select_ix.tolist(),
-                         beta_source='configured prior; never target FPIR',objective='validation multiclass NLL')
+        print(f'[probability fit] select NLL={score:.6g}; eligible={eligible}; params={row["parameters"]}',flush=True)
+        if eligible and (best is None or score<best[0]):best=(score,decode(res.x));best_index=len(history)-1
+    report=dict(candidates=history,fit_indices=fit_ix.tolist(),select_indices=select_ix.tolist(),
+                beta_source='configured prior; never target FPIR',objective='validation multiclass NLL',
+                selected_index=best_index,selected_converged=best is not None,
+                optimization_bounds_log=bounds,bounds_automatically_expanded=False)
+    if best is not None:
+        z=np.log([best[1].gallery_kappa] if point else [best[1].probe_scale,best[1].gallery_kappa])
+        # One-coordinate profiles at fixed other parameter, not profiled optima.
+        profile=[]
+        for j,parameter in enumerate(['gallery_kappa'] if point else ['probe_scale','gallery_kappa']):
+            for factor in [.1,.3,1.,3.,10.]:
+                zz=z.copy();zz[j]+=np.log(factor)
+                profile.append(dict(parameter=parameter,factor=factor,parameters=asdict(decode(zz)),
+                                    inside_fit_bounds=bool(all(lo<=v<=hi for v,(lo,hi) in zip(zz,bounds))),
+                                    fit_nll=loss(zz,fit_ix),select_nll=loss(zz,select_ix),diagnostic_only=True))
+        report['coordinate_slices']=profile
+        report['selected_at_boundary']=history[best_index]['at_boundary']
+        report['requires_boundary_review']=report['selected_at_boundary']
+    if report_path is not None:
+        from experiments.mprisk_evidence.artifacts import write_json
+        write_json(report_path,report)
+    if best is None:raise RuntimeError('No converged finite validation fit. See fit report; no unconverged candidate was selected.')
+    return best[1],report

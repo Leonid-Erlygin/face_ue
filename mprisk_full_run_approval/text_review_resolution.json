@@ -1,0 +1,36 @@
+{
+  "sanity_code_sha256": "0196566aa4ff9f1993be0ea23f16c3b5329c3c3977190117a561259e8fbd5f34",
+  "acknowledged_warnings": [
+    "agnews:audit:misidentification:only_0",
+    "agnews:evidence:boundary_requires_review",
+    "agnews:select:misidentification:only_0",
+    "clinc150:audit:false_accept:only_3",
+    "clinc150:select:false_accept:only_4",
+    "dbpedia:audit:misidentification:only_0",
+    "dbpedia:select:misidentification:only_0",
+    "pan_test:audit:false_accept:only_4",
+    "pan_test:audit:false_reject:only_8",
+    "pan_test:audit:misidentification:only_1",
+    "pan_test:evidence:boundary_requires_review",
+    "pan_test:select:false_accept:only_1",
+    "pan_test:select:false_reject:only_5",
+    "pan_test:select:misidentification:only_1",
+    "yahoo:audit:misidentification:only_0",
+    "yahoo:select:misidentification:only_0"
+  ],
+  "rationale": "Proceed with the full benchmark under the currently implemented validation protocol, as explicitly requested by the user. This authorization follows the 12 September numerical review and does not certify calibrated error probabilities, adequate validation support for every error type, statistical significance, or final dissertation readiness. Preserve beta=0.5, empirical benchmark FPIR construction, existing parameter bounds, and the fit/selection/audit separation. The benchmark uses labeled unknown test probes to establish operating points; it is not a prospective validation-only FPIR guarantee. Do not use test labels to fit the evidence model, calibration, concentration scaling, or score weights. Retain unfavorable results, boundary diagnostics, sparse-error counts, and all review warnings. The inspected sanity test subsets are development evidence, not untouched confirmation of subsequent design choices. Review the full results before drawing probability-calibration or sufficiency conclusions. The text warning list includes sparse false-acceptance, false-rejection, and misidentification support, and boundary evidence fits on AG News and PAN. Converged boundary fits may be included as reported benchmark candidates without extending bounds or treating their parameters as accurately identified quantities. Sparse validation outcomes can make learned fusion weights unrepresentative; retain this limitation.",
+  "scope": "full benchmark with unchanged validation protocol; limitations deferred, not resolved",
+  "raw_probability_calibration_certified": false,
+  "validation_support_certified": false,
+  "all_warning_conditions_remain_recorded": true,
+  "source": {
+    "sanity_archive_name": "sanity_text_20260912T082208Z_1887325.zip",
+    "sanity_archive_sha256": "27d4d22df3111efaa740979361fa74f484ee7cb3e3ada9101e1f7159c85bdee7",
+    "original_archive_root": "sanity_text_20260912T082208Z_1887325",
+    "manifest_sha256": "7db5db762dfca5b2c591a9110b1b09bdced930d855564924c50e8120982ac950",
+    "review_gates_sha256": "7b7e1e9c5b783b45a63bfad5b0ec72cfecb17c785c0e388a0debb139aac1a04b",
+    "code_sha256": "0196566aa4ff9f1993be0ea23f16c3b5329c3c3977190117a561259e8fbd5f34",
+    "core_config_sha256": "1295430b89c65f7ebe53a5206464c6c645e524f161269991a9590234a3ad242c"
+  },
+  "decision_date": "2026-09-13"
+}

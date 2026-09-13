@@ -1,3 +1,5 @@
+> **Version 1.1 incremental correction:** follow `RECHECK_v1_1.md` for the next sanity run, replay, score schema, and full-stage guards. The original guide below documents version 1.0 and is superseded where that correction says so.
+
 # MPRisk: two-stage reference-prior evidence experiments
 
 This package adds a separate experiment pipeline. It does not overwrite the existing

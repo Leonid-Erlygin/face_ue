@@ -182,7 +182,7 @@ def native_method(core,name):
     raise KeyError(f'Method {name} absent in supplied core config')
 
 
-def run_legacy(core,data,far,name='MPRisk raw',gallery_kappa=None):
+def run_legacy(core,data,far,name='MPRisk raw',gallery_kappa=None,actions_override=None,cosines=None):
     """Original code defines the reference decision, not the evidence posterior.
 
     This intentionally retains the source benchmark's target-FPIR operating-point
@@ -201,12 +201,21 @@ def run_legacy(core,data,far,name='MPRisk raw',gallery_kappa=None):
     model=instantiate_config(cfg)
     model.setup(data.mu,data.kappa[:,None],data.gallery,data.gallery_kappa[:,None],
                 g_unique_ids=data.gallery_ids,probe_unique_ids=data.probe_ids,dataset_name=data.source['dataset_name'])
-    pred,reject=model.predict();actions=np.where(reject,0,np.asarray(pred,dtype=int)+1)
-    known=np.asarray(model.mean_probs);p0=np.asarray(getattr(model,'oog_prob',1-known.sum(1))).reshape(-1)
-    p=np.column_stack((p0,known));p=np.maximum(p,1e-300);p/=p.sum(1,keepdims=True)
-    components=risk_components(np.log(p),actions)
+    pred,reject=model.predict();native_actions=np.where(reject,0,np.asarray(pred,dtype=int)+1)
+    actions=native_actions if actions_override is None else np.asarray(actions_override,dtype=int).copy()
+    # Reconstruct the same M=0 posterior from log weights, not 1-sum(p_known).
+    # This also prevents silent loss of tiny probabilities in historical baselines.
+    from evaluation.open_set_methods.mprisk_evidence import risk_from_log_weights,class_log_weights
+    from experiments.mprisk_evidence.recheck import reference_log_ratio
+    c=np.asarray(cosines) if cosines is not None else data.mu@data.gallery.T
+    out_components={}
+    for lo in range(0,data.n,128):
+        z=class_log_weights(reference_log_ratio(c[lo:lo+128],model.gallery_kappa,data.d,model.gallery_prior),model.beta)/float(model.predict_T)
+        v=risk_from_log_weights(z,actions[lo:lo+128])
+        for key,value in v.items():out_components.setdefault(key,[]).append(value)
+    components={key:np.concatenate(value) for key,value in out_components.items()}
     ns=np.asarray(getattr(model,'oog_nonspecificity',np.exp(log_nonspecificity(data.kappa,data.d)))).reshape(-1)
-    out=dict(actions=actions,components=components,r_ns=(actions==0)*p[:,0]*ns,
+    out=dict(actions=actions,native_actions=native_actions,components=components,r_ns=(actions==0)*components['p0']*ns,
              log_nonspecificity=log_nonspecificity(data.kappa,data.d),
              kl1=np.asarray(model.kl_1).reshape(-1),kl2=np.asarray(model.kl_2).reshape(-1),
              gallery_kappa=float(model.gallery_kappa),temperature=float(model.predict_T),gallery_prior=str(model.gallery_prior))

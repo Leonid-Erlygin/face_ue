@@ -36,6 +36,31 @@ if [[ "$stage" == full ]]; then
   esac
   args+=(--confirm-full --approved-sanity "$approval")
 fi
+extra_mounts=()
+if [[ -n "${PREVIOUS_RUN:-}" ]]; then
+  [[ "$stage" == sanity ]] || { echo "PREVIOUS_RUN is for sanity only" >&2; exit 2; }
+  [[ -e "$PREVIOUS_RUN" ]] || { echo "PREVIOUS_RUN does not exist: $PREVIOUS_RUN" >&2; exit 2; }
+  if [[ -d "$PREVIOUS_RUN" ]]; then
+    previous="$(cd -- "$PREVIOUS_RUN" && pwd)"
+  else
+    previous="$(cd -- "$(dirname -- "$PREVIOUS_RUN")" && pwd)/$(basename -- "$PREVIOUS_RUN")"
+  fi
+  case "$previous" in
+    "$HOST_APP_DIR"/*) previous="/app/${previous#"$HOST_APP_DIR"/}" ;;
+    *) extra_mounts+=(-v "$previous:/previous_sanity_input:ro"); previous=/previous_sanity_input ;;
+  esac
+  args+=(--previous-run "$previous")
+fi
+if [[ "${REPLAY_ONLY:-0}" == 1 ]]; then
+  [[ -n "${PREVIOUS_RUN:-}" ]] || { echo "REPLAY_ONLY needs PREVIOUS_RUN" >&2; exit 2; }
+  args+=(--replay-only)
+fi
+if [[ -n "${REVIEW_RESOLUTION:-}" ]]; then
+  [[ -f "$REVIEW_RESOLUTION" ]] || { echo "Missing REVIEW_RESOLUTION" >&2; exit 2; }
+  resolution="$(cd -- "$(dirname -- "$REVIEW_RESOLUTION")" && pwd)/$(basename -- "$REVIEW_RESOLUTION")"
+  extra_mounts+=(-v "$resolution:/review_resolution.json:ro")
+  args+=(--review-resolution /review_resolution.json)
+fi
 args+=("$@")
 env_args=(--env PYTHONUNBUFFERED=1 --env HYDRA_FULL_ERROR=1 --env TERM=xterm
           --env "OMP_NUM_THREADS=$THREADS" --env "MKL_NUM_THREADS=$THREADS"
@@ -57,9 +82,9 @@ fi
 printf 'Starting %s\nImage: %s\nRepository: %s\nStage: %s / %s\n' "$CONTAINER_NAME" "$DOCKER_IMAGE" "$HOST_APP_DIR" "$stage" "$domain"
 printf 'Results: %s/%s\nShare ZIP: %s/%s.zip\n' "$HOST_APP_DIR" "$relative" "$HOST_APP_DIR" "$relative"
 if [[ "${DRY_RUN:-0}" == 1 ]]; then
-  printf 'docker run -d --rm --init '; printf '%q ' "${resource_args[@]}" "${env_args[@]}" --user "$(id -u):$(id -g)" --name "$CONTAINER_NAME" -v "$HOST_APP_DIR:/app" -w /app "$DOCKER_IMAGE" "${args[@]}"; printf '\n'; exit 0
+  printf 'docker run -d --rm --init '; printf '%q ' "${resource_args[@]}" "${env_args[@]}" "${extra_mounts[@]}" --user "$(id -u):$(id -g)" --name "$CONTAINER_NAME" -v "$HOST_APP_DIR:/app" -w /app "$DOCKER_IMAGE" "${args[@]}"; printf '\n'; exit 0
 fi
-container_id="$(docker run -d --rm --init "${resource_args[@]}" "${env_args[@]}" \
+container_id="$(docker run -d --rm --init "${resource_args[@]}" "${env_args[@]}" "${extra_mounts[@]}" \
   --user "$(id -u):$(id -g)" --name "$CONTAINER_NAME" -v "$HOST_APP_DIR:/app" -w /app \
   "$DOCKER_IMAGE" "${args[@]}")"
 printf 'Container: %s\nFollow: docker logs -f %q\n' "$container_id" "$CONTAINER_NAME"

@@ -1,0 +1,59 @@
+{
+  "status": "complete",
+  "stage": "sanity",
+  "domain": "bio",
+  "synthetic": false,
+  "model_version": "reference-prior-evidence-1.1-logodds",
+  "code_sha256": "0196566aa4ff9f1993be0ea23f16c3b5329c3c3977190117a561259e8fbd5f34",
+  "started_utc": "20260912T082233Z",
+  "arguments": {
+    "stage": "sanity",
+    "domain": "bio",
+    "run_dir": "/app/outputs/mprisk_evidence/sanity_bio_20260912T082232Z_1888371",
+    "core_config": null,
+    "datasets": null,
+    "device": "auto",
+    "seed": 777,
+    "beta": 0.5,
+    "sanity_val": 6000,
+    "sanity_test": 4000,
+    "max_fit": 3000,
+    "fit_iterations": 250,
+    "search_budget": 128,
+    "bootstrap": 200,
+    "synthetic": false,
+    "synthetic_n": 500,
+    "approved_sanity": null,
+    "confirm_full": false,
+    "previous_run": null,
+    "replay_only": false,
+    "reference_protocol": "empirical",
+    "review_resolution": null,
+    "resume": false
+  },
+  "completed_datasets": [
+    "IJBC",
+    "IJBB",
+    "whale",
+    "large_12k-perspk5"
+  ],
+  "decision_protocol": "empirical cosine-threshold benchmark with explicit matching diagnostics",
+  "fitting_protocol": "validation fit/select/audit; no test labels used to fit evidence, probability calibration, or fusion",
+  "archive_excludes": [
+    "_cache: recomputable cosine matrices; raw image/audio/text inputs are not copied"
+  ],
+  "git_revision": "ef66dd9e89b4a64f144384e4c2f5828426e48192",
+  "numerical_checks_passed": true,
+  "core_config_sha256": "729669d7626718f3eed0dfd0255f1b69bf08c6d57905d6c95b9c8386ece59709",
+  "datasets": [
+    "IJBC",
+    "IJBB",
+    "whale",
+    "large_12k-perspk5"
+  ],
+  "dataset_failures": {},
+  "review_status": "hold",
+  "rank_score_semantics": "unsaturated log odds; error probabilities saved separately",
+  "input_corruption_or_new_validation_data_generated": false,
+  "finished_utc": "2026-09-12T08:28:06.299899+00:00"
+}

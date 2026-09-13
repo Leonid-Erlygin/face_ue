@@ -1,0 +1,27 @@
+{
+  "status": "hold",
+  "blockers": [],
+  "review_warnings": [
+    "IJBB:audit:false_reject:only_0",
+    "IJBB:audit:misidentification:only_0",
+    "IJBB:select:false_reject:only_0",
+    "IJBB:select:misidentification:only_0",
+    "IJBC:audit:false_reject:only_0",
+    "IJBC:audit:misidentification:only_0",
+    "IJBC:select:false_reject:only_0",
+    "IJBC:select:misidentification:only_0",
+    "large_12k-perspk5:audit:false_reject:only_0",
+    "large_12k-perspk5:audit:misidentification:only_0",
+    "large_12k-perspk5:evidence:boundary_requires_review",
+    "large_12k-perspk5:select:false_reject:only_1",
+    "large_12k-perspk5:select:misidentification:only_0",
+    "whale:audit:false_reject:only_6",
+    "whale:audit:misidentification:only_4",
+    "whale:evidence:boundary_requires_review",
+    "whale:select:false_reject:only_5",
+    "whale:select:misidentification:only_2"
+  ],
+  "raw_probability_calibration_certified": false,
+  "test_results_used_to_select_parameters": false,
+  "note": "No fresh validation data or input corruption was generated. Sparse validation support is NOT fixed by code."
+}

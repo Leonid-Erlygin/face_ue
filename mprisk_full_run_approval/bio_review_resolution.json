@@ -1,0 +1,38 @@
+{
+  "sanity_code_sha256": "0196566aa4ff9f1993be0ea23f16c3b5329c3c3977190117a561259e8fbd5f34",
+  "acknowledged_warnings": [
+    "IJBB:audit:false_reject:only_0",
+    "IJBB:audit:misidentification:only_0",
+    "IJBB:select:false_reject:only_0",
+    "IJBB:select:misidentification:only_0",
+    "IJBC:audit:false_reject:only_0",
+    "IJBC:audit:misidentification:only_0",
+    "IJBC:select:false_reject:only_0",
+    "IJBC:select:misidentification:only_0",
+    "large_12k-perspk5:audit:false_reject:only_0",
+    "large_12k-perspk5:audit:misidentification:only_0",
+    "large_12k-perspk5:evidence:boundary_requires_review",
+    "large_12k-perspk5:select:false_reject:only_1",
+    "large_12k-perspk5:select:misidentification:only_0",
+    "whale:audit:false_reject:only_6",
+    "whale:audit:misidentification:only_4",
+    "whale:evidence:boundary_requires_review",
+    "whale:select:false_reject:only_5",
+    "whale:select:misidentification:only_2"
+  ],
+  "rationale": "Proceed with the full benchmark under the currently implemented validation protocol, as explicitly requested by the user. This authorization follows the 12 September numerical review and does not certify calibrated error probabilities, adequate validation support for every error type, statistical significance, or final dissertation readiness. Preserve beta=0.5, empirical benchmark FPIR construction, existing parameter bounds, and the fit/selection/audit separation. The benchmark uses labeled unknown test probes to establish operating points; it is not a prospective validation-only FPIR guarantee. Do not use test labels to fit the evidence model, calibration, concentration scaling, or score weights. Retain unfavorable results, boundary diagnostics, sparse-error counts, and all review warnings. The inspected sanity test subsets are development evidence, not untouched confirmation of subsequent design choices. Review the full results before drawing probability-calibration or sufficiency conclusions. IJB-B/C validation contains no false rejections or misidentifications in the reviewed selection/audit partitions. The user defers changes to the IJB validation set. Run the existing clean-validation transfer protocol as a separately identified condition, without claiming this issue has been resolved. Also acknowledge sparse error support on Whale and VoxBlink and the Whale/VoxBlink parameter-bound warnings. Converged boundary fits are retained for benchmarking with their diagnostics, not interpreted as validated physical concentration estimates. Do not select new priors or bounds from the test results.",
+  "scope": "full benchmark with unchanged validation protocol; limitations deferred, not resolved",
+  "raw_probability_calibration_certified": false,
+  "validation_support_certified": false,
+  "all_warning_conditions_remain_recorded": true,
+  "source": {
+    "sanity_archive_name": "sanity_bio_20260912T082232Z_1888371.zip",
+    "sanity_archive_sha256": "ce9ccd824cbd5e16df62a1662927631ca599f18ccfaa25257ed0a39feb92d1f4",
+    "original_archive_root": "sanity_bio_20260912T082232Z_1888371",
+    "manifest_sha256": "f7de4d4b04e796bd32c84e328258174114aec8f080fe43bd8ad099cafd461d21",
+    "review_gates_sha256": "403b357e1f4de5756dfda74e8b7da5cbc96bc3226b064638e1f7e7059cb50b2a",
+    "code_sha256": "0196566aa4ff9f1993be0ea23f16c3b5329c3c3977190117a561259e8fbd5f34",
+    "core_config_sha256": "729669d7626718f3eed0dfd0255f1b69bf08c6d57905d6c95b9c8386ece59709"
+  },
+  "decision_date": "2026-09-13"
+}

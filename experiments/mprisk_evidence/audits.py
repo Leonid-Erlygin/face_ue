@@ -3,7 +3,7 @@ import numpy as np
 from scipy.integrate import quad
 from scipy.special import logsumexp
 from evaluation.open_set_methods.mprisk_evidence import (centered_partition,log_partition,log_bayes_factors,
-                    log_posterior,risk_components,PartitionTable)
+                    log_posterior,risk_components,PartitionTable,risk_from_log_weights,cost_log_odds)
 
 
 def run_audits():
@@ -36,6 +36,14 @@ def run_audits():
                 ref=float(mp.log(mp.hyp0f1(mp.mpf(d)/2,mp.mpf(k)**2/4))-k)
                 value=float(centered_partition(k,d))
                 check('mpmath_log_partition',abs(value-ref),2e-8,d=d,kappa=k)
+    # Probability saturation must never erase the ranking score.
+    for action in [0,1]:
+        z=np.array([[0.,-1000.],[0.,-500.],[0.,-100.],[0.,-40.],[0.,0.],[0.,40.],[0.,100.],[0.,500.],[0.,1000.]])
+        a=np.full(len(z),action,dtype=int);r=risk_from_log_weights(z,a)
+        expected=z[:,1-action]-z[:,action]
+        check('extreme_fixed_action_log_odds',np.max(np.abs(r['score_log_odds']-expected)),1e-12,action=action)
+        check('unit_cost_log_odds',np.max(np.abs(cost_log_odds(r['log_event_probabilities'],np.ones(3))-expected)),1e-12,action=action)
+        check('extreme_rank_preservation',float(not np.array_equal(np.argsort(expected),np.argsort(r['score_log_odds']))),0.,action=action)
     return rows
 
 
@@ -46,7 +54,8 @@ def probe_limit_rows(d,kg,beta,K=2):
             # This is a scalar equal-similarity kernel audit, not a realizable
             # arbitrary gallery geometry or raw-input corruption experiment.
             lp=log_posterior(log_bayes_factors(np.full((1,K),cosine),[k],kg,d),beta)
-            p=np.exp(lp[0]);rows.append(dict(d=d,gallery_kappa=kg,probe_kappa=k,cosine=cosine,
-                  p_unknown=p[0],reject_risk=1-p[0],accept_class_1_risk=1-p[1],
+            p=np.exp(lp[0]);r0=risk_components(lp,np.array([0]));r1=risk_components(lp,np.array([1]));rows.append(dict(d=d,gallery_kappa=kg,probe_kappa=k,cosine=cosine,
+                  p_unknown=p[0],reject_risk=r0['risk'][0],accept_class_1_risk=r1['risk'][0],
+                  reject_log_odds=r0['score_log_odds'][0],accept_log_odds=r1['score_log_odds'][0],
                   kind='controlled representation-distribution sensitivity; not raw input degradation'))
     return rows
