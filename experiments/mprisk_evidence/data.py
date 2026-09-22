@@ -71,6 +71,8 @@ class Data:
         if len(set(map(str,self.gallery_ids)))!=len(self.gallery):raise ValueError('Gallery identities must be unique; duplicate prototypes are not silently treated as new classes')
         for a in [self.kappa,self.probe_ids,self.template_ids]:
             if len(a)!=self.n:raise ValueError('Pooled probe metadata length mismatch; refusing to truncate')
+        if len(self.gallery_ids)!=len(self.gallery) or len(self.gallery_kappa)!=len(self.gallery):
+            raise ValueError('Gallery directions, identities and concentrations must align')
         for a in [self.kappa,self.gallery_kappa]:
             if np.any(~np.isfinite(a)) or np.any(a<0):raise ValueError('Nonfinite/negative decoded concentration')
         if len(np.unique(self.template_ids))!=self.n:raise ValueError('Duplicate probe templates')
@@ -87,6 +89,15 @@ class Data:
 
 
 def _pool(raw,logk,templates,medias,chosen,subjects):
+    raw=np.asarray(raw,dtype=np.float64)
+    logk=np.asarray(logk,dtype=np.float64).reshape(-1)
+    templates=np.asarray(templates).reshape(-1);medias=np.asarray(medias).reshape(-1)
+    if raw.ndim!=2 or any(len(v)!=len(raw) for v in [logk,templates,medias]):
+        raise ValueError('Raw representations, log-kappa and metadata must align')
+    if np.any(~np.isfinite(raw)) or np.any(~np.isfinite(logk)):
+        raise ValueError('Nonfinite raw representation or log-kappa')
+    if np.any(logk>np.log(np.finfo(np.float64).max)):
+        raise ValueError('SCF log-kappa exceeds float64 range; check storage convention')
     chosen=np.asarray(chosen).reshape(-1);subjects=np.asarray(subjects).reshape(-1)
     if len(chosen)!=len(subjects):raise ValueError('Protocol template/subject length mismatch')
     mapping={}
@@ -101,13 +112,40 @@ def _pool(raw,logk,templates,medias,chosen,subjects):
         if not len(ix):raise ValueError(f'Protocol template {t} is absent from raw representations')
         m=medias[ix];unique,inv=np.unique(m,return_inverse=True);counts=np.bincount(inv)
         vectors=np.zeros((len(unique),raw.shape[1]));np.add.at(vectors,inv,raw[ix]);vectors/=counts[:,None]
-        concentrations=np.exp(logk[ix]);sums=np.zeros(len(unique));np.add.at(sums,inv,concentrations);sums/=counts
-        mu.append(vectors.sum(0));kap.append(sums.mean())
+        concentrations=np.exp(logk[ix]);sums=np.zeros(len(unique))
+        np.add.at(sums,inv,concentrations/counts[inv])
+        mu.append(vectors.sum(0));kap.append(np.sum(sums/len(sums)))
     return normalized(np.array(mu)),np.array(kap),np.array([mapping[t] for t in keys]),keys
 
 
-def load_native(dataset_cfg,gallery_name='g1'):
-    ds=instantiate_config(dataset_cfg);path=Path(ds.dataset_path)/'embeddings'/f'scf_embs_{ds.dataset_name}.npz'
+def fresh_protocol(config):
+    """Read original IJB-format metadata without reading/writing backup.npz.
+
+    The embs/unc-only NPZ format contains no sample identifiers. Matching lengths
+    therefore cannot prove row ordering; the export must retain metadata order.
+    """
+    from types import SimpleNamespace
+    from omegaconf import OmegaConf
+    import pandas as pd
+    if OmegaConf.is_config(config):config=OmegaConf.to_container(config,resolve=True)
+    if config.get('_target_')!='evaluation.test_datasets.FaceRecogntionDataset':
+        raise ValueError('Fresh metadata adapter supports FaceRecogntionDataset only')
+    root=Path(config['dataset_path']);name=config['dataset_name'];stem=name.lower()
+    media=pd.read_csv(root/'meta'/f'{stem}_face_tid_mid.txt',sep=r'\s+',header=None)
+    if media.shape[1]<3:raise ValueError('Expected image/template/media columns')
+    attrs=dict(dataset_path=str(root),dataset_name=name,templates=media.iloc[:,1].to_numpy(),medias=media.iloc[:,2].to_numpy())
+    for prefix,tail in [('g1','gallery_G1'),('g2','gallery_G2'),('probe','probe_mixed')]:
+        path=root/'meta'/f'{stem}_1N_{tail}.csv'
+        if not path.exists() and prefix=='g2':continue
+        frame=pd.read_csv(path)
+        if frame.shape[1]<2:raise ValueError('Expected template/subject protocol columns: '+str(path))
+        attrs[prefix+'_templates']=frame.iloc[:,0].to_numpy()
+        attrs[prefix+'_ids']=frame.iloc[:,1].to_numpy()
+    return SimpleNamespace(**attrs)
+
+
+def load_native(dataset_cfg,gallery_name='g1',fresh_metadata=False):
+    ds=fresh_protocol(dataset_cfg) if fresh_metadata else instantiate_config(dataset_cfg);path=Path(ds.dataset_path)/'embeddings'/f'scf_embs_{ds.dataset_name}.npz'
     if not path.is_file():raise FileNotFoundError(f'Required SCF file: {path}')
     with np.load(path,allow_pickle=False) as f:
         raw=np.asarray(f['embs']);lk=np.asarray(f['unc'])
@@ -121,7 +159,9 @@ def load_native(dataset_cfg,gallery_name='g1'):
     if len(overlap):raise ValueError(f'{len(overlap)} exact templates overlap probe and gallery; resolve protocol leakage first')
     source=dict(dataset_path=str(Path(ds.dataset_path).resolve()),dataset_name=ds.dataset_name,embedding_file=str(path.resolve()),
                 embedding_size=path.stat().st_size,embedding_mtime_ns=path.stat().st_mtime_ns,gallery_name=gallery_name,
-                uncertainty_storage='SCF log-kappa; exponentiated once before media pooling',pooling='PoolingDefault equivalent, rebuilt; no shared cache')
+                raw_n=len(raw),stored_unc_dtype=str(lk.dtype),stored_log_kappa_quantiles=np.quantile(lk,[0,.1,.5,.9,1]).tolist(),
+                raw_direction_norm_quantiles=np.quantile(np.linalg.norm(np.asarray(raw,dtype=np.float64),axis=1),[0,.1,.5,.9,1]).tolist(),
+                fresh_metadata=bool(fresh_metadata),uncertainty_storage='SCF log-kappa; converted to float64 and exponentiated once before media pooling',pooling='PoolingDefault equivalent, rebuilt; no shared cache')
     return Data(probe[0],probe[1],gal[0],gal[1],probe[2],gal[2],probe[3],source).validate()
 
 

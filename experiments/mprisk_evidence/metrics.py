@@ -29,20 +29,31 @@ class Metrics:
     """Repository F1 convention: incorrect identification contributes to FN.
 
     PRR uses its random/error-oracle normalization, not an asserted F1-optimal
-    oracle. Constant-score ties use a shared label-independent permutation.
+    oracle. Random/oracle draws and tied-score sorting match the original runner.
     AURC is the mean cumulative risk at coverages 1/N,...,1.
     """
-    def __init__(self,a,y,seed=777,fractions=20):
+    # Legacy tools keep their historical convention. The full-suite process
+    # explicitly freezes seeded-permutation ties before any fitting/evaluation.
+    default_tie_policy = "legacy"
+
+    def __init__(self,a,y,seed=777,fractions=20,tie_policy=None):
         self.a=np.asarray(a,dtype=int);self.y=np.asarray(y,dtype=int);self.n=len(a)
         if not self.n or self.y.shape!=self.a.shape:raise ValueError('Invalid actions/targets')
-        self.m=masks(self.a,self.y);rng=np.random.default_rng(seed);self.tie=rng.permutation(self.n)
+        self.m=masks(self.a,self.y);rng=np.random.default_rng(seed)
         self.fracs=np.linspace(0,.5,int(fractions));self.keep=np.maximum(1,((1-self.fracs)*self.n).astype(int))
-        self.random=rng.random(self.n);self.oracle=self.m['any_error'].astype(float)
+        self.random=rng.random(self.n);self.oracle=self.m['any_error'].astype(float)+1e-9*rng.random(self.n)
+        self.tie_policy = tie_policy or type(self).default_tie_policy
+        if self.tie_policy not in ('legacy', 'seeded-permutation'):
+            raise ValueError('Unknown score tie policy: '+str(self.tie_policy))
+        # Draw AFTER random/oracle to retain the original reference sequences.
+        self.tie = rng.permutation(self.n)
         self.random_area=self.f1_area(self.random);self.oracle_area=self.f1_area(self.oracle)
     def order(self,s):
         s=np.asarray(s,dtype=float)
         if s.shape!=(self.n,) or np.any(np.isnan(s)):raise ValueError('Nonfinite/misaligned score')
-        return np.lexsort((self.tie,s))
+        if self.tie_policy == 'seeded-permutation':
+            return np.lexsort((self.tie, s))
+        return np.argsort(s)  # Historical replay only; not portable for ties.
     def f1_curve(self,s):
         order=self.order(s);counts=[np.cumsum(self.m[k][order])[self.keep-1] for k in ['tp','fp','fn']]
         return f1(*counts)
@@ -60,7 +71,8 @@ class Metrics:
                  random_f1_area=self.random_area,error_oracle_f1_area=self.oracle_area,f1_area=self.f1_area(s),
                  score_min=float(np.min(s)),score_max=float(np.max(s)),is_probability=bool(probability and probabilities is None),
                  probability_reported=bool(probability or probabilities is not None),
-                 ranking_score_kind='log_odds' if log_odds is not None else 'provided_score')
+                 ranking_score_kind='log_odds' if log_odds is not None else 'provided_score',
+                 tie_policy=self.tie_policy,distinct_scores=int(len(np.unique(s))))
         if probability or probabilities is not None:
             p=np.asarray(s if probabilities is None else probabilities,dtype=float)
             if p.shape!=(self.n,) or np.any(~np.isfinite(p)):raise ValueError('Invalid probability output')

@@ -7,13 +7,28 @@ The action scored is supplied externally, never replaced by a posterior argmax.
 """
 from __future__ import annotations
 from dataclasses import dataclass, asdict
+from functools import wraps
 import math
 import numpy as np
 from scipy.special import ive, gammaln, logsumexp, expit
 from scipy.interpolate import CubicSpline
 from scipy.optimize import minimize
 
-MODEL_VERSION = 'reference-prior-evidence-1.1-logodds'
+MODEL_VERSION = 'reference-prior-evidence-1.2-whale-audit'
+
+
+def _quiet_probability_underflow(function):
+    """Allow vanishing probability tails locally; preserve other error policies.
+
+    Log scores remain available when exp(log_probability) rounds to zero.
+    This is not a global numpy.seterr change or blanket warning suppression.
+    A fresh errstate is created per call (also for nested calls / NumPy 2).
+    """
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with np.errstate(under='ignore'):
+            return function(*args, **kwargs)
+    return wrapped
 
 
 def check_kappa(k):
@@ -28,6 +43,7 @@ def log_surface(d):
     return float(math.log(2)+d/2*math.log(math.pi)-gammaln(d/2))
 
 
+@_quiet_probability_underflow
 def _series(a,k):
     """Convergent log-domain 0F1 series for Bessel underflow, not an asymptotic."""
     k=np.asarray(k,dtype=float); t=np.zeros_like(k); s=np.zeros_like(k)
@@ -129,11 +145,13 @@ def class_log_weights(logB, beta, known_prior=None):
                             np.log1p(-beta) + np.log(w)[None, :] + b))
 
 
+@_quiet_probability_underflow
 def log_posterior(logB, beta, known_prior=None):
     z = class_log_weights(logB, beta, known_prior)
     return z - logsumexp(z, axis=1, keepdims=True)
 
 
+@_quiet_probability_underflow
 def selected_log_odds(log_weights, actions):
     """Log(error mass / chosen-class mass), NEVER logit(1-p_selected).
 
@@ -152,6 +170,7 @@ def selected_log_odds(log_weights, actions):
     return logsumexp(wrong, axis=1) - selected
 
 
+@_quiet_probability_underflow
 def risk_from_log_weights(log_weights, actions):
     """Stable risk, event log masses and fixed-action ranking score.
 
@@ -190,6 +209,7 @@ def risk_from_log_weights(log_weights, actions):
                 posterior_mass=np.exp(lp).sum(1), counterfactual_action=np.argmax(z, axis=1))
 
 
+@_quiet_probability_underflow
 def risk_components(lp, actions):
     """Backward-compatible entry point for an already normalized log posterior."""
     lp = np.asarray(lp, dtype=np.float64)
@@ -198,6 +218,7 @@ def risk_components(lp, actions):
     return risk_from_log_weights(lp, actions)
 
 
+@_quiet_probability_underflow
 def cost_log_odds(log_events, costs):
     """Stable monotone score for a nonnegative weighted sum of error events.
 
@@ -227,6 +248,7 @@ class Parameters:
     point:bool=False
 
 
+@_quiet_probability_underflow
 def evaluate(c,kappa,d,pars,actions,targets=None,table=None,batch=128,dense=False):
     c=np.asarray(c);kappa=check_kappa(kappa).reshape(-1);a=np.asarray(actions)
     if not np.issubdtype(a.dtype,np.integer) or a.ndim!=1:raise ValueError('actions must be a one-dimensional integer array')
@@ -237,7 +259,7 @@ def evaluate(c,kappa,d,pars,actions,targets=None,table=None,batch=128,dense=Fals
     for start in range(0,len(c),batch):
         end=min(len(c),start+batch)
         cc=np.asarray(c[start:end],dtype=float)
-        b=pars.gallery_kappa*cc-log_partition(pars.gallery_kappa,d) if pars.point else log_bayes_factors(
+        b=pars.gallery_kappa*(cc-1)-centered_partition(pars.gallery_kappa,d) if pars.point else log_bayes_factors(
             cc,kappa[start:end]*pars.probe_scale,pars.gallery_kappa,d,table)
         weights=class_log_weights(b,pars.beta)
         lp=weights-logsumexp(weights,axis=1,keepdims=True);p=np.exp(lp)
@@ -267,7 +289,8 @@ def evaluate(c,kappa,d,pars,actions,targets=None,table=None,batch=128,dense=Fals
     return {name:np.concatenate(v) for name,v in out.items()}
 
 
-def fit_parameters(c,kappa,d,y,fit_ix,select_ix,beta,table=None,point=False,maxiter=250,max_fit=3000,seed=777,report_path=None):
+def fit_parameters(c,kappa,d,y,fit_ix,select_ix,beta,table=None,point=False,maxiter=250,max_fit=3000,seed=777,report_path=None,
+                   probe_scale_bounds=(1e-4,100.), gallery_kappa_bounds=(.1,1e5)):
     """Only supplied validation rows are used; beta is an explicitly fixed prior.
 
     Fits shared gallery concentration and probe concentration scale by multiclass
@@ -277,16 +300,22 @@ def fit_parameters(c,kappa,d,y,fit_ix,select_ix,beta,table=None,point=False,maxi
     if np.intersect1d(fit_ix,select_ix).size or min(len(fit_ix),len(select_ix))<4:
         raise ValueError('Need disjoint fit and selection observations')
     if max_fit and len(fit_ix)>max_fit:fit_ix=np.sort(np.random.default_rng(seed).choice(fit_ix,max_fit,replace=False))
-    bounds=[(-2.302585093,11.512925465)] if point else [(-9.210340372,4.605170186),(-2.302585093,11.512925465)]
+    # Explicit predeclared ranges; a boundary result is reported, not repaired
+    # by looking at a test metric. Defaults reproduce the historical ranges.
+    for label, pair in [('probe scale',probe_scale_bounds),('gallery kappa',gallery_kappa_bounds)]:
+        if len(pair)!=2 or not np.all(np.isfinite(pair)) or not 0<pair[0]<pair[1]:
+            raise ValueError('Invalid '+label+' bounds')
+    bounds=[tuple(np.log(gallery_kappa_bounds))] if point else [tuple(np.log(probe_scale_bounds)),tuple(np.log(gallery_kappa_bounds))]
     def decode(z):return Parameters(1. if point else float(np.exp(z[0])),float(np.exp(z[-1])),float(beta),point)
     def loss(z,ix):
         p=decode(z);s=0.
         for j in range(0,len(ix),128):
             ids=ix[j:j+128]
-            b=p.gallery_kappa*np.asarray(c[ids])-log_partition(p.gallery_kappa,d) if point else log_bayes_factors(
+            b=p.gallery_kappa*(np.asarray(c[ids])-1)-centered_partition(p.gallery_kappa,d) if point else log_bayes_factors(
                 c[ids],np.asarray(kappa)[ids]*p.probe_scale,p.gallery_kappa,d,table)
             weights=class_log_weights(b,beta)
-            s+=np.logaddexp(0.,selected_log_odds(weights,np.asarray(y)[ids])).sum()
+            with np.errstate(under='ignore'):
+                s+=np.logaddexp(0.,selected_log_odds(weights,np.asarray(y)[ids])).sum()
         return float(s/len(ix))
     history=[];best=None;best_index=None
     for scale,g in [(1.,d),(.1,2*d),(10.,d/2)]:

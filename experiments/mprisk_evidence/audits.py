@@ -3,9 +3,10 @@ import numpy as np
 from scipy.integrate import quad
 from scipy.special import logsumexp
 from evaluation.open_set_methods.mprisk_evidence import (centered_partition,log_partition,log_bayes_factors,
-                    log_posterior,risk_components,PartitionTable,risk_from_log_weights,cost_log_odds)
+                    log_posterior,risk_components,PartitionTable,risk_from_log_weights,cost_log_odds,_quiet_probability_underflow)
 
 
+@_quiet_probability_underflow
 def run_audits():
     rows=[]
     def check(name,error,tolerance,**kw):
@@ -47,6 +48,7 @@ def run_audits():
     return rows
 
 
+@_quiet_probability_underflow
 def probe_limit_rows(d,kg,beta,K=2):
     rows=[]
     for cosine in [-.5,0.,.5,.9]:
